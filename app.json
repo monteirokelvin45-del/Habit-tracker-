@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "MY PRIME",
+    "slug": "my-prime",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "myprime",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "backgroundColor": "#0A0A0A",
+    "android": {
+      "package": "com.myprime.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0A"
+      },
+      "permissions": ["RECEIVE_BOOT_COMPLETED", "SCHEDULE_EXACT_ALARM", "VIBRATE"],
+      "edgeToEdgeEnabled": true
+    },
+    "web": { "bundler": "metro", "output": "single" },
+    "plugins": [
+      "expo-router",
+      ["expo-splash-screen", { "backgroundColor": "#0A0A0A", "resizeMode": "contain" }],
+      ["expo-notifications", { "color": "#00FF88" }],
+      ["expo-image-picker", { "photosPermission": "O MY PRIME usa fotos apenas para confirmação opcional e progresso." }]
+    ],
+    "experiments": { "typedRoutes": false },
+    "extra": { "router": { "origin": false } }
+  }
+}

@@ -1,0 +1,545 @@
+import { create } from 'zustand';
+import {
+  DEFAULT_SETTINGS,
+  EMPTY_DATA,
+  persist,
+  persistMany,
+  resetAll,
+} from './storage';
+import type {
+  AppData,
+  Book,
+  Day,
+  DayMode,
+  Diary,
+  FinanceEntry,
+  Goal,
+  Priority,
+  Reward,
+  Rule,
+  Settings,
+  User,
+  WeightEntry,
+} from './types';
+import { emptyDiary } from './types';
+import { addDays, nowHHmm, todayKey } from './date';
+import { buildChecklist, computeScore, taskKeyFor } from './score';
+import { evaluateBadges } from './badges';
+import { evaluateRewards } from './rewards';
+import { newId } from './id';
+
+export type LoadState = 'idle' | 'loading' | 'ready';
+
+export interface StoreState extends AppData {
+  status: LoadState;
+  /** true depois do splash de 2s. */
+  booted: boolean;
+  load: () => Promise<void>;
+  setBooted: () => void;
+
+  finishOnboarding: (payload: {
+    user: User;
+    areas: string[];
+    goals: Goal[];
+    settings: Partial<Settings>;
+  }) => Promise<void>;
+
+  ensureDay: (date?: string) => Day;
+  setEnergy: (date: string, energy: { physical: number; mental: number; stress: number }) => void;
+  setMode: (date: string, mode: DayMode) => void;
+  toggleTask: (date: string, goalId: string, done: boolean) => void;
+  setTaskNote: (date: string, goalId: string, note: string) => void;
+  setTaskExcuse: (
+    date: string,
+    goalId: string,
+    data: { type: string; legitimacy: string; cost: string; recoveryPlan: string },
+  ) => void;
+  addPomodoro: (date: string, goalId: string, minutes: number) => void;
+  setMidday: (date: string, data: { priorityDone: boolean; energy: number; note: string }) => void;
+  closeDay: (date: string, diary: Diary) => Day;
+  resolveHonestyFlag: (date: string, goalId: string, resolution: 'confirmed' | 'adjusted') => void;
+  reopenDay: (date: string) => void;
+
+  upsertGoal: (goal: Goal) => void;
+  archiveGoal: (id: string) => void;
+  deleteGoal: (id: string) => void;
+
+  updateUser: (patch: Partial<User>) => void;
+  updateSettings: (patch: Partial<Settings>) => void;
+
+  upsertRule: (rule: Rule) => void;
+  deleteRule: (id: string) => void;
+  toggleRule: (id: string) => void;
+  markRuleActivated: (id: string, success: boolean) => void;
+
+  addReward: (reward: Reward) => void;
+  deleteReward: (id: string) => void;
+  refreshRewards: () => void;
+
+  addBook: (book: Book) => void;
+  updateBook: (book: Book) => void;
+  deleteBook: (id: string) => void;
+
+  addFinance: (entry: FinanceEntry) => void;
+  deleteFinance: (id: string) => void;
+
+  addWeight: (entry: WeightEntry) => void;
+  deleteWeight: (date: string) => void;
+
+  setAyanokojiScore: (week: number, scores: { selfControl: number; communication: number; discipline: number; observation: number }) => void;
+  toggleAyanokojiTask: (date: string, taskId: string) => void;
+  setWeeklyFocus: (weekStart: string, items: string[]) => void;
+  setRouteAdjustment: (monthKey: string, items: string[]) => void;
+
+  importGoals: (goals: Goal[], areas: string[]) => void;
+  hardReset: () => Promise<void>;
+}
+
+function makeDay(date: string, goals: Goal[], mode: DayMode = 'normal'): Day {
+  return {
+    date,
+    energy: { physical: 5, mental: 5, stress: 5 },
+    mode,
+    tasks: buildChecklist(goals, mode).map((item) => ({
+      goalId: taskKeyFor(item),
+      done: false,
+      note: '',
+    })),
+    diary: emptyDiary(),
+  };
+}
+
+export const useStore = create<StoreState>((set, get) => ({
+  ...EMPTY_DATA,
+  status: 'idle',
+  booted: false,
+
+  async load() {
+    set({ status: 'loading' });
+    const { loadAll } = await import('./storage');
+    const data = await loadAll();
+    set({ ...data, status: 'ready' });
+  },
+
+  setBooted() {
+    set({ booted: true });
+  },
+
+  async finishOnboarding({ user, areas, goals, settings }) {
+    const mergedSettings: Settings = { ...DEFAULT_SETTINGS, ...settings };
+    const mergedUser: User = { ...user, areas, createdAt: user.createdAt || new Date().toISOString() };
+    const ayanokoji = { startDate: todayKey(), scores: [], tasksDone: {} };
+    set({
+      onboarded: true,
+      user: mergedUser,
+      goals,
+      settings: mergedSettings,
+      ayanokoji,
+    });
+    await persistMany([
+      ['onboarded', true],
+      ['user', mergedUser],
+      ['goals', goals],
+      ['settings', mergedSettings],
+      ['ayanokoji', ayanokoji],
+    ]);
+  },
+
+  ensureDay(date = todayKey()) {
+    const state = get();
+    const existing = state.days.find((d) => d.date === date);
+    if (existing) return existing;
+    const day = makeDay(date, state.goals);
+    const days = [...state.days, day].sort((a, b) => (a.date < b.date ? -1 : 1));
+    set({ days });
+    void persist('days', days);
+    return day;
+  },
+
+  setEnergy(date, energy) {
+    const days = get().days.map((d) => (d.date === date ? { ...d, energy } : d));
+    set({ days });
+    void persist('days', days);
+  },
+
+  setMode(date, mode) {
+    const state = get();
+    const base = state.days.find((d) => d.date === date) ?? makeDay(date, state.goals, mode);
+    const restored: Day['tasks'] = buildChecklist(state.goals, mode).map((item) => {
+      const key = taskKeyFor(item);
+      const previous = base.tasks.find((t) => t.goalId === key);
+      return (
+        previous ?? {
+          goalId: key,
+          done: false,
+          note: '',
+        }
+      );
+    });
+    // Preserva tarefas extras concluídas de outros modos (histórico do dia).
+    const carry = base.tasks.filter((t) => !restored.some((r) => r.goalId === t.goalId));
+    const merged: Day = { ...base, mode, tasks: [...restored, ...carry] };
+    const days = state.days.some((d) => d.date === date)
+      ? state.days.map((d) => (d.date === date ? merged : d))
+      : [...state.days, merged].sort((a, b) => (a.date < b.date ? -1 : 1));
+    set({ days });
+    void persist('days', days);
+  },
+
+  toggleTask(date, goalId, done) {
+    const state = get();
+    let day = state.days.find((d) => d.date === date);
+    if (!day) day = makeDay(date, state.goals);
+    const exists = day.tasks.some((t) => t.goalId === goalId);
+    const tasks = exists
+      ? day.tasks.map((t) =>
+          t.goalId === goalId
+            ? {
+                ...t,
+                done,
+                doneAt: done ? nowHHmm() : undefined,
+                failAt: done ? undefined : nowHHmm(),
+                excuse: done ? t.excuse : t.excuse,
+              }
+            : t,
+        )
+      : [...day.tasks, { goalId, done, note: '', doneAt: done ? nowHHmm() : undefined, failAt: done ? undefined : nowHHmm() }];
+    const updated: Day = { ...day, tasks };
+
+    const days = state.days.some((d) => d.date === date)
+      ? state.days.map((d) => (d.date === date ? updated : d))
+      : [...state.days, updated].sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    // Mantém o score vivo mesmo antes de fechar o dia (dashboard mostra progresso real).
+    if (updated.score) {
+      const goals = state.goals;
+      updated.score = computeScore({
+        day: updated,
+        goals,
+        previousDays: days.filter((d) => d.date < date),
+      });
+    }
+
+    set({ days });
+    void persist('days', days);
+  },
+
+  setTaskNote(date, goalId, note) {
+    const days = get().days.map((d) =>
+      d.date === date ? { ...d, tasks: d.tasks.map((t) => (t.goalId === goalId ? { ...t, note } : t)) } : d,
+    );
+    set({ days });
+    void persist('days', days);
+  },
+
+  setTaskExcuse(date, goalId, data) {
+    const days = get().days.map((d) =>
+      d.date === date
+        ? {
+            ...d,
+            tasks: d.tasks.map((t) =>
+              t.goalId === goalId
+                ? {
+                    ...t,
+                    done: false,
+                    failAt: t.failAt ?? nowHHmm(),
+                    excuse: { type: data.type, legitimacy: data.legitimacy },
+                    cost: data.cost,
+                    recoveryPlan: data.recoveryPlan,
+                  }
+                : t,
+            ),
+          }
+        : d,
+    );
+    set({ days });
+    void persist('days', days);
+  },
+
+  addPomodoro(date, goalId, minutes) {
+    const days = get().days.map((d) =>
+      d.date === date
+        ? { ...d, pomodoros: [...(d.pomodoros ?? []), { goalId, minutes, at: nowHHmm() }] }
+        : d,
+    );
+    set({ days });
+    void persist('days', days);
+  },
+
+  setMidday(date, data) {
+    const days = get().days.map((d) =>
+      d.date === date ? { ...d, middayCheckin: { ...data, at: nowHHmm() } } : d,
+    );
+    set({ days });
+    void persist('days', days);
+  },
+
+  closeDay(date, diary) {
+    const state = get();
+    const existing = state.days.find((d) => d.date === date) ?? makeDay(date, state.goals);
+    const draft: Day = { ...existing, diary, closedAt: new Date().toISOString() };
+    const previousDays = state.days.filter((d) => d.date < date);
+    const score = computeScore({ day: draft, goals: state.goals, previousDays });
+    const closed: Day = { ...draft, score };
+    const days = state.days.some((d) => d.date === date)
+      ? state.days.map((d) => (d.date === date ? closed : d)).sort((a, b) => (a.date < b.date ? -1 : 1))
+      : [...state.days, closed].sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    const nextDays = [...days];
+    // Abre o dia seguinte já com o modo sugerido (recuperação ou normal).
+    const tomorrow = addDays(date, 1);
+    if (!nextDays.some((d) => d.date === tomorrow)) {
+      nextDays.push(makeDay(tomorrow, state.goals, score.total < 4 ? 'recovery' : 'normal'));
+    }
+
+    const withRewards = evaluateRewards({ ...state, days: nextDays });
+    const badges = evaluateBadges({ ...state, days: nextDays, rewards: withRewards });
+
+    set({ days: nextDays, rewards: withRewards, badges });
+    void persistMany([
+      ['days', nextDays],
+      ['rewards', withRewards],
+      ['badges', badges],
+    ]);
+    return closed;
+  },
+
+  resolveHonestyFlag(date, goalId, resolution) {
+    const days = get().days.map((d) =>
+      d.date === date
+        ? {
+            ...d,
+            honestyFlags: (d.honestyFlags ?? []).map((f) =>
+              f.goalId === goalId ? { ...f, resolved: resolution } : f,
+            ),
+          }
+        : d,
+    );
+    set({ days });
+    void persist('days', days);
+  },
+
+  reopenDay(date) {
+    const days = get().days.map((d) =>
+      d.date === date ? { ...d, closedAt: undefined } : d,
+    );
+    set({ days });
+    void persist('days', days);
+  },
+
+  upsertGoal(goal) {
+    const state = get();
+    const goals = state.goals.some((g) => g.id === goal.id)
+      ? state.goals.map((g) => (g.id === goal.id ? goal : g))
+      : [...state.goals, goal];
+    // Adiciona a nova tarefa ao checklist de hoje se a meta estiver ativa.
+    const today = todayKey();
+    const days = state.days.map((d) => {
+      if (d.date !== today || !goal.active || goal.archived) return d;
+      if (d.tasks.some((t) => t.goalId === goal.id)) return d;
+      return { ...d, tasks: [...d.tasks, { goalId: goal.id, done: false, note: '' }] };
+    });
+    set({ goals, days });
+    void persistMany([
+      ['goals', goals],
+      ['days', days],
+    ]);
+  },
+
+  archiveGoal(id) {
+    const state = get();
+    const target = state.goals.find((g) => g.id === id);
+    const archived = !target?.archived;
+    const goals = state.goals.map((g) => (g.id === id ? { ...g, archived, active: archived ? false : true } : g));
+    const today = todayKey();
+    const days = state.days.map((d) => {
+      if (d.date !== today) return d;
+      if (archived) return { ...d, tasks: d.tasks.filter((t) => t.goalId !== id) };
+      if (d.tasks.some((t) => t.goalId === id)) return d;
+      return { ...d, tasks: [...d.tasks, { goalId: id, done: false, note: '' }] };
+    });
+    set({ goals, days });
+    void persistMany([
+      ['goals', goals],
+      ['days', days],
+    ]);
+  },
+
+  deleteGoal(id) {
+    const goals = get().goals.filter((g) => g.id !== id);
+    set({ goals });
+    void persist('goals', goals);
+  },
+
+  updateUser(patch) {
+    const user = { ...get().user, ...patch };
+    set({ user });
+    void persist('user', user);
+  },
+
+  updateSettings(patch) {
+    const settings = { ...get().settings, ...patch };
+    set({ settings });
+    void persist('settings', settings);
+  },
+
+  upsertRule(rule) {
+    const state = get();
+    const rules = state.rules.some((r) => r.id === rule.id)
+      ? state.rules.map((r) => (r.id === rule.id ? rule : r))
+      : [...state.rules, rule];
+    const badges = evaluateBadges({ ...state, rules });
+    set({ rules, badges });
+    void persistMany([
+      ['rules', rules],
+      ['badges', badges],
+    ]);
+  },
+
+  deleteRule(id) {
+    const rules = get().rules.filter((r) => r.id !== id);
+    set({ rules });
+    void persist('rules', rules);
+  },
+
+  toggleRule(id) {
+    const rules = get().rules.map((r) => (r.id === id ? { ...r, active: !r.active } : r));
+    set({ rules });
+    void persist('rules', rules);
+  },
+
+  markRuleActivated(id, success) {
+    const rules = get().rules.map((r) => {
+      if (r.id !== id) return r;
+      const timesActivated = r.timesActivated + 1;
+      const successRate = success
+        ? Math.round(((r.successRate * r.timesActivated + 100) / timesActivated) * 10) / 10
+        : Math.round(((r.successRate * r.timesActivated) / timesActivated) * 10) / 10;
+      return { ...r, timesActivated, successRate };
+    });
+    set({ rules });
+    void persist('rules', rules);
+  },
+
+  addReward(reward) {
+    const state = get();
+    const rewards = [...state.rewards, reward];
+    const refreshed = evaluateRewards({ ...state, rewards });
+    set({ rewards: refreshed });
+    void persist('rewards', refreshed);
+  },
+
+  deleteReward(id) {
+    const rewards = get().rewards.filter((r) => r.id !== id);
+    set({ rewards });
+    void persist('rewards', rewards);
+  },
+
+  refreshRewards() {
+    const state = get();
+    const rewards = evaluateRewards(state);
+    if (JSON.stringify(rewards) === JSON.stringify(state.rewards)) return;
+    set({ rewards });
+    void persist('rewards', rewards);
+  },
+
+  addBook(book) {
+    const books = [...get().books, book];
+    set({ books });
+    void persist('books', books);
+  },
+
+  updateBook(book) {
+    const books = get().books.map((b) => (b.id === book.id ? book : b));
+    set({ books });
+    void persist('books', books);
+  },
+
+  deleteBook(id) {
+    const books = get().books.filter((b) => b.id !== id);
+    set({ books });
+    void persist('books', books);
+  },
+
+  addFinance(entry) {
+    const finances = [...get().finances, entry];
+    set({ finances });
+    void persist('finances', finances);
+  },
+
+  deleteFinance(id) {
+    const finances = get().finances.filter((f) => f.id !== id);
+    set({ finances });
+    void persist('finances', finances);
+  },
+
+  addWeight(entry) {
+    const rest = get().weight.filter((w) => w.date !== entry.date);
+    const weight = [...rest, { ...entry, id: entry.id ?? newId('w') }].sort((a, b) => (a.date < b.date ? -1 : 1));
+    set({ weight });
+    void persist('weight', weight);
+  },
+
+  deleteWeight(date) {
+    const weight = get().weight.filter((w) => w.date !== date);
+    set({ weight });
+    void persist('weight', weight);
+  },
+
+  setAyanokojiScore(week, scores) {
+    const state = get();
+    const rest = state.ayanokoji.scores.filter((s) => s.week !== week);
+    const ayanokoji = {
+      ...state.ayanokoji,
+      startDate: state.ayanokoji.startDate || todayKey(),
+      scores: [...rest, { week, ...scores }].sort((a, b) => a.week - b.week),
+    };
+    set({ ayanokoji });
+    void persist('ayanokoji', ayanokoji);
+  },
+
+  toggleAyanokojiTask(date, taskId) {
+    const state = get();
+    const current = state.ayanokoji.tasksDone[date] ?? [];
+    const next = current.includes(taskId) ? current.filter((t) => t !== taskId) : [...current, taskId];
+    const ayanokoji = { ...state.ayanokoji, tasksDone: { ...state.ayanokoji.tasksDone, [date]: next } };
+    set({ ayanokoji });
+    void persist('ayanokoji', ayanokoji);
+  },
+
+  setWeeklyFocus(weekStartKey, items) {
+    const weeklyFocus = { ...get().weeklyFocus, [weekStartKey]: items };
+    set({ weeklyFocus });
+    void persist('weeklyFocus', weeklyFocus);
+  },
+
+  setRouteAdjustment(monthKeyValue, items) {
+    const routeAdjustments = { ...get().routeAdjustments, [monthKeyValue]: items };
+    set({ routeAdjustments });
+    void persist('routeAdjustments', routeAdjustments);
+  },
+
+  importGoals(newGoals, areas) {
+    const state = get();
+    const goals = [...state.goals, ...newGoals];
+    const user = { ...state.user, areas: Array.from(new Set([...state.user.areas, ...areas])) };
+    set({ goals, user });
+    void persistMany([
+      ['goals', goals],
+      ['user', user],
+    ]);
+  },
+
+  async hardReset() {
+    await resetAll();
+    set({ ...EMPTY_DATA, status: 'ready', booted: true });
+  },
+}));
+
+export { newId };
+
+export const priorityLabel: Record<Priority, string> = {
+  high: 'Prioridade',
+  normal: 'Normal',
+  low: 'Baixa',
+};
