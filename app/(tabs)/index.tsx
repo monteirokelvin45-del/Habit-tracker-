@@ -79,21 +79,10 @@ export default function TodayScreen() {
     return scored[0];
   }, [store.goals, store.days, today]);
 
-  const failGoal: Goal | undefined =
-    store.goals.find((g) => g.id === failFor) ??
-    (failFor
-      ? {
-          id: failFor,
-          name: day.tasks.find((t) => t.goalId === failFor)?.goalId === 'extra:revisao' ? 'Revisar o que travou ontem' : 'Plano de retorno',
-          area: 'Projeto Pessoal',
-          priority: 'normal',
-          min: '',
-          ideal: '',
-          excellent: '',
-          active: true,
-          createdAt: '',
-        }
-      : undefined);
+  const failGoal: Goal | undefined = failFor
+    ? store.goals.find((g) => g.id === failFor) ??
+      checklist.find((i) => (i.extraKey ?? i.goal.id) === failFor)?.goal
+    : undefined;
 
   const ensureDayExists = () => {
     if (!store.days.some((d) => d.date === today)) store.ensureDay(today);
@@ -101,13 +90,22 @@ export default function TodayScreen() {
 
   const onToggle = (goalId: string, done: boolean) => {
     ensureDayExists();
+    if (!done) {
+      // Desmarcar = registrar falha (motivo + custo + plano). Só desmarca ao salvar.
+      setFailFor(goalId);
+      return;
+    }
     store.toggleTask(today, goalId, done);
-    if (done) {
-      const next = day.tasks.filter((t) => t.goalId !== goalId).every((t) => t.done) && checklist.length > 0;
-      if (next) {
-        setConfetti(true);
-        haptic('success');
-      }
+    // Confetti só quando o checklist inteiro do modo fecha.
+    const allDone =
+      checklist.length > 0 &&
+      checklist.every((item) => {
+        const key = item.extraKey ?? item.goal.id;
+        return key === goalId || !!day.tasks.find((t) => t.goalId === key)?.done;
+      });
+    if (allDone) {
+      setConfetti(true);
+      haptic('success');
     }
   };
 
@@ -116,6 +114,7 @@ export default function TodayScreen() {
     ensureDayExists();
     store.setTaskExcuse(today, failFor, payload);
     setFailFor(null);
+    haptic('warning');
   };
 
   const closeDay = (diary: Day['diary']) => {

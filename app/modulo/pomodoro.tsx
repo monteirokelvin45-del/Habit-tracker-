@@ -28,6 +28,7 @@ export default function PomodoroScreen() {
   const [goalId, setGoalId] = useState<string>(items[0]?.goal.id ?? '');
   const [phase, setPhase] = useState<'focus' | 'rest'>('focus');
   const [remaining, setRemaining] = useState(preset.focus * 60);
+  const remainingRef = useRef(preset.focus * 60);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(0);
   const tick = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -38,23 +39,29 @@ export default function PomodoroScreen() {
       return;
     }
     tick.current = setInterval(() => {
-      setRemaining((r) => {
-        if (r > 1) return r - 1;
-        // fim do ciclo
-        if (phase === 'focus') {
-          haptic('success');
-          void notifyNow('Ciclo concluído', `${preset.focus} min de foco registrados. Hora de ${preset.rest} min de pausa.`);
-          store.addPomodoro(today, goalId, preset.focus);
-          setCompleted((c) => c + 1);
-          setPhase('rest');
-          return preset.rest * 60;
-        }
+      const next = remainingRef.current - 1;
+      if (next > 0) {
+        remainingRef.current = next;
+        setRemaining(next);
+        return;
+      }
+      // fim do ciclo — efeitos fora do updater de estado (sem duplicar em StrictMode)
+      if (phase === 'focus') {
+        haptic('success');
+        void notifyNow('Ciclo concluído', `${preset.focus} min de foco registrados. Hora de ${preset.rest} min de pausa.`);
+        store.addPomodoro(today, goalId, preset.focus);
+        setCompleted((c) => c + 1);
+        setPhase('rest');
+        remainingRef.current = preset.rest * 60;
+        setRemaining(preset.rest * 60);
+      } else {
         haptic('medium');
         void notifyNow('Pausa encerrada', 'Pronto para o próximo ciclo? O loop continua.');
         setPhase('focus');
         setRunning(false);
-        return preset.focus * 60;
-      });
+        remainingRef.current = preset.focus * 60;
+        setRemaining(preset.focus * 60);
+      }
     }, 1000);
     return () => {
       if (tick.current) clearInterval(tick.current);
@@ -71,7 +78,15 @@ export default function PomodoroScreen() {
     setPreset(p);
     setRunning(false);
     setPhase('focus');
+    remainingRef.current = p.focus * 60;
     setRemaining(p.focus * 60);
+  };
+
+  const resetTimer = () => {
+    setRunning(false);
+    setPhase('focus');
+    remainingRef.current = preset.focus * 60;
+    setRemaining(preset.focus * 60);
   };
 
   return (
@@ -98,11 +113,7 @@ export default function PomodoroScreen() {
               color={colors.textSecondary}
               label="Reiniciar"
               style={{ height: 46, minWidth: 110 }}
-              onPress={() => {
-                setRunning(false);
-                setPhase('focus');
-                setRemaining(preset.focus * 60);
-              }}
+              onPress={resetTimer}
             />
           </Row>
         </Card>

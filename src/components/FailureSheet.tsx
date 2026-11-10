@@ -93,6 +93,9 @@ export function FailureSheet({
         placeholder="ex: amanhã faço antes do almoço"
       />
       <Muted>Prioridade alta vem com cobrança direta. As outras vêm com ajuste.</Muted>
+      <Muted style={{ color: colors.textMuted }}>
+        Desmarcar uma tarefa exige o registro: é isso que separa falha de esquecimento.
+      </Muted>
     </Sheet>
   );
 }
