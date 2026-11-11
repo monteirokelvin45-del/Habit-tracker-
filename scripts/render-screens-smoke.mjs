@@ -596,6 +596,77 @@ for (const [label, file] of screens) {
   }
 }
 
+/* ───────── Finanças Bento: Regra 1 (nada inventado) e contraste ───────── */
+{
+  const render = async (name, fixture) => {
+    const copy = await withStore('app/modulo/financas.js', name, fixture);
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    return renderToStaticMarkup(React.createElement(Screen));
+  };
+
+  // 1) App zerado: nenhum valor monetário pode aparecer.
+  const vazioHtml = await render('fin-vazio', { ...vazio, finances: [] });
+  const dinheiroNoVazio = vazioHtml.match(/R\$\s?[\d.]/g) ?? [];
+  log(dinheiroNoVazio.length === 0, `Finanças vazia não inventa valor monetário${dinheiroNoVazio.length ? ` (achei ${dinheiroNoVazio.join(', ')})` : ''}`);
+  log(/Sem dado/.test(vazioHtml), 'Finanças vazia escreve "Sem dado"');
+  log(!/NaN|Infinity/.test(vazioHtml), 'Finanças vazia sem NaN/Infinity');
+
+  // 2) Só receita (sem despesa): nada de barras/percentuais fabricados.
+  const soReceita = await render('fin-receita', {
+    ...vazio,
+    finances: [{ id: 'r1', date: key(0), type: 'income', amount: 5000, category: 'Fixo', isImpulse: false, note: '' }],
+  });
+  log(/R\$\s?5\.000,00/.test(soReceita), 'Finanças formata em Real (R$ 5.000,00)', (soReceita.match(/R\$\s?[\d.,]+/g) ?? []).slice(0, 3).join(' | '));
+  log(!/NaN|Infinity/.test(soReceita), 'Finanças com só receita sem NaN');
+  log(!/Sem dado[\s\S]{0,40}?R\$\s?0,00/.test(soReceita), 'Sem dado não é R$ 0,00');
+
+  // 3) Mês sem renda (só despesa): alvo dos baldes é "Sem dado", não R$ 0.
+  const soDespesa = await render('fin-despesa', {
+    ...vazio,
+    finances: [{ id: 'd1', date: key(0), type: 'expense', amount: 120.5, category: 'Lazer', isImpulse: true, note: '' }],
+  });
+  log(/Sem renda registrada/.test(soDespesa), 'sem receita → alvo dos baldes diz "sem renda registrada"');
+  log(!/R\$\s?0,00/.test(soDespesa), 'sem receita → nenhum alvo virou R$ 0,00');
+
+  // 4) Valor ilegível não derruba nem vira zero silencioso.
+  const quebrado = await render('fin-quebrado', {
+    ...vazio,
+    finances: [
+      { id: 'q1', date: key(0), type: 'expense', amount: null, category: 'Lazer' },
+      { id: 'q2', date: key(-1), type: 'expense', amount: 30, category: 'Fixo' },
+    ],
+  });
+  log(/sem valor legível/.test(quebrado), 'valor ilegível é avisado, não somado');
+  log(/R\$\s?30,00/.test(quebrado), 'o lançamento bom continua somando (R$ 30,00)');
+}
+
+console.log('\n── Telas: tema Dark Neon Blue Bento aplicado ──');
+{
+  const themeMod = await import(pathToFileURL(path.join(outRoot, 'src/theme.js')).href);
+  themeMod.applyTheme('neonBlue');
+  try {
+    for (const [label, file] of screens) {
+      try {
+        const copy = await withStore(file, 'neon', cheio);
+        const Screen = (await import(pathToFileURL(copy).href)).default;
+        const html = renderToStaticMarkup(React.createElement(Screen));
+        // O fundo do app tem que ser o #08090E do tema. Exceção legítima: o
+        // seletor de tema do Perfil mostra a amostra de TODAS as paletas.
+        const greens = (html.match(/rgba\(5,31,32/g) ?? []).length;
+        const allowed = label === 'Perfil' ? 1 : 0;
+        if (html.length < 200) log(false, `${label} (tema neon): markup vazio`);
+        else if (greens > allowed) log(false, `${label} (tema neon): ${greens} elemento(s) com a cor do Emerald`);
+        else if (!/rgba\(8,9,14/.test(html)) log(false, `${label} (tema neon): fundo #08090E não apareceu`);
+        else log(true, `${label} (tema neon, ${html.length} chars)`);
+      } catch (e) {
+        log(false, `${label} (tema neon): ${e.message}`);
+      }
+    }
+  } finally {
+    themeMod.applyTheme('emerald');
+  }
+}
+
 console.log('\n── Telas: dados corrompidos (null/NaN/texto de backup antigo) ──');
 for (const [label, file] of screens) {
   try {
@@ -612,4 +683,48 @@ for (const [label, file] of screens) {
 }
 
 console.log(`\n${fails === 0 ? '✅' : '❌'} ${pass} telas ok, ${fails} falharam\n`);
+/* ─────── Preview opcional das Finanças (HTML para conferência visual) ───────
+ * `PREVIEW_FINANCES=1 npm run test:screens` grava `docs/design/financas-preview.html`.
+ * Não faz parte da verificação: só serve para olhar o desenho sem instalar o APK.
+ */
+if (process.env.PREVIEW_FINANCES) {
+  try {
+    // O preview é do tema novo: aplica a paleta antes de renderizar.
+    const themeMod = await import(pathToFileURL(path.join(outRoot, 'src/theme.js')).href);
+    themeMod.applyTheme('neonBlue');
+    const copy = await withStore('app/modulo/financas.js', 'preview', {
+      ...cheio,
+      finances: [
+        { id: 'p1', date: key(0), type: 'income', amount: 6200, category: 'Fixo', isImpulse: false, note: 'salário' },
+        { id: 'p2', date: key(0), type: 'expense', amount: 3420, category: 'Fixo', isImpulse: false, note: 'aluguel' },
+        { id: 'p3', date: key(-1), type: 'expense', amount: 89.9, category: 'Alimentação', isImpulse: false, note: 'mercado' },
+        { id: 'p4', date: key(-2), type: 'expense', amount: 210, category: 'Lazer', isImpulse: true, note: 'impulso: delivery' },
+        { id: 'p5', date: key(-3), type: 'income', amount: 450, category: 'Outros', isImpulse: false, note: 'freela' },
+        { id: 'p6', date: key(-40), type: 'income', amount: 6100, category: 'Fixo', isImpulse: false, note: '' },
+        { id: 'p7', date: key(-40), type: 'expense', amount: 2800, category: 'Fixo', isImpulse: false, note: '' },
+        { id: 'p8', date: key(-70), type: 'income', amount: 5400, category: 'Fixo', isImpulse: false, note: '' },
+        { id: 'p9', date: key(-70), type: 'expense', amount: 3100, category: 'Lazer', isImpulse: false, note: '' },
+      ],
+    });
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const body = renderToStaticMarkup(React.createElement(Screen));
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MY PRIME · Finanças (preview)</title>
+<style>
+  html,body{margin:0;background:#000;}
+  body{display:flex;justify-content:center;padding:24px 0;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;}
+  #app{width:412px;min-height:900px;background:#08090E;border-radius:36px;overflow:hidden;
+       border:1px solid #222741;box-shadow:0 0 60px rgba(59,130,246,.25);}
+  #app *{box-sizing:border-box;}
+</style></head><body><div id="app">${body}</div></body></html>`;
+    fs.mkdirSync(path.join(root, 'docs/design'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'docs/design/financas-preview.html'), html);
+    console.log('\npreview: docs/design/financas-preview.html');
+
+  } catch (e) {
+    console.error('preview falhou:', e.message);
+  }
+}
+
 process.exit(fails === 0 ? 0 : 1);

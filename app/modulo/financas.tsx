@@ -1,8 +1,18 @@
+/**
+ * Finanças — Bento Grid "Dark Neon Blue".
+ *
+ * Regras que valem em toda esta tela:
+ *  1. Nenhum número é inventado. Sem lançamento, o card escreve "Sem dado"
+ *     (não R$ 0, não uma barra de exemplo).
+ *  2. O app NÃO guarda dado de cartão: o número mascarado no cartão de saldo é
+ *     decorativo e fixo — não vem de lugar nenhum.
+ *  3. Mês sem dado não vira zero: na linha e nas barras o ponto fica `null`,
+ *     o que quebra a linha e deixa a barra oca.
+ */
 import React, { useMemo, useState } from 'react';
-import { ScrollView, View } from 'react-native';
-import { colors, spacing } from '../../src/theme';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { accent, onAccent, radius, spacing, useTheme } from '../../src/theme';
 import {
-  Card,
   Chip,
   Field,
   Muted,
@@ -14,20 +24,37 @@ import {
   ToggleRow,
 } from '../../src/components/ui';
 import { ModalHeader } from '../../src/components/ModalHeader';
-import { DonutChart, GroupedBars, LineChart } from '../../src/components/charts';
+import {
+  ActivityRow,
+  BalanceCard,
+  BalanceRings,
+  Bento,
+  Glow,
+  IncomeBars,
+  IncomeOutcomeChart,
+  type LineSeries,
+  ThinBar,
+  WeekStrip,
+  type WeekDay,
+} from '../../src/components/BentoFinance';
 import { useStore, newId } from '../../src/lib/store';
-import { addDays, todayKey, monthLabel, MONTHS_SHORT } from '../../src/lib/date';
+import { addDays, formatBRL, monthLabel, MONTHS_SHORT, todayKey, WEEKDAYS_SHORT } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 import { FINANCE_CATEGORIES } from '../../src/lib/types';
-import { BUCKETS, DEFAULT_SPLIT, bucketOf, bucketTargets, daysUntilFirstWant, impulseCostInFutureDays, paydayCheck } from '../../src/lib/finance';
-
-const CATEGORY_COLORS = ['#FF6B35', '#4488FF', '#FF66AA', '#FF4444', '#888888', '#00FF88', '#AA66FF'];
+import {
+  BUCKETS,
+  DEFAULT_SPLIT,
+  bucketOf,
+  bucketTargets,
+  daysUntilFirstWant,
+  impulseCostInFutureDays,
+  paydayCheck,
+} from '../../src/lib/finance';
 
 /**
  * Valor monetário seguro. Um backup antigo/editado pode trazer `null` (o que
  * `JSON.stringify(NaN)` grava) ou número em texto: sem isto, `.toFixed` derruba
- * a tela inteira. Registro fora da faixa não vira R$ 0 na lista — vira 0 só na
- * aritmética, e a tela avisa que há lançamento ilegível.
+ * a tela inteira. Registro ilegível não vira R$ 0 — a tela avisa e ignora.
  */
 function money(value: unknown): number {
   const n =
@@ -39,7 +66,14 @@ function isBrokenMoney(value: unknown): boolean {
   return !Number.isFinite(typeof value === 'number' ? value : Number(String(value).replace(',', '.')));
 }
 
+/** "12 jan" a partir de `YYYY-MM-DD`. */
+function shortDate(iso: string): string {
+  const [, m, d] = iso.split('-');
+  return `${d}/${m}`;
+}
+
 export default function FinanceScreen() {
+  const t = useTheme();
   const store = useStore();
   const [sheet, setSheet] = useState(false);
   const [type, setType] = useState<'income' | 'expense'>('expense');
@@ -49,10 +83,27 @@ export default function FinanceScreen() {
   const [isImpulse, setIsImpulse] = useState(false);
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayKey());
+  const [dayFilter, setDayFilter] = useState<string | null>(null);
+  const [pickedMonth, setPickedMonth] = useState<string | null>(null);
+  const [tooltipIndex, setTooltipIndex] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
 
   const monthK = todayKey().slice(0, 7);
   const monthEntries = store.finances.filter((f) => f.date.startsWith(monthK));
   const brokenCount = store.finances.filter((f) => isBrokenMoney(f.amount)).length;
+
+  /* ───────────────────────────── números do mês ───────────────────────────── */
+
+  const incomeOf = (list: typeof monthEntries) =>
+    list.filter((f) => f.type === 'income').reduce((a, b) => a + money(b.amount), 0);
+  const expenseOf = (list: typeof monthEntries) =>
+    list.filter((f) => f.type === 'expense').reduce((a, b) => a + money(b.amount), 0);
+
+  const monthIncome = incomeOf(monthEntries);
+  const monthExpense = expenseOf(monthEntries);
+
+  // Saldo: só existe se houve algum lançamento no mês. Dois "vazios" não são zero.
+  const monthBalance = monthEntries.length === 0 ? null : monthIncome - monthExpense;
 
   const byMonth = useMemo(() => {
     const map = new Map<string, { income: number; expense: number }>();
@@ -66,147 +117,373 @@ export default function FinanceScreen() {
     return Array.from(map.entries()).sort().slice(-6);
   }, [store.finances]);
 
-  const balanceSeries = useMemo(() => {
-    let acc = 0;
-    return store.finances
-      .slice()
-      .sort((a, b) => (a.date < b.date ? -1 : 1))
-      .map((f) => {
-        acc += f.type === 'income' ? money(f.amount) : -money(f.amount);
-        return { date: f.date, value: acc };
-      });
+  /* ───────────────────────────── seletor semanal ───────────────────────────── */
+
+  const weekDays: WeekDay[] = useMemo(() => {
+    const today = todayKey();
+    // Semana que termina hoje (7 dias), para o dia atual ser o último selecionável.
+    return Array.from({ length: 7 }).map((_, i) => {
+      const key = addDays(today, i - 6);
+      const dow = new Date(`${key}T12:00:00`).getDay();
+      return {
+        date: key,
+        weekday: WEEKDAYS_SHORT[dow] ?? '',
+        day: Number(key.slice(8, 10)),
+        hasEntries: store.finances.some((f) => f.date === key),
+      };
+    });
   }, [store.finances]);
 
-  const expenseByCategory = FINANCE_CATEGORIES.map((cat, i) => ({
-    label: cat,
-    value: monthEntries.filter((f) => f.type === 'expense' && f.category === cat).reduce((a, b) => a + money(b.amount), 0),
-    color: CATEGORY_COLORS[i] ?? colors.textSecondary,
-  })).filter((c) => c.value > 0);
+  const dayEntries = dayFilter ? store.finances.filter((f) => f.date === dayFilter) : [];
 
-  const impulseWeek = store.finances
-    .filter((f) => f.isImpulse && f.date >= addDays(todayKey(), -6))
-    .reduce((a, b) => a + money(b.amount), 0);
-
-  // "Y dias de [meta]": compara o impulso com o custo médio diário declarado no diário.
-  const dailyCostRef = (() => {
-    const costs = store.days
-      .flatMap((d) => d.tasks.map((t) => t.cost ?? ''))
-      .map((c) => /R\$?\s*(\d+(?:[.,]\d+)?)/.exec(c)?.[1])
-      .map((v) => (v ? Number(v.replace(',', '.')) : 0))
-      .filter((v) => v > 0);
-    if (!costs.length) return null;
-    return costs.reduce((a, b) => a + b, 0) / costs.length;
-  })();
-  const impulseDaysEquivalent =
-    impulseWeek > 0 && dailyCostRef
-      ? `≈ ${Math.max(1, Math.round(impulseWeek / dailyCostRef))} custo(s) de oportunidade registrado(s)`
-      : null;
+  /* ───────────────────────────── baldes / pagamento ───────────────────────────── */
 
   const buckets = bucketTargets(store.finances, monthK, DEFAULT_SPLIT);
   const payday = paydayCheck(store.finances, monthK, DEFAULT_SPLIT);
   const firstWantIn = daysUntilFirstWant(store.finances, monthK);
+  const impulseWeek = store.finances
+    .filter((f) => f.isImpulse && f.date >= addDays(todayKey(), -6))
+    .reduce((a, b) => a + money(b.amount), 0);
   const impulseInFutureDays = impulseCostInFutureDays(store.finances, monthK, DEFAULT_SPLIT);
 
+  /* ───────────────────────────── séries dos gráficos ───────────────────────────── */
+
+  // Linha "renda x despesa": 6 meses. `null` onde não houve lançamento nenhum.
+  const lineLabels = byMonth.map(([key]) => MONTHS_SHORT[Number(key.slice(5, 7)) - 1] ?? key);
+  const lineSeries: LineSeries[] = [
+    {
+      key: 'income',
+      label: 'Renda',
+      color: accent(),
+      points: byMonth.map(([, v]) => (v.income > 0 ? v.income : null)),
+    },
+    {
+      key: 'expense',
+      label: 'Despesa',
+      color: t.green,
+      points: byMonth.map(([, v]) => (v.expense > 0 ? v.expense : null)),
+    },
+  ];
+
+  // Barras anuais: 12 meses do ano corrente. O destaque é o mês visto.
+  const yearBars = useMemo(() => {
+    const year = todayKey().slice(0, 4);
+    return Array.from({ length: 12 }).map((_, i) => {
+      const key = `${year}-${String(i + 1).padStart(2, '0')}`;
+      const total = store.finances
+        .filter((f) => f.date.startsWith(key))
+        .reduce((a, b) => a + money(b.amount), 0);
+      const count = store.finances.filter((f) => f.date.startsWith(key)).length;
+      return { month: MONTHS_SHORT[i] ?? key, value: count === 0 ? null : total, key };
+    });
+  }, [store.finances]);
+  const yearTotal = yearBars.reduce((a, b) => a + (b.value ?? 0), 0);
+  const yearLabel = todayKey().slice(0, 4);
+
+  // Variação do mês contra o anterior — só com os dois lados preenchidos.
+  const variation = useMemo(() => {
+    const prevKey = (() => {
+      const d = addDays(`${monthK}-01`, -1);
+      return d.slice(0, 7);
+    })();
+    const prev = store.finances.filter((f) => f.date.startsWith(prevKey));
+    if (!monthEntries.length || !prev.length) return null;
+    const prevIncome = incomeOf(prev);
+    if (prevIncome <= 0) return null;
+    return ((monthIncome - prevIncome) / prevIncome) * 100;
+  }, [store.finances, monthK]);
+
+  /* ───────────────────────────── lista de atividades ───────────────────────────── */
+
+  const recent = store.finances
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .filter((f) => {
+      if (!query.trim()) return true;
+      const q = query.trim().toLowerCase();
+      return `${f.category} ${f.note ?? ''} ${f.date}`.toLowerCase().includes(q);
+    })
+    .slice(0, 8);
+
+  /* ───────────────────────────── tela ───────────────────────────── */
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
-      <ModalHeader title="💰 Finanças" subtitle={`${monthLabel(todayKey())} · ${monthEntries.length} lançamentos`} onAdd={() => setSheet(true)} addLabel="+ Lançamento" />
+    <View style={{ flex: 1, backgroundColor: t.bgPrimary }}>
+      <ModalHeader
+        title="💠 Finanças"
+        subtitle={`${monthLabel(todayKey())} · ${monthEntries.length} lançamento(s)`}
+        onAdd={() => setSheet(true)}
+        addLabel="+ Lançamento"
+      />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60, gap: spacing.md }}>
+        {/* Busca estilo pílula */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: t.bgInput,
+            borderRadius: radius.pill,
+            borderWidth: 1,
+            borderColor: t.border,
+            paddingLeft: spacing.lg,
+            paddingRight: 4,
+            paddingVertical: 4,
+            gap: spacing.sm,
+          }}
+        >
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Buscar categoria, nota ou data…"
+            placeholderTextColor={t.textMuted}
+            style={{ flex: 1, color: t.textPrimary, fontSize: 13, paddingVertical: 8 }}
+            accessibilityLabel="Buscar lançamentos"
+          />
+          <View
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 17,
+              backgroundColor: accent(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Txt variant="caption" color={onAccent()} style={{ fontWeight: '700' }}>
+              ⌕
+            </Txt>
+          </View>
+        </View>
+
         {brokenCount > 0 ? (
-          <Card accent={colors.yellow + '33'}>
-            <Txt variant="caption" color={colors.yellow}>
+          <Bento tone="danger">
+            <Txt variant="caption" color={t.yellow}>
               {brokenCount === 1
                 ? '1 lançamento sem valor legível foi ignorado nas somas (o registro continua na lista).'
                 : `${brokenCount} lançamentos sem valor legível foram ignorados nas somas (os registros continuam na lista).`}
             </Txt>
             <Muted>Corrija ou exclua esses lançamentos para as somas voltarem a fechar.</Muted>
-          </Card>
+          </Bento>
         ) : null}
-        <Row gap={spacing.sm}>
-          <Card style={{ flex: 1 }}>
-            <Txt variant="micro" color={colors.textSecondary}>Receitas do mês</Txt>
-            <Txt variant="h3" color={colors.green}>
-              R$ {monthEntries.filter((f) => f.type === 'income').reduce((a, b) => a + money(b.amount), 0).toFixed(0)}
-            </Txt>
-          </Card>
-          <Card style={{ flex: 1 }}>
-            <Txt variant="micro" color={colors.textSecondary}>Despesas do mês</Txt>
-            <Txt variant="h3" color={colors.red}>
-              R$ {monthEntries.filter((f) => f.type === 'expense').reduce((a, b) => a + money(b.amount), 0).toFixed(0)}
-            </Txt>
-          </Card>
-        </Row>
 
-        <Card accent={colors.red + '33'}>
-          <Txt variant="caption" color={colors.red}>
-            Gastos por impulso esta semana: R$ {impulseWeek.toFixed(0)}
-            {impulseDaysEquivalent ? ` (${impulseDaysEquivalent})` : ''}
-          </Txt>
-          <Muted>
-            {impulseInFutureDays == null
-              ? 'Sem dado de reserva para medir o custo em dias de Futuro.'
-              : impulseInFutureDays === 0
-                ? 'Nenhum impulso no mês: o balde Futuro está intacto.'
-                : `Esse impulso equivale a ${impulseInFutureDays.toFixed(1)} dia(s) de reserva do balde Futuro.`}
-          </Muted>
-        </Card>
+        {/* 1. Saldo + 2. Semana */}
+        <View style={{ position: 'relative' }}>
+          <Glow color={accent()} size={150} style={{ position: 'absolute', right: -50, top: -50 }} />
+          <BalanceCard
+            balance={monthBalance}
+            label={monthBalance == null ? 'Saldo do mês' : `Saldo de ${monthLabel(todayKey())}`}
+            mask="•••• •••• •••• 0000"
+            caption={monthBalance == null ? undefined : `${monthEntries.length} lançamento(s)`}
+          />
+        </View>
 
-        <Txt variant="h3">Três baldes do mês</Txt>
-        <Card>
+        <Bento>
+          <Muted style={{ marginBottom: spacing.sm }}>Últimos 7 dias</Muted>
+          <WeekStrip
+            days={weekDays}
+            selected={dayFilter}
+            onSelect={(d) => {
+              haptic('light');
+              setDayFilter(d);
+            }}
+            onOpenDay={() => undefined}
+          />
+          {dayFilter ? (
+            <View style={{ marginTop: spacing.md, gap: 6 }}>
+              <Txt variant="caption" color={t.textSecondary}>
+                {shortDate(dayFilter)} · {dayEntries.length === 0 ? 'nenhum lançamento' : `${dayEntries.length} lançamento(s)`}
+              </Txt>
+              {dayEntries.length === 0 ? <NoData label="Nada registrado nesse dia" /> : null}
+              {dayEntries.map((f) => (
+                <Row key={f.id} style={{ justifyContent: 'space-between' }}>
+                  <Txt variant="micro" color={t.textMuted}>
+                    {f.category}
+                  </Txt>
+                  <Txt variant="micro" color={f.type === 'income' ? t.green : t.red}>
+                    {f.type === 'income' ? '+' : '-'} {isBrokenMoney(f.amount) ? 'valor ilegível' : formatBRL(money(f.amount))}
+                  </Txt>
+                </Row>
+              ))}
+            </View>
+          ) : null}
+        </Bento>
+
+        {/* 3. Anéis concêntricos: uso x alvo dos baldes */}
+        <Bento>
+          <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <View>
+              <Txt variant="h3">Balanço</Txt>
+              <Muted>{monthLabel(todayKey())} · uso x alvo por balde</Muted>
+            </View>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: accent() }} />
+          </Row>
+          <View style={{ marginTop: spacing.md }}>
+            {buckets.every((b) => b.target == null) ? (
+              <NoData label="Sem renda registrada no mês — não há alvo para medir" />
+            ) : (
+              <BalanceRings
+                rings={buckets.map((b) => ({
+                  key: b.key,
+                  label: `${b.label} (${b.percent}%)`,
+                  ratio: b.ratio,
+                  valueText:
+                    b.target == null ? 'Sem dado' : `${formatBRL(b.used)} / ${formatBRL(b.target)}`,
+                }))}
+              />
+            )}
+          </View>
+        </Bento>
+
+        {/* 4. Renda x despesa (linha com tooltip) */}
+        <Bento>
+          <Txt variant="h3">Renda e despesa</Txt>
+          <Muted style={{ marginBottom: spacing.sm }}>Últimos 6 meses com lançamento</Muted>
+          {byMonth.length >= 2 ? (
+            <IncomeOutcomeChart
+              labels={lineLabels}
+              series={lineSeries}
+              formatValue={(v) => formatBRL(v)}
+              selectedIndex={tooltipIndex}
+              onSelectIndex={setTooltipIndex}
+            />
+          ) : (
+            <NoData label="Gráfico a partir de 2 meses com lançamento" />
+          )}
+        </Bento>
+
+        {/* 5. Barras do ano + 6. Inbox/impulso */}
+        <View style={{ flexDirection: 'row', gap: spacing.md }}>
+          <Bento style={{ flex: 1 }}>
+            <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <Txt variant="caption" color={t.textPrimary}>
+                Renda {yearLabel}
+              </Txt>
+              {variation == null ? null : (
+                <View
+                  style={{
+                    paddingHorizontal: 6,
+                    paddingVertical: 1,
+                    borderRadius: radius.pill,
+                    backgroundColor: (variation >= 0 ? t.green : t.red) + '22',
+                    borderWidth: 1,
+                    borderColor: (variation >= 0 ? t.green : t.red) + '44',
+                  }}
+                >
+                  <Txt variant="micro" color={variation >= 0 ? t.green : t.red} style={{ fontSize: 9 }}>
+                    {variation >= 0 ? '+' : ''}
+                    {variation.toFixed(0)}% vs mês anterior
+                  </Txt>
+                </View>
+              )}
+            </Row>
+            <Txt variant="h3" style={{ marginTop: 2 }}>
+              {yearTotal > 0 ? formatBRL(yearTotal) : 'Sem dado'}
+            </Txt>
+            <View style={{ marginTop: spacing.sm }}>
+              <IncomeBars
+                data={yearBars}
+                highlighted={pickedMonth}
+                onSelect={(m) => {
+                  haptic('light');
+                  setPickedMonth((prev) => (prev === m ? null : m));
+                }}
+              />
+            </View>
+            {pickedMonth ? (
+              <Muted style={{ marginTop: 6 }}>
+                {pickedMonth}:{' '}
+                {yearBars.find((b) => b.month === pickedMonth)?.value == null
+                  ? 'sem lançamento'
+                  : formatBRL(yearBars.find((b) => b.month === pickedMonth)?.value ?? 0)}
+              </Muted>
+            ) : (
+              <Muted style={{ marginTop: 6 }}>Toque numa barra para ver o mês.</Muted>
+            )}
+          </Bento>
+
+          <Bento style={{ width: 128 }} tone={impulseWeek > 0 ? 'danger' : 'plain'}>
+            <View
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 12,
+                backgroundColor: accent() + '22',
+                borderWidth: 1,
+                borderColor: accent() + '44',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Txt variant="caption" color={accent()}>
+                ⚡
+              </Txt>
+            </View>
+            <Txt variant="caption" color={t.textPrimary} style={{ marginTop: spacing.sm }}>
+              Impulso
+            </Txt>
+            <Muted>7 dias</Muted>
+            <Txt variant="caption" color={impulseWeek > 0 ? t.red : t.textSecondary} style={{ marginTop: 2 }}>
+              {impulseWeek > 0 ? formatBRL(impulseWeek) : 'Sem dado'}
+            </Txt>
+          </Bento>
+        </View>
+
+        {/* 7. Três baldes (detalhe com barra) */}
+        <Bento>
+          <Txt variant="h3">Três baldes do mês</Txt>
           <Muted>
-            Divisão {BUCKETS.map((b) => `${DEFAULT_SPLIT[b.key]}% ${b.label}`).join(' · ')} da renda do mês.
-            O balde Futuro sai no dia do pagamento, não no fim do mês.
+            Divisão {BUCKETS.map((b) => `${DEFAULT_SPLIT[b.key]}% ${b.label}`).join(' · ')} da renda do mês. O balde
+            Futuro sai no dia do pagamento, não no fim do mês.
           </Muted>
           {buckets.map((b) => (
             <View key={b.key} style={{ marginTop: spacing.md, gap: 4 }}>
               <Row style={{ justifyContent: 'space-between' }}>
-                <Txt variant="caption" color={colors.textPrimary}>
+                <Txt variant="caption" color={t.textPrimary}>
                   {b.label} · {b.percent}%
                 </Txt>
-                <Txt variant="caption" color={b.ratio == null ? colors.textMuted : b.ratio > 1 ? colors.red : colors.green}>
-                  {b.target == null ? 'Sem dado' : `R$ ${b.used.toFixed(0)} / R$ ${b.target.toFixed(0)}`}
+                <Txt
+                  variant="caption"
+                  color={b.ratio == null ? t.textMuted : b.ratio > 1 ? t.red : t.green}
+                >
+                  {b.target == null ? 'Sem dado' : `${formatBRL(b.used)} / ${formatBRL(b.target)}`}
                 </Txt>
               </Row>
               {b.ratio == null ? (
                 <Muted>Sem renda registrada no mês — alvo não calculado.</Muted>
               ) : (
                 <>
-                  <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.bgElevated, overflow: 'hidden' }}>
-                    <View
-                      style={{
-                        height: 6,
-                        width: `${Math.min(100, Math.round(b.ratio * 100))}%`,
-                        backgroundColor: b.ratio > 1 ? colors.red : colors.cyan,
-                      }}
-                    />
-                  </View>
+                  <ThinBar ratio={b.ratio} color={b.ratio > 1 ? t.red : accent()} />
                   <Muted>
                     {b.left == null
                       ? 'Sem dado'
                       : b.left >= 0
-                        ? `Sobra R$ ${b.left.toFixed(0)} no balde`
-                        : `Estourou R$ ${Math.abs(b.left).toFixed(0)} do balde`}
+                        ? `Sobra ${formatBRL(b.left)} no balde`
+                        : `Estourou ${formatBRL(Math.abs(b.left))} do balde`}
                   </Muted>
                 </>
               )}
             </View>
           ))}
-        </Card>
+        </Bento>
 
-        <Txt variant="h3">Regra do Dia de Pagamento</Txt>
-        <Card accent={(payday?.gap ?? 0) < 0 ? colors.yellow + '33' : undefined}>
+        {/* 8. Regra do dia de pagamento */}
+        <Bento tone={(payday?.gap ?? 0) < 0 ? 'danger' : 'plain'}>
+          <Txt variant="h3">Dia de pagamento</Txt>
           {payday == null ? (
             <NoData label="Sem receita registrada neste mês — a regra só mede a partir do dia do pagamento" />
           ) : (
             <>
-              <Txt variant="caption" color={colors.textPrimary}>
-                Pagamento em {payday.date} · R$ {money(payday.received).toFixed(0)}
+              <Txt variant="caption" color={t.textPrimary} style={{ marginTop: 4 }}>
+                Pagamento em {shortDate(payday.date)} · {formatBRL(money(payday.received))}
               </Txt>
               {payday.expected.map((e) => (
                 <Row key={e.key} style={{ justifyContent: 'space-between', marginTop: 4 }}>
-                  <Txt variant="caption" color={colors.textSecondary}>
+                  <Txt variant="caption" color={t.textSecondary}>
                     Separar em {e.label}
                   </Txt>
-                  <Txt variant="caption" color={colors.textPrimary}>R$ {money(e.amount).toFixed(0)}</Txt>
+                  <Txt variant="caption" color={t.textPrimary}>
+                    {formatBRL(money(e.amount))}
+                  </Txt>
                 </Row>
               ))}
               <Muted style={{ marginTop: spacing.sm }}>{payday.verdict}</Muted>
@@ -215,67 +492,93 @@ export default function FinanceScreen() {
                   ? 'Sem dado de gasto de vontade neste mês.'
                   : `Primeiro gasto de vontade: ${firstWantIn} dia(s) depois do pagamento.`}
               </Muted>
+              <Muted>
+                {impulseInFutureDays == null
+                  ? 'Sem dado de reserva para medir o impulso em dias de Futuro.'
+                  : impulseInFutureDays === 0
+                    ? 'Nenhum impulso no mês: o balde Futuro está intacto.'
+                    : `Impulso equivale a ${impulseInFutureDays.toFixed(1)} dia(s) de reserva do Futuro.`}
+              </Muted>
             </>
           )}
-        </Card>
+        </Bento>
 
-        <Card>
-          <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Receita vs despesa (6 meses)</Txt>
-          {byMonth.length >= 2 ? (
-            <GroupedBars
-              data={byMonth.map(([key, v]) => ({ label: MONTHS_SHORT[Number(key.slice(5, 7)) - 1] ?? key, a: v.income, b: v.expense }))}
-            />
-          ) : (
-            <NoData label="Sem lançamentos" />
-          )}
-        </Card>
-
-        <Card>
-          <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Despesas por categoria (mês)</Txt>
-          {expenseByCategory.length ? (
-            <DonutChart data={expenseByCategory} />
-          ) : (
+        {/* 9. Envelope/sobra por categoria do mês */}
+        <Bento>
+          <Txt variant="h3">Categorias do mês</Txt>
+          {monthEntries.filter((f) => f.type === 'expense').length === 0 ? (
             <NoData label="Sem despesa lançada neste mês" />
-          )}
-        </Card>
-
-        <Card>
-          <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Saldo acumulado</Txt>
-          {balanceSeries.length >= 3 ? (
-            <LineChart
-              labels={balanceSeries.map((b) => b.date.slice(8, 10))}
-              series={[{ name: 'Saldo', color: colors.cyan, points: balanceSeries.map((b) => b.value) }]}
-              max={Math.max(100, ...balanceSeries.map((b) => b.value))}
-            />
           ) : (
-            <NoData label="Gráficos a partir de 3 pontos de dado" />
+            (() => {
+              const total = expenseOf(monthEntries);
+              return FINANCE_CATEGORIES.map((cat) => {
+                const value = monthEntries
+                  .filter((f) => f.type === 'expense' && f.category === cat)
+                  .reduce((a, b) => a + money(b.amount), 0);
+                if (value <= 0) return null;
+                return (
+                  <View key={cat} style={{ marginTop: spacing.sm, gap: 4 }}>
+                    <Row style={{ justifyContent: 'space-between' }}>
+                      <Txt variant="caption" color={t.textPrimary}>
+                        {cat}
+                      </Txt>
+                      <Txt variant="caption" color={t.textSecondary}>
+                        {formatBRL(value)} · {Math.round((value / total) * 100)}%
+                      </Txt>
+                    </Row>
+                    <ThinBar ratio={total > 0 ? value / total : null} color={accent()} />
+                  </View>
+                );
+              });
+            })()
           )}
-        </Card>
+        </Bento>
 
-        <Txt variant="h3">Lançamentos recentes</Txt>
-        {store.finances.length === 0 ? <NoData label="Nenhum lançamento" /> : null}
-        {store.finances
-          .slice()
-          .sort((a, b) => (a.date < b.date ? 1 : -1))
-          .slice(0, 12)
-          .map((f) => (
-            <Card key={f.id} style={{ padding: spacing.md }}>
-              <Row style={{ justifyContent: 'space-between' }}>
-                <View style={{ flex: 1 }}>
-                  <Txt variant="caption" color={colors.textPrimary}>
-                    {f.category} · {bucketOf(f.category)} {f.isImpulse ? '⚡' : ''}
-                  </Txt>
-                  <Muted>{f.date} {f.note ? `· ${f.note}` : ''}</Muted>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Txt variant="caption" color={f.type === 'income' ? colors.green : colors.red}>
-                    {f.type === 'income' ? '+' : '-'} R$ {isBrokenMoney(f.amount) ? 'valor ilegível' : money(f.amount).toFixed(2)}
-                  </Txt>
-                  <Txt variant="micro" color={colors.textMuted} onPress={() => store.deleteFinance(f.id)}>excluir</Txt>
-                </View>
-              </Row>
-            </Card>
-          ))}
+        {/* 10. Atividades recentes */}
+        <Bento>
+          <Row style={{ justifyContent: 'space-between', marginBottom: spacing.sm }}>
+            <Txt variant="h3">Atividade recente</Txt>
+            <Txt variant="micro" color={t.textMuted}>
+              {query.trim() ? `${recent.length} de ${store.finances.length}` : `${store.finances.length} no total`}
+            </Txt>
+          </Row>
+          {store.finances.length === 0 ? <NoData label="Nenhum lançamento" /> : null}
+          {store.finances.length > 0 && recent.length === 0 ? <NoData label="Nada encontrado na busca" /> : null}
+          <View style={{ gap: spacing.sm }}>
+            {recent.map((f) => (
+              <ActivityRow
+                key={f.id}
+                title={f.category}
+                subtitle={`${shortDate(f.date)} · ${bucketOf(f.category)}${f.note ? ` · ${f.note}` : ''}`}
+                amountText={
+                  isBrokenMoney(f.amount)
+                    ? 'valor ilegível'
+                    : `${f.type === 'income' ? '+' : '-'} ${formatBRL(money(f.amount))}`
+                }
+                amountColor={f.type === 'income' ? t.green : t.red}
+                badge={f.isImpulse ? 'impulso' : undefined}
+                onPress={() => {
+                  haptic('light');
+                  setDayFilter(f.date);
+                }}
+                right={
+                  <Pressable
+                    onPress={() => {
+                      haptic('warning');
+                      store.deleteFinance(f.id);
+                    }}
+                    accessibilityLabel={`Excluir lançamento de ${f.category}`}
+                    hitSlop={8}
+                  >
+                    <Txt variant="micro" color={t.textMuted}>
+                      excluir
+                    </Txt>
+                  </Pressable>
+                }
+              />
+            ))}
+          </View>
+        </Bento>
       </ScrollView>
 
       <Sheet
@@ -310,17 +613,24 @@ export default function FinanceScreen() {
         }
       >
         <Row gap={spacing.sm}>
-          <Chip label="Despesa" color={colors.red} selected={type === 'expense'} onPress={() => setType('expense')} />
-          <Chip label="Receita" color={colors.green} selected={type === 'income'} onPress={() => setType('income')} />
+          <Chip label="Despesa" color={t.red} selected={type === 'expense'} onPress={() => setType('expense')} />
+          <Chip label="Receita" color={t.green} selected={type === 'income'} onPress={() => setType('income')} />
         </Row>
         <Field label="Valor (R$)" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" />
-        <Txt variant="caption" color={colors.textSecondary}>Categoria</Txt>
+        <Txt variant="caption" color={t.textSecondary}>
+          Categoria
+        </Txt>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {FINANCE_CATEGORIES.map((c) => (
             <Chip key={c} label={c} selected={category === c} onPress={() => setCategory(c)} />
           ))}
         </View>
-        <ToggleRow label="Gasto por impulso" sub="Marca para o cálculo de custo real" value={isImpulse} onChange={setIsImpulse} />
+        <ToggleRow
+          label="Gasto por impulso"
+          sub="Marca para o cálculo de custo real"
+          value={isImpulse}
+          onChange={setIsImpulse}
+        />
         {isImpulse ? (
           <Field
             label="Por que foi impulso?"

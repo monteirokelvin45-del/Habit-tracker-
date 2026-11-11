@@ -36,6 +36,15 @@ export interface Palette {
   interactive: string;
   track: string;
   black: string;
+  /**
+   * Acento neon (glow). Opcional: temas antigos caem no `cyan`/`green`.
+   * No tema `neonBlue` é o azul elétrico #3B82F6.
+   */
+  neon?: string;
+  /** Segundo tom do acento (gradiente do cartão de saldo). */
+  neonDeep?: string;
+  /** Cor de texto sobre o acento neon (contraste). */
+  onNeon?: string;
   /** 6 tons da escala de score (heatmap / anel / waffle). */
   scale: [string, string, string, string, string, string];
 }
@@ -161,6 +170,46 @@ export const THEMES: Record<ThemeId, { label: string; swatch: string; palette: P
       scale: ['#001D3D', '#002855', '#003566', '#0077B6', '#00B4D8', '#90E0EF'],
     },
   },
+  /**
+   * Dark Neon Blue Bento — inspirado em dashboard financeiro moderno.
+   * Fundo #08090E, superfícies #121522, acento azul elétrico #3B82F6.
+   * `bgSubtle`/`bgInput` são os "poços" (dia do calendário, barra vazia).
+   */
+  neonBlue: {
+    label: 'Dark Neon Blue Bento',
+    swatch: '#3B82F6',
+    palette: {
+      bgPrimary: '#08090E',
+      bgCard: '#121522',
+      bgElevated: '#171B2C',
+      bgInput: '#0D1019',
+      bgSubtle: '#0D1019',
+      green: '#22D3A7',
+      greenNeon: '#22D3A7',
+      red: '#F26D6D',
+      yellow: '#F5B33F',
+      purple: '#9B8CFF',
+      orange: '#FF8A5B',
+      blue: '#3B82F6',
+      cyan: '#2563EB',
+      pink: '#E179B8',
+      textPrimary: '#F5F7FF',
+      textSecondary: '#9AA4C0',
+      textMuted: '#5C6482',
+      textFaint: '#2A3050',
+      border: '#222741',
+      borderAccent: '#3B82F6',
+      interactive: '#3B82F6',
+      track: '#1A1F33',
+      black: '#000000',
+      neon: '#3B82F6',
+      neonDeep: '#2563EB',
+      // Branco sobre #3B82F6 dá 3.68:1 (reprova AA). Texto escuro sobre a pílula
+      // neon dá 5.41:1 — e ainda parece mais "elétrico" que branco.
+      onNeon: '#08090E',
+      scale: ['#0D1019', '#16203A', '#1B2F5C', '#22488F', '#2C64C9', '#3B82F6'],
+    },
+  },
 };
 
 /** Paleta ativa. Objeto mutável: ver comentário no topo do arquivo. */
@@ -169,6 +218,12 @@ export const colors: Palette = { ...THEMES.emerald.palette };
 /** Aplica um tema (mutação in-place para os imports diretos continuarem válidos). */
 export function applyTheme(id: ThemeId): void {
   const palette = THEMES[id]?.palette ?? THEMES.emerald.palette;
+  // `Object.assign` sozinho deixa lixo para trás: campos opcionais que existem
+  // só em alguns temas (`neon`, `neonDeep`, `onNeon`) sobreviviam à troca e o
+  // tema Emerald continuava com o azul do Neon. Limpa antes de aplicar.
+  for (const key of Object.keys(colors) as (keyof Palette)[]) {
+    if (!(key in palette)) delete (colors as Partial<Palette>)[key];
+  }
   Object.assign(colors, palette);
 }
 
@@ -297,4 +352,25 @@ export function mindsetOfDay(dateKey: string): string {
   let hash = 0;
   for (let i = 0; i < dateKey.length; i++) hash = (hash * 31 + dateKey.charCodeAt(i)) % 100003;
   return MINDSETS[hash % MINDSETS.length] ?? MINDSETS[0]!;
+}
+
+/* ─────────────────────── Acento neon (glow) ─────────────────────── */
+
+/**
+ * Cor de acento do tema ativo. Usa `neon` quando existe e cai no `cyan` nos
+ * temas antigos — assim a tela de Finanças ganha o azul elétrico no tema novo
+ * sem mudar de cara nos outros quatro.
+ */
+export function accent(): string {
+  return colors.neon ?? colors.cyan;
+}
+
+/** Acento escuro (para o fim do gradiente do cartão). */
+export function accentDeep(): string {
+  return colors.neonDeep ?? colors.cyan;
+}
+
+/** Texto legível sobre o acento. */
+export function onAccent(): string {
+  return colors.onNeon ?? colors.black;
 }

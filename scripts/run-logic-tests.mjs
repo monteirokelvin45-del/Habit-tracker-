@@ -36,6 +36,24 @@ for (const file of files) {
   fs.writeFileSync(dest, fixed);
 }
 
+// Tema (src/theme.ts) depende do store: compila à parte, com o store trocado
+// por um stub mínimo — o teste só lê paletas, não reage a mudança de tema.
+{
+  const file = path.join(root, 'src/theme.ts');
+  const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    fileName: file,
+  }).outputText;
+  const fixed = js
+    .replace(/from '(\.[^']+)'/g, (m, p) => (p.endsWith('.mjs') ? m : `from '${p}.mjs'`))
+    .replace(/from '\.\/lib\/store'/g, "from './theme-store-stub.mjs'");
+  fs.writeFileSync(path.join(outRoot, 'theme.mjs'), fixed);
+  fs.writeFileSync(
+    path.join(outRoot, 'theme-store-stub.mjs'),
+    "export const useStore = (sel) => (sel ? sel({ settings: { theme: 'emerald' } }) : { settings: { theme: 'emerald' } });\n",
+  );
+}
+
 // Config do app: app.json e app.config.ts descrevem os MESMOS widgets. Quando
 // divergem, o APK sai com o app.json e a config promete outra coisa — o teste
 // compara os dois arquivos de verdade.
@@ -1571,6 +1589,48 @@ console.log('\n── Sanitização de entrada (storage/backup) ──');
   })());
 }
 
+/* ═══════════════ Design: tema Dark Neon Blue Bento ═══════════════ */
+
+console.log('\n── Tema neonBlue (Dark Neon Blue Bento) ──');
+{
+  const theme = await import(path.join(outRoot, 'theme.mjs'));
+  const palette = theme.THEMES.neonBlue?.palette;
+  check('tema neonBlue existe', !!palette);
+  check('fundo #08090E', palette?.bgPrimary === '#08090E', String(palette?.bgPrimary));
+  check('card #121522', palette?.bgCard === '#121522', String(palette?.bgCard));
+  check('acento é azul elétrico #3B82F6', palette?.neon === '#3B82F6' && palette?.neonDeep === '#2563EB', `${palette?.neon}/${palette?.neonDeep}`);
+
+  // Contraste: texto sobre fundo/card. Abaixo de 4.5:1 é ilegível no sol.
+  const lum = (hex) => {
+    const c = hex.replace('#', '');
+    const v = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
+    const lin = v.map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  };
+  const ratio = (a, b) => {
+    const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (l1 + 0.05) / (l2 + 0.05);
+  };
+  const r = ratio(palette.textPrimary, palette.bgPrimary);
+  check('texto principal sobre o fundo tem contraste >= 4.5', r >= 4.5, `${r.toFixed(2)}:1`);
+  const r2 = ratio(palette.textSecondary, palette.bgCard);
+  check('texto secundário sobre o card tem contraste >= 4.5', r2 >= 4.5, `${r2.toFixed(2)}:1`);
+  const r3 = ratio(palette.textMuted, palette.bgCard);
+  check('texto discreto é legível o bastante (>= 3)', r3 >= 3, `${r3.toFixed(2)}:1`);
+  const r4 = ratio(palette.onNeon, palette.neon);
+  check('texto sobre o azul neon tem contraste >= 4.5', r4 >= 4.5, `${r4.toFixed(2)}:1`);
+
+  // Nenhum tema antigo pode quebrar: acento tem fallback.
+  check('temas antigos continuam sem neon (fallback cobre)', theme.THEMES.emerald.palette.neon === undefined);
+  check('applyTheme troca a paleta mutável', (() => {
+    theme.applyTheme('neonBlue');
+    const ok = theme.colors.bgPrimary === '#08090E' && theme.accent() === '#3B82F6';
+    theme.applyTheme('emerald');
+    return ok && theme.colors.bgPrimary === '#051F20' && theme.accent() === theme.colors.cyan;
+  })());
+  check('isThemeId aceita o tema novo e recusa lixo', theme.isThemeId('neonBlue') && !theme.isThemeId('hacker'));
+}
+
 /* ═══════════════ AUDITORIA: app.json e app.config.ts não podem divergir ═══════════════ */
 
 console.log('\n── Configuração: app.json x app.config.ts ──');
@@ -1636,6 +1696,34 @@ console.log('\n── Importador: o resumo conta o que foi ignorado ──');
   const comRuido = importer.readPlan('# Treino\n- ok\n- Correr 5km', 'plano.txt', base);
   check('linha curta demais conta como ignorada, não como meta', comRuido.goals.length === 1 && comRuido.ignoredLines === 1, `metas=${comRuido.goals.length} ignored=${comRuido.ignoredLines}`);
   check('contagem de ignoradas sobe com ruído real', comRuido.ignoredLines > comSecao.ignoredLines, `${comSecao.ignoredLines} → ${comRuido.ignoredLines}`);
+}
+
+/* ═══════════════ Formatação de dinheiro (pt-BR, sem depender de ICU) ═══════════════ */
+
+console.log('\n── formatBRL ──');
+{
+  const d = await import(path.join(outRoot, 'lib/date.mjs'));
+  check('milhar com ponto e centavos com vírgula', d.formatBRL(1234.5) === 'R$ 1.234,50', d.formatBRL(1234.5));
+  check('milhão', d.formatBRL(1234567.89) === 'R$ 1.234.567,89', d.formatBRL(1234567.89));
+  check('sem centavos quando pedido', d.formatBRL(1234.5, { decimals: 0 }) === 'R$ 1.235', d.formatBRL(1234.5, { decimals: 0 }));
+  check('negativo', d.formatBRL(-89.9) === '-R$ 89,90', d.formatBRL(-89.9));
+  check('zero é zero (quem decide "Sem dado" é a tela)', d.formatBRL(0) === 'R$ 0,00', d.formatBRL(0));
+  check('NaN não imprime NaN', d.formatBRL(Number.NaN) === 'Sem dado', d.formatBRL(Number.NaN));
+  check('Infinity não imprime Infinity', d.formatBRL(Number.POSITIVE_INFINITY) === 'Sem dado');
+  check('centavo único', d.formatBRL(0.05) === 'R$ 0,05', d.formatBRL(0.05));
+  check('arredonda para cima', d.formatBRL(9.999) === 'R$ 10,00', d.formatBRL(9.999));
+
+  // O veredito do dia de pagamento não pode sair com número cru.
+  const finance = await import(path.join(outRoot, 'lib/finance.mjs'));
+  const pay = finance.paydayCheck(
+    [
+      { id: 'a', date: '2026-11-05', type: 'income', amount: 6200, category: 'Fixo', isImpulse: false, note: '' },
+      { id: 'b', date: '2026-11-06', type: 'expense', amount: 500, category: 'Investimento', isImpulse: false, note: '' },
+    ],
+    '2026-11',
+    { necessidade: 50, vontade: 30, futuro: 20 },
+  );
+  check('veredito do pagamento usa R$ formatado', /R\$ [\d.]+,\d{2}|R\$ [\d.]+/.test(pay.verdict) && !/R\$ \d{4,}/.test(pay.verdict), pay.verdict);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);

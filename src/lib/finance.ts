@@ -10,6 +10,7 @@
  * separado de cada balde no pagamento e quanto realmente foi lançado depois dele.
  */
 
+import { formatBRL } from './date';
 import type { FinanceEntry } from './types';
 
 export type BucketKey = 'necessidade' | 'vontade' | 'futuro';
@@ -161,9 +162,9 @@ export function paydayCheck(
   if (futureTarget === 0) {
     verdict = 'Balde Futuro está em 0% da divisão: nada foi reservado no pagamento.';
   } else if (gap >= 0) {
-    verdict = `Regra cumprida: R$ ${reserved.toFixed(0)} separados no pagamento (alvo R$ ${futureTarget.toFixed(0)}).`;
+    verdict = `Regra cumprida: ${formatBRL(reserved, { decimals: 0 })} separados no pagamento (alvo ${formatBRL(futureTarget, { decimals: 0 })}).`;
   } else {
-    verdict = `Faltou separar R$ ${Math.abs(gap).toFixed(0)} no dia ${biggest.date} — o balde Futuro saiu depois dos outros.`;
+    verdict = `Faltou separar ${formatBRL(Math.abs(gap), { decimals: 0 })} no dia ${biggest.date} — o balde Futuro saiu depois dos outros.`;
   }
 
   return { date: biggest.date, received: biggest.amount, expected, reserved, gap, verdict };

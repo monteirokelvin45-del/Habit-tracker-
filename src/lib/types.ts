@@ -191,7 +191,7 @@ export interface WeightEntry {
   };
 }
 
-export type ThemeId = 'emerald' | 'golden' | 'cyberpunk' | 'ocean';
+export type ThemeId = 'emerald' | 'golden' | 'cyberpunk' | 'ocean' | 'neonBlue';
 
 export interface Settings {
   /** Tema visual ativo (Perfil → Aparência). */

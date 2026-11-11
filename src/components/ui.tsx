@@ -28,6 +28,7 @@ export function Txt({
   children,
   numberOfLines,
   onPress,
+  upper,
 }: {
   variant?: TextVariant;
   color?: string;
@@ -35,6 +36,12 @@ export function Txt({
   children?: React.ReactNode;
   numberOfLines?: number;
   onPress?: () => void;
+  /**
+   * `false` desliga o CAIXA ALTA de `micro`/`label`. Necessário para rótulo que
+   * é conteúdo (mês abreviado, sigla de dia, unidade) — "OUT" e "QUI" viram
+   * palavras erradas quando o texto é dado, não decoração.
+   */
+  upper?: boolean;
 }) {
   useTheme(); // re-render na troca de tema
   return (
@@ -44,7 +51,7 @@ export function Txt({
       style={[
         type[variant] as any,
         { color },
-        variant === 'micro' && { textTransform: 'uppercase', letterSpacing: 0.6 },
+        variant === 'micro' && upper !== false && { textTransform: 'uppercase', letterSpacing: 0.6 },
         style,
       ]}
     >

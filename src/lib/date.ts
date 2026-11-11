@@ -150,4 +150,22 @@ export function relevantDateLabel(count: number): string {
   return `${count} ${count === 1 ? 'dia' : 'dias'}`;
 }
 
+/**
+ * Dinheiro em Real, com separador nacional: `1234.5` → `R$ 1.234,50`.
+ *
+ * `toLocaleString('pt-BR')` depende do ICU do runtime: no Android com Hermes o
+ * locale pode cair para en-US e sair `R$ 1,234.50`. Aqui a formatação é manual,
+ * então é igual em qualquer aparelho (e testável).
+ */
+export function formatBRL(value: number, opts: { decimals?: 0 | 2 } = {}): string {
+  const decimals = opts.decimals ?? 2;
+  if (!Number.isFinite(value)) return 'Sem dado';
+  const negative = value < 0;
+  const fixed = Math.abs(value).toFixed(decimals);
+  const [int, frac] = fixed.split('.');
+  const groups = (int ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const tail = decimals === 0 || !frac ? '' : `,${frac}`;
+  return `${negative ? '-' : ''}R$ ${groups}${tail}`;
+}
+
 export { MONTHS, MONTHS_SHORT, WEEKDAYS, WEEKDAYS_SHORT };

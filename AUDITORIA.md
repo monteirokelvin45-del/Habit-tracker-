@@ -272,6 +272,61 @@ com amostra curta → `null`, `trendLine` confiável só com 7+ pontos, e 11 cen
 2. **PDF enviado** não é lido (binário); o app diz isso em vez de fingir extração.
 3. **Widget** só roda em APK/dev build, e o teste de layout é estrutural (não mede o launcher real).
 
+## Finanças — Bento Grid "Dark Neon Blue"
+
+Redesenho do módulo financeiro inspirado no dashboard de referência enviado, adaptado ao que o app
+**é** (React Native, não web) e ao que o app **sabe** (dado local, sem número de exemplo).
+
+### O que mudou na cara
+
+| Referência (web) | No app (React Native) |
+|---|---|
+| Tailwind + Lucide | estilos inline + `react-native-svg` (já era dependência; **nenhuma lib nova**) |
+| `bg-[#08090E]` | tema `neonBlue` (`bgPrimary #08090E`, `bgCard #121522`, acento `#3B82F6`/`#2563EB`) |
+| `rounded-3xl` | `borderRadius: 24` |
+| `drop-shadow-[0_0_15px_...]` | `shadowColor/Opacity/Radius` + halo em camadas (`<Glow>`) |
+| gradiente do cartão | `<Svg><LinearGradient>` por baixo do conteúdo |
+
+Tema novo entra no seletor do Perfil automaticamente (`Object.keys(THEMES)`), e `bgSubtle`/`bgInput`
+são os "poços" (dia do calendário, barra vazia, pílula de busca).
+
+### Componentes criados (`src/components/BentoFinance.tsx`)
+
+`Bento` (card com borda fina + sombra), `Glow` (halo), `ThinBar`, `BalanceCard` (gradiente neon, cartão
+mascarado **decorativo** — o app não guarda dado de cartão), `BalanceRings` (anéis concêntricos),
+`WeekStrip` (seletor semanal com ponto = dia com lançamento), `IncomeOutcomeChart` (multi-linha com
+tooltip ao toque), `IncomeBars` (12 barras finas com destaque), `ActivityRow`.
+
+### Adaptações obrigatórias (não são enfeite)
+
+1. **Nada de valor inventado.** A referência mostra `$5,226.99`, `+22%`, `R$ 3.420`, `25 Unread Messages`.
+   Nada disso entra: saldo do mês vem dos lançamentos; sem lançamento → "Sem dado". A variação
+   percentual só aparece com os dois meses preenchidos. Não existe "inbox" no app — o card virou
+   **Impulso (7 dias)**, que é dado real.
+2. **Mês sem dado não é zero.** `null` quebra a linha do gráfico e deixa a barra oca; zero seria mentira.
+3. **`formatBRL` sem ICU.** `toLocaleString('pt-BR')` cai para en-US em Hermes/Android e imprime
+   `R$ 1,234.50`. Formatação manual, testada: `1234.5 → R$ 1.234,50`.
+
+### Defeitos que o redesenho expôs (e foram corrigidos)
+
+- **`applyTheme` deixava lixo**: `Object.assign` não remove chaves ausentes, então o `neon` do tema novo
+  sobrevivia ao voltar para o Emerald (o Emerald ficava com acento azul). Agora limpa antes de aplicar.
+- **`variant="micro"` forçava CAIXA ALTA** em todo texto pequeno: mês saía "OUT", dia saía "QUI", e
+  `5000` virava `8900`… não — a sigla virava palavra errada. `Txt` ganhou `upper={false}` para rótulo
+  que é conteúdo, e a tela parou de chamar `.toUpperCase()` no dia da semana.
+- **Contraste**: branco sobre `#3B82F6` dá 3.68:1 (reprova AA). Texto da pílula neon agora é `#08090E`
+  sobre o azul → 5.41:1.
+- **Veredito do dia de pagamento** imprimia `R$ 1240` cru (sem milhar). Passou a usar `formatBRL`.
+
+### Verificação
+
+- 495 lógica (tema, contraste, `formatBRL`, config), 62 store, 42 renders, **94 telas**
+  (21 telas × 4 cenários: histórico, primeiro uso, tema neon e dado corrompido, + 7 checagens
+  específicas de Finanças: vazio não inventa valor, Real formatado, sem receita → "sem renda
+  registrada", valor ilegível avisado e não somado).
+- Preview fiel em `docs/design/financas-preview.html` (`PREVIEW_FINANCES=1 npm run test:screens`):
+  é o DOM do react-native-web com os estilos reais, para conferir a composição sem emulador.
+
 ## Dados (AsyncStorage)
 
 Todas as chaves do briefing existem ✅ + extras declarados: `ayanokoji`, `weeklyFocus`,
@@ -399,13 +454,13 @@ agora são reagendados 1× por dia, não a cada edição).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **474/474** (modos, score, streaks, cobrança, gate de 7 dias,
+- `node scripts/run-logic-tests.mjs` → **495/495** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
 - `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
-- `node scripts/render-screens-smoke.mjs` → **63/63** (21 telas × 3 cenários: com histórico, primeiro uso
+- `node scripts/render-screens-smoke.mjs` → **94/94** (21 telas × 3 cenários: com histórico, primeiro uso
   e **dados corrompidos** — `null`/`NaN`/texto de backup antigo)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200
 - `npx expo prebuild -p android` → `Prime.java` + `Constancia.java`,
