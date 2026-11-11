@@ -152,8 +152,10 @@ Todas implementadas e cobertas por teste ✅ (ver tabela no README).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **54/54** (modos, score, streaks, cobrança, gate de 7 dias,
-  zona de perigo, recompensas, badges, parser, widget)
+- `node scripts/run-logic-tests.mjs` → **132/132** (modos, score, streaks, cobrança, gate de 7 dias,
+  zona de perigo, recompensas, badges, parser, importador, mural de constância, widget principal e
+  widget do mural — incluindo render estrutural dos dois widgets)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200
-- `npx expo prebuild -p android` → `Prime.java`, `widgetprovider_prime.xml`, `<receiver>` no manifest
+- `npx expo prebuild -p android` → `Prime.java` + `Constancia.java`,
+  `widgetprovider_prime.xml` + `widgetprovider_constancia.xml`, dois `<receiver>` no manifest
 - `npx expo config` → plugins aplicados (splash, notifications, image-picker, widget)

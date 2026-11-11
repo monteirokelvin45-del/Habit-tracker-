@@ -32,21 +32,26 @@ export default function WidgetScreen() {
       const { requestWidgetUpdate } = await import('react-native-android-widget');
       const { PrimeWidget } = await import('../../src/widget/PrimeWidget');
       const { ConstancyWidget } = await import('../../src/widget/ConstancyWidget');
-      let found = 0;
+      // requestWidgetUpdate resolve `void`: o único sinal de "não achei widget" é o
+      // callback widgetNotFound, disparado por widget ausente na tela inicial.
+      let missing = 0;
+      const data = useStore.getState();
       await requestWidgetUpdate({
         widgetName: WIDGET_NAME,
-        renderWidget: (info) => <PrimeWidget data={useStore.getState()} width={info.width} />,
-        widgetNotFound: () => undefined,
-      }).then(() => (found += 1));
+        renderWidget: (info) => <PrimeWidget data={data} width={info.width} />,
+        widgetNotFound: () => (missing += 1),
+      });
       await requestWidgetUpdate({
         widgetName: CONSTANCY_WIDGET_NAME,
-        renderWidget: (info) => <ConstancyWidget data={useStore.getState()} width={info.width} />,
-        widgetNotFound: () => undefined,
-      }).then(() => (found += 1));
+        renderWidget: (info) => <ConstancyWidget data={data} width={info.width} />,
+        widgetNotFound: () => (missing += 1),
+      });
       setStatus(
-        found > 0
-          ? 'Widgets atualizados com os dados de agora.'
-          : 'Nenhum widget do MY PRIME na tela inicial ainda. Adicione pelo launcher do Android.',
+        missing === 2
+          ? 'Nenhum widget do MY PRIME na tela inicial ainda. Adicione pelo launcher do Android.'
+          : missing === 1
+            ? 'Um dos widgets foi atualizado. O outro ainda não está na tela inicial.'
+            : 'Widgets atualizados com os dados de agora.',
       );
     } catch {
       setStatus('Widget disponível apenas no app Android instalado (fora do Expo Go).');

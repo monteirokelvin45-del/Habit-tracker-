@@ -21,8 +21,8 @@ export function ConstancyWidget({
   width?: number;
   cell?: number;
 }) {
-  const mural = muralData(data, { width, cell, gap: 2, labelWidth: 16 });
   const gap = 2;
+  const mural = muralData(data, { width, cell, gap, labelWidth: 16, end: date });
 
   return (
     <FlexWidget
@@ -48,7 +48,7 @@ export function ConstancyWidget({
         {/* rótulos dos dias */}
         <FlexWidget style={{ flexDirection: 'column', width: 16, justifyContent: 'space-between' }}>
           {DAY_LABELS.map((label, i) => (
-            <FlexWidget key={`dl-${i}`} style={{ height: cell + gap, justifyContent: 'center' }}>
+            <FlexWidget key={`dl-${i}`} style={{ height: cell + gap, marginTop: gap, justifyContent: 'center' }}>
               <TextWidget text={label} style={{ fontSize: 7, color: '#555555' }} />
             </FlexWidget>
           ))}

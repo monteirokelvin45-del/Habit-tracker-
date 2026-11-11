@@ -27,13 +27,79 @@ for (const file of files) {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
     fileName: file,
   }).outputText;
-  const rel = path.relative(path.join(root, 'src'), file).replace(/\.ts$/, '.mjs');
+  const rel = path.relative(path.join(root, 'src'), file).replace(/\.tsx?$/, '.mjs');
   const dest = path.join(outRoot, rel);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   // Reescreve imports relativos para .mjs
   const fixed = out.replace(/from '(\.[^']+)'/g, (m, p) => (p.endsWith('.mjs') ? m : `from '${p}.mjs'`));
   fs.writeFileSync(dest, fixed);
 }
+
+// Componentes de widget: compilados à parte, com o módulo nativo trocado por um stub
+// que aponta para os componentes reais (funções puras) do pacote.
+const widgetTsx = ['ConstancyWidget', 'PrimeWidget'];
+for (const name of widgetTsx) {
+  const file = path.join(root, 'src/widget', `${name}.tsx`);
+  const out = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
+    fileName: file,
+  }).outputText;
+  const fixed = out
+    .replace(/from '(\.[^']+)'/g, (m, p) => (p.endsWith('.mjs') ? m : `from '${p}.mjs'`))
+    .replace(/from 'react-native-android-widget'/g, "from './rnaw-stub.mjs'");
+  fs.writeFileSync(path.join(outRoot, 'widget', `${name}.mjs`), fixed);
+}
+
+// O pacote é CJS e importa sem extensão nos internos: em ESM isso não resolve,
+// então o stub usa createRequire (mesmo código de conversor que roda no Android).
+const rnawPath = () => path.join(root, 'node_modules/react-native-android-widget/lib/commonjs/widgets');
+// Handler do widget: compilado com stubs de storage (AsyncStorage) e do pacote nativo,
+// para testar o caminho que roda no launcher (WIDGET_UPDATE / WIDGET_CLICK), fora do app.
+{
+  const file = path.join(root, 'src/widget/handler.tsx');
+  const out = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
+    fileName: file,
+  }).outputText;
+  const fixed = out
+    .replace(/from '(\.\.\/lib\/[^']+)'/g, (m, p) =>
+      p === '../lib/storage' ? "from '../storage-stub.mjs'" : `from '../lib/${p.replace('../lib/', '')}.mjs'`,
+    )
+    .replace(/from '(\.[^']+)'/g, (m, p) => (p.endsWith('.mjs') ? m : `from '${p}.mjs'`))
+    .replace(/from 'react-native-android-widget'/g, "from './handler-stubs.mjs'");
+  fs.writeFileSync(path.join(outRoot, 'widget', 'handler.mjs'), fixed);
+}
+
+fs.writeFileSync(
+  path.join(outRoot, 'widget', 'handler-stubs.mjs'),
+  `import { createRequire } from 'node:module';\n` +
+    `const require_ = createRequire(import.meta.url);\n` +
+    `export const { FlexWidget } = require_('${rnawPath()}/FlexWidget');\n` +
+    `export const { TextWidget } = require_('${rnawPath()}/TextWidget');\n`,
+);
+fs.writeFileSync(
+  path.join(outRoot, 'storage-stub.mjs'),
+  `export const state = { data: null, writes: [] };\n` +
+    `export async function loadAll() { return state.data; }\n` +
+    `export async function persistMany(entries) { state.writes.push(...entries); }\n`,
+);
+
+const rnaw = path.join(root, 'node_modules/react-native-android-widget/lib/commonjs/widgets');
+fs.writeFileSync(
+  path.join(outRoot, 'widget', 'rnaw-stub.mjs'),
+  `import { createRequire } from 'node:module';\n` +
+    `const require_ = createRequire(import.meta.url);\n` +
+    `export const { FlexWidget } = require_('${rnaw}/FlexWidget');\n` +
+    `export const { TextWidget } = require_('${rnaw}/TextWidget');\n`,
+);
 
 // Stub de AsyncStorage (storage.ts é importado por store.ts, que não testamos).
 fs.mkdirSync(path.join(outRoot, 'node_modules', '@react-native-async-storage'), { recursive: true });
@@ -354,6 +420,95 @@ check('rótulos de mês em ordem crescente', mural.monthLabels.every((l, i, arr)
 check('sem dados → nenhum dia cumprido', widget.muralData(emptyData, { width: 320, end: today }).fulfilled === 0);
 check('sem dados → todas as células nível 0', widget.muralData(emptyData, { width: 320, end: today }).columns.flatMap((c) => c.cells).every((c) => c.level === 0));
 check('widget do mural não inventa streak', widget.muralData(emptyData, { width: 320, end: today }).streak === 0);
+
+console.log('\n── Widget do mural: render ──');
+const { ConstancyWidget } = await import(path.join(outRoot, 'widget/ConstancyWidget.mjs'));
+const React = (await import('react')).default;
+
+/** Achata a árvore de React elements (FlexWidget devolve children, TextWidget devolve null). */
+function flatten(node, acc = []) {
+  if (node == null || node === false) return acc;
+  if (Array.isArray(node)) {
+    node.forEach((n) => flatten(n, acc));
+    return acc;
+  }
+  if (typeof node !== 'object') return acc;
+  acc.push(node);
+  if (node.props && node.props.children != null) flatten(node.props.children, acc);
+  return acc;
+}
+
+const tree = flatten(ConstancyWidget({ data: muralData, date: today, width: 320, cell: 9 }));
+const squares = tree.filter((n) => n.props?.style?.width === 9 && n.props?.style?.height === 9);
+check('renderiza 7 dias por semana', squares.length === mural.weeks * 7, `${squares.length} quadrados`);
+check('todo quadrado tem cor da paleta', squares.every((n) => Object.values(widget.MURAL_COLORS).includes(n.props.style.backgroundColor)));
+check('só um quadrado marcado como hoje', squares.filter((n) => n.props.style.borderWidth === 1).length === 1);
+check('quadrado de hoje é o da data passada', squares.some((n) => n.props.style.borderWidth === 1));
+check('cabeçalho com o título do mural', tree.some((n) => n.props?.text === 'MURAL DE CONSTÂNCIA'));
+check('streak aparece no cabeçalho', tree.some((n) => n.props?.text === `🔥 ${mural.streak}`));
+check('rodapé mostra dias cumpridos', tree.some((n) => typeof n.props?.text === 'string' && n.props.text.includes('dia(s) cumprido(s)')));
+const past = dates.addDays(today, -30);
+const pastMural = widget.muralData(muralData, { width: 320, end: past });
+const pastTree = flatten(ConstancyWidget({ data: muralData, date: past, width: 320 }));
+check(
+  'prop date é respeitada (rodapé do mural de 30 dias atrás)',
+  pastTree.some((n) => typeof n.props?.text === 'string' && n.props.text.startsWith(`${pastMural.fulfilled} dia(s) cumprido(s)`)),
+);
+check(
+  'prop date move o marcador de hoje',
+  pastTree.filter((n) => n.props?.style?.borderWidth === 1).length === 1,
+);
+check('render sem dados não quebra', flatten(ConstancyWidget({ data: emptyData, date: today, width: 320 })).length > 0);
+
+const { PrimeWidget } = await import(path.join(outRoot, 'widget/PrimeWidget.mjs'));
+const primeTree = flatten(PrimeWidget({ data: wData, date: today, width: 320 }));
+check('widget principal renderiza sem quebrar', primeTree.length > 3);
+check('widget principal nunca fica vazio', primeTree.some((n) => typeof n.props?.text === 'string' && n.props.text.length > 0));
+
+console.log('\n── Handler do widget (contexto do launcher) ──');
+const { widgetTaskHandler } = await import(path.join(outRoot, 'widget/handler.mjs'));
+const storeStub = await import(path.join(outRoot, 'storage-stub.mjs'));
+
+async function runHandler(widgetName, widgetAction, data, extra = {}) {
+  storeStub.state.data = data;
+  storeStub.state.writes = [];
+  const rendered = [];
+  await widgetTaskHandler({
+    widgetAction,
+    widgetInfo: { widgetName, widgetId: 1, width: 320, height: 150 },
+    clickAction: extra.clickAction,
+    renderWidget: (node) => rendered.push(node),
+    ...extra.rest,
+  });
+  return { rendered, writes: storeStub.state.writes };
+}
+
+const updMural = await runHandler('Constancia', 'WIDGET_UPDATE', muralData);
+check('handler reconhece o widget do mural', updMural.rendered.length === 1);
+// renderWidget recebe o ELEMENTO (<ConstancyWidget .../>); montamos chamando o componente.
+const muralElement = updMural.rendered[0];
+check('handler passa o elemento do mural', typeof muralElement?.type === 'function');
+const muralTree = flatten(muralElement.type(muralElement.props));
+check('handler do mural renderiza a árvore', muralTree.length > 10, String(muralTree.length));
+check(
+  'handler do mural respeita a largura informada',
+  muralTree.filter((n) => n.props?.style?.width === 9 && n.props?.style?.height === 9).length ===
+    widget.muralData(muralData, { width: 320, end: today }).weeks * 7,
+);
+const updPrime = await runHandler('Prime', 'WIDGET_UPDATE', wData);
+check('handler reconhece o widget principal', updPrime.rendered.length === 1);
+const updUnknown = await runHandler('Outro', 'WIDGET_UPDATE', wData);
+check('handler ignora widget desconhecido', updUnknown.rendered.length === 0);
+
+const clickPrime = await runHandler('Prime', 'WIDGET_CLICK', wData, { clickAction: 'COMPLETE_NEXT' });
+check('clique no widget principal conclui e persiste', clickPrime.writes.some(([k]) => k === 'days'));
+check('clique no widget principal redesenha', clickPrime.rendered.length === 1);
+const clickMural = await runHandler('Constancia', 'WIDGET_CLICK', muralData, { clickAction: 'OPEN_APP' });
+check('clique no mural só abre o app (não mexe em dados)', clickMural.writes.length === 0 && clickMural.rendered.length === 1);
+const resized = await runHandler('Constancia', 'WIDGET_RESIZED', muralData);
+check('resize redesenha o mural', resized.rendered.length === 1);
+const deleted = await runHandler('Constancia', 'WIDGET_DELETED', muralData);
+check('widget removido não tenta renderizar', deleted.rendered.length === 0);
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

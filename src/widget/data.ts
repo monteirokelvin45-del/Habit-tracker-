@@ -157,8 +157,9 @@ export const MURAL_COLORS: Record<0 | 1 | 2 | 3 | 4, `#${string}`> = {
  * Quantas semanas cabem na largura informada (dp) do widget.
  * Sem tabelas mágicas: célula + gap medidos, descontando o rótulo dos dias.
  */
-export function muralColumnsForWidth(width: number, cell = 9, gap = 2, labelWidth = 16): number {
-  const usable = Math.max(cell, width - labelWidth - 16);
+export function muralColumnsForWidth(width: number, cell = 9, gap = 2, labelWidth = 16, padding = 12): number {
+  // Desconta rótulo + padding horizontal do card (12dp de cada lado por padrão).
+  const usable = Math.max(cell, width - labelWidth - padding * 2);
   const weeks = Math.floor(usable / (cell + gap));
   return Math.max(6, Math.min(53, weeks));
 }
@@ -173,7 +174,8 @@ export function muralData(data: AppData, opts?: { width?: number; cell?: number;
   // Limite de segurança: RemoteViews não gosta de centenas de views no mesmo widget.
   const weeks = Math.min(26, muralColumnsForWidth(opts?.width ?? 300, cell, gap, opts?.labelWidth ?? 16));
   const today = opts?.end ?? todayKey();
-  const byDate = new Map(data.days.map((d) => [d.date, d]));
+  // Handler do widget roda fora do app: nenhuma chave pode faltar (dado antigo/parcial).
+  const byDate = new Map((data.days ?? []).map((d) => [d.date, d]));
 
   // segunda-feira da semana atual
   const dow = keyToDate(today).getDay();
@@ -192,7 +194,7 @@ export function muralData(data: AppData, opts?: { width?: number; cell?: number;
       const day = byDate.get(date);
       const score = day?.score?.total ?? null;
       const level = levelFor(score);
-      if (date <= today && (score != null || (day?.tasks.length ?? 0) > 0)) {
+      if (date <= today && (score != null || (day?.tasks?.length ?? 0) > 0)) {
         recorded += 1;
         if ((score ?? 0) >= 6) fulfilled += 1;
       }
@@ -207,7 +209,7 @@ export function muralData(data: AppData, opts?: { width?: number; cell?: number;
     columns.push({ index: weeks - 1 - w, cells });
   }
 
-  const streak = generalStreak(data.days, today);
+  const streak = generalStreak(data.days ?? [], today);
   const monthOf = (date: string) => Number(date.slice(5, 7));
   const monthLabels: { label: string; column: number }[] = [];
   let lastMonth = -1;
