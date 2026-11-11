@@ -67,6 +67,7 @@ app/
     perfil.tsx           Identidade, configurações, exportação, upload, reset
   modulo/
     leitura · financas · peso · sono · pomodoro · recompensas · conquistas · ayanokoji
+    graficos.tsx         central com as 21 visões do histórico (filtro por grupo)
 src/
   theme.ts               Design system (dark-only, cores/tipografia/áreas)
   lib/
@@ -80,7 +81,11 @@ src/
     badges.ts/rewards.ts Gamificação verificável
     notifications.ts     Lembretes locais (carregamento sob demanda)
     haptics.ts           Feedback tátil respeitando o toggle
-  components/            ui.tsx (design system), charts.tsx (svg), sheets, cartões
+    stats.ts             Métricas puras dos 21 gráficos (sem dado = null)
+  components/            ui.tsx (design system), charts.tsx + StatsCharts.tsx (svg), sheets, cartões
+scripts/
+  run-logic-tests.mjs    testes das funções puras (232 asserções)
+  render-charts-smoke.mjs  render dos gráficos com e sem dado (42 montagens)
 ```
 
 ## O loop, na prática
