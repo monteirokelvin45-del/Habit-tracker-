@@ -115,7 +115,17 @@ jobs:
         run: |
           mkdir -p artifacts
           cp android/app/build/outputs/apk/release/app-release.apk "artifacts/my-prime-v${{ github.run_number }}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk artifacts/my-prime-latest.apk
           ls -lh artifacts
+
+      # Sem isso o link do APK é um endereço de blob do Azure, que expira e não abre
+      # para o usuário final. A release com `latest` sempre aponta para o APK atual.
+      - name: Link fixo para o último APK
+        run: |
+          echo "### APK gerado" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [\`my-prime-latest.apk\`](${{ github.server_url }}/${{ github.repository }}/releases/latest/download/my-prime-latest.apk)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- build #${{ github.run_number }} · commit \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publicar como artefato do workflow
         uses: actions/upload-artifact@v4
@@ -136,6 +146,7 @@ jobs:
             - commit: `${{ github.sha }}`
             - workflow: #${{ github.run_number }}
             - gerado em: ${{ github.event.head_commit.timestamp }}
-          files: artifacts/*.apk
+          # Só o APK fixo: os builds antigos ficam nos artifacts do run, não na release.
+          files: artifacts/my-prime-latest.apk
           prerelease: true
           make_latest: false
