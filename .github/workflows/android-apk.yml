@@ -81,23 +81,38 @@ jobs:
           echo "GRADLE_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
           exit 0
 
-      - name: Conferir resultado do Gradle
+      - name: Extrair a causa da falha
         if: env.GRADLE_EXIT != '0'
         run: |
-          echo "### Falha no Gradle (exit $GRADLE_EXIT)" >> "$GITHUB_STEP_SUMMARY"
-          grep -nE "FAILURE:|What went wrong|Caused by:|error:|e: " -A 6 gradle-build.log | head -c 6000 >> "$GITHUB_STEP_SUMMARY" || true
-          while IFS= read -r line; do
-            echo "::error title=Gradle::${line:0:400}"
-          done < <(grep -nE "What went wrong|FAILURE:|e: file" gradle-build.log | head -n 8)
-          exit 1
+          {
+            echo "exit=$GRADLE_EXIT"
+            grep -nE "What went wrong" -A 12 gradle-build.log | head -n 40
+            echo '---'
+            grep -nE "e: file|error:" gradle-build.log | head -n 20
+          } > gradle-reason.txt
+          # Uma linha só: aparece legível na anotação do commit.
+          tr '\n' ' ' < gradle-reason.txt | cut -c1-900 | sed 's/^/::error title=Gradle::/'
+          echo "REASON<<EOF" >> "$GITHUB_ENV"
+          head -c 3000 gradle-reason.txt >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
 
+      # Artefato ANTES do passo que falha (se falhar primeiro, nada é publicado).
       - name: Log do Gradle (quando falha)
         if: env.GRADLE_EXIT != '0'
         uses: actions/upload-artifact@v4
         with:
           name: gradle-build-log
-          path: gradle-build.log
+          path: |
+            gradle-build.log
+            gradle-reason.txt
           retention-days: 14
+
+      - name: Falhar com o motivo
+        if: env.GRADLE_EXIT != '0'
+        run: |
+          echo "### Falha no Gradle (exit $GRADLE_EXIT)" >> "$GITHUB_STEP_SUMMARY"
+          cat gradle-reason.txt >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       - name: Renomear APK
         run: |
