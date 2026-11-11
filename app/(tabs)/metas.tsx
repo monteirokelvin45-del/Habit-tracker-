@@ -35,6 +35,7 @@ const MODULES = [
   { href: '/modulo/ayanokoji', emoji: '🎭', label: 'Protocolo Ayanokoji', area: 'Ayanokoji', sub: '24 semanas · 4 eixos' },
   { href: '/modulo/sono', emoji: '😴', label: 'Sono avançado', area: 'Sono', sub: 'Horários, qualidade e correlação' },
   { href: '/modulo/pomodoro', emoji: '⏱️', label: 'Pomodoro', area: 'Foco', sub: '25/5, 50/10 ou 90/20' },
+  { href: '/modulo/emocoes', emoji: '🫀', label: 'Diário de emoções', area: 'Emoções', sub: '1–3 por dia, mapa e efeito no dia seguinte' },
 ];
 
 export default function GoalsScreen() {

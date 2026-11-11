@@ -33,7 +33,7 @@ export const EMPTY_DATA = {
   goals: [], days: [], rules: [], rewards: [], books: [], finances: [], weight: [],
   settings: DEFAULT_SETTINGS, badges: [],
   ayanokoji: { startDate: '', scores: [], tasksDone: {} },
-  weeklyFocus: {}, routeAdjustments: {},
+  weeklyFocus: {}, routeAdjustments: {}, emotions: [],
 };
 export const snapshots = {};
 export function sanitizeGoal(g) {
@@ -306,6 +306,63 @@ console.log('\n── Memória de dados: snapshot e recuperação ──');
   storageStub.snapshots.days = { at: '2026-11-09T10:00:00.000Z', value: [] };
   check('restore sem histórico devolve false', (await useStore.getState().restoreFromSnapshot()) === false);
   globalThis.__loadAllResult = undefined;
+}
+
+console.log('\n── Diário de emoções: ações do store ──');
+{
+  const storageStub = await import(pathToFileURL(path.join(outRoot, 'storage-stub.mjs')).href);
+  globalThis.__loadAllResult = { ...storageStub.EMPTY_DATA, onboarded: true, days: [day(today, [{ goalId: 'g1', done: false, note: '' }])] };
+  await useStore.getState().load();
+  useStore.setState({ emotions: [] });
+
+  const primeiro = useStore.getState().addEmotion({ emotion: 'Ansioso', intensity: 4 });
+  check('registra a emoção e devolve a entrada', primeiro.ok === true && useStore.getState().emotions.length === 1);
+  const diaDeHoje = useStore.getState().days.find((d) => d.date === today);
+  check('espelha a emoção no diário do dia', diaDeHoje?.diary.emotions.includes('Ansioso'));
+
+  useStore.getState().addEmotion({ emotion: 'Calmo' });
+  const terceiro = useStore.getState().addEmotion({ emotion: 'Motivado' });
+  const quarto = useStore.getState().addEmotion({ emotion: 'Grato' });
+  check('aceita até 3 no mesmo dia', terceiro.ok === true && useStore.getState().emotions.length === 3);
+  check('4º registro é recusado com motivo', quarto.ok === false && /já registrou/.test(quarto.reason));
+  check('recusa não grava nada', useStore.getState().emotions.length === 3);
+
+  const espelho = useStore.getState().days.find((d) => d.date === today)?.diary.emotions ?? [];
+  check('espelho fica no teto de 3 e sem duplicar', espelho.length === 3 && new Set(espelho).size === 3);
+
+  // remover devolve o espelho ao estado real
+  const alvo = useStore.getState().emotions[0];
+  useStore.getState().removeEmotion(alvo.at);
+  check('remover tira do log', useStore.getState().emotions.length === 2);
+  check(
+    'remover atualiza o espelho do diário',
+    !(useStore.getState().days.find((d) => d.date === today)?.diary.emotions ?? []).includes(alvo.emotion),
+  );
+
+  // dia fechado é registro encerrado
+  useStore.setState({ days: [closedDay(today, [{ goalId: 'g1', done: true, note: '' }])], emotions: [] });
+  const fechado = useStore.getState().addEmotion({ emotion: 'Calmo' });
+  check('dia fechado recusa novo registro', fechado.ok === false && /Dia fechado/.test(fechado.reason));
+  check('dia fechado nem chega no log', useStore.getState().emotions.length === 0);
+  useStore.getState().removeEmotion('qualquer-coisa');
+  check('remover em dia fechado não quebra', useStore.getState().emotions.length === 0);
+
+  // registro em dia passado (ainda aberto) cai no dia certo, não em hoje
+  const ontem = yesterday;
+  useStore.setState({ days: [day(ontem, [{ goalId: 'g1', done: false, note: '' }]), day(today, [])], emotions: [] });
+  const retroativo = useStore.getState().addEmotion({ emotion: 'Triste', date: ontem });
+  check('registro com data cai no dia informado', retroativo.ok === true && retroativo.entry?.date === ontem);
+  check('espelho do dia passado é atualizado', (useStore.getState().days.find((d) => d.date === ontem)?.diary.emotions ?? []).includes('Triste'));
+  check('dia de hoje não recebe o retroativo', (useStore.getState().days.find((d) => d.date === today)?.diary.emotions ?? []).length === 0);
+
+  // fechar o dia preserva o espelho vindo do log (o diário da tela pode estar velho)
+  useStore.setState({ emotions: [], days: [day(today, [{ goalId: 'g1', done: true, note: '' }])] });
+  useStore.getState().addEmotion({ emotion: 'Grato' });
+  const fechado2 = useStore.getState().closeDay(today, types.emptyDiary());
+  check('fechar o dia mantém a emoção registrada antes', fechado2.diary.emotions.includes('Grato'), JSON.stringify(fechado2.diary.emotions));
+
+  globalThis.__loadAllResult = undefined;
+  useStore.setState({ emotions: [] });
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);

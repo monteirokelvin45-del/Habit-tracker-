@@ -109,8 +109,35 @@ Legenda: ✅ feito e verificado · 🟡 feito com desvio justificado · ❌ não
 | Finanças | ✅ | lançamentos, categorias, impulso, barras, donut, saldo |
 | Peso e medidas | ✅ | média móvel 7d, meta tracejada, medidas, fotos |
 | Protocolo Ayanokoji | ✅ | 24 semanas, radar 4 eixos com overlay, microtarefas, **próximo nível** |
-| Diário de emoções | ✅ | grid 15, 1–3/dia, mapa de calor, correlação |
+| Diário de emoções | ✅ | **fase 3**: módulo próprio (`/modulo/emocoes`) — grid 15, 1–3/dia por momento, intensidade, nota, mapa de 12 semanas, ranking 30/90d, pares e efeito no score do dia seguinte com gate de 4 dias; o card da Inteligência continua com o resumo dos dias fechados |
 | Pomodoro | ✅ | 3 presets, vínculo a tarefa, registro de tempo, notificação |
+
+## Fase 3 — o que foi feito nesta rodada
+
+Fecha a lacuna do **Diário de emoções**, o único módulo da fase 3 que existia pela metade:
+antes só havia o grid de 15 emoções dentro do diário noturno (e `diary.emotions` só é
+gravado quando o dia fecha). Agora existe módulo próprio, com log por registro.
+
+| Item | Onde | Verificado por |
+|---|---|---|
+| Log de emoções com data, momento (manhã/tarde/noite), intensidade 1–5 e nota | `lib/emotions.ts`, chave `@myprime:emotions` | 19 asserções de lógica + 14 de ação |
+| Limite de **1–3 por dia** barrado na lib (não só na tela) | `addEmotion` | teste de recusa do 4º + store |
+| Mapa de calor de 12 semanas: dia sem registro fica `null`, nunca "neutro" | `emotionGrid`, `app/modulo/emocoes.tsx` | grade 4×7 com célula vazia |
+| Ranking da janela (30/90 dias): frequência, intensidade média, momento dominante, score médio | `emotionStats` | contagem e médias |
+| **Efeito no score do dia seguinte** com gate de ≥ 4 dias de cada lado | `emotionEffect`, `effectLine` | teste sem base (frase "faltam X dias") e com base |
+| Pares que aparecem juntos (contagem, não correlação) | `emotionPairs` | par repetido conta 1 dia |
+| Espelho em `diary.emotions` para o mapa das revisões | `store.addEmotion` / `removeEmotion` | espelho e teto de 3 |
+| Fechar o dia **não apaga** emoção registrada durante o dia | `store.closeDay` | asserção de store |
+| Export/import: `emotions` entra no backup e é sanitizada na volta | `export.ts`, `importer.ts`, `normalizeData` | 2 asserções |
+| Sanitização de storage sujo (entrada sem data/emoção, intensidade inválida) | `sanitizeEmotionEntry` | 6 asserções |
+
+Decisões declaradas:
+
+1. **Registro é por ocorrência, não por dia.** O `diary.emotions` continua existindo (é o que o
+   mapa das revisões lê), mas o log é a fonte da verdade e o espelho é derivado dele.
+2. **Dia fechado recusa registro novo**, igual às outras ações — reabrir é a saída explícita.
+3. **Efeito é descritivo, não causal.** A tela escreve "score seguinte foi X maior" e diz quantos
+   dias de cada lado entraram; abaixo de 4 de cada lado ela não afirma nada.
 
 ## Fase 4 — Polimento
 
@@ -176,12 +203,13 @@ Varredura feita em `src/lib`, `src/components` e `app/**`: cada defeito abaixo f
 
 Testes que guardam essas correções:
 
-- `npm run test:store` — **31 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
+- `npm run test:store` — **46 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
   dado antigo). Compila o store real com stub de persistência; é o teste que pega estado errado.
-- `npm run test:logic` — **328 asserções** (inclui as novas de janela por data, threshold por meta,
-  badge de honestidade, anel do dia, timer de foco, três baldes de finanças, dieta, edital e cronograma).
+- `npm run test:logic` — **385 asserções** (inclui as 45 novas do diário de emoções: teto de 3/dia,
+  sanitização de entrada, grade do mapa com dia sem registro, sequência, janela do ranking, gate do
+  efeito no dia seguinte, pares e espelho no diário).
 - `npm run test:render` — **42 montagens** dos gráficos com e sem dado.
-- `npm run test:screens` — **40 montagens de tela** (app com histórico e app zerado) com store trocado
+- `npm run test:screens` — **42 montagens de tela** (app com histórico e app zerado) com store trocado
   por cenário: pega crash em runtime, tela vazia e `NaN`/`undefined` visível.
 
 ## Memória de dados (persistência) — como está
@@ -251,10 +279,10 @@ agora são reagendados 1× por dia, não a cada edição).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **328/328** (modos, score, streaks, cobrança, gate de 7 dias,
+- `node scripts/run-logic-tests.mjs` → **385/385** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
-- `node scripts/audited-store.mjs` → **31/31** (ações do store: dia fechado, reabrir, pomodoro, metas,
+- `node scripts/audited-store.mjs` → **46/46** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200

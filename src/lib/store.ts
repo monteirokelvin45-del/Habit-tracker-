@@ -28,6 +28,13 @@ import { isHHmm } from './schedule';
 import { evaluateBadges } from './badges';
 import { evaluateRewards } from './rewards';
 import { newId } from './id';
+import {
+  addEmotion,
+  diaryEmotionsFor,
+  removeEmotion,
+  type EmotionEntry,
+  type EmotionMoment,
+} from './emotions';
 import type { ImportSummary } from './importer';
 
 export type LoadState = 'idle' | 'loading' | 'ready';
@@ -64,6 +71,18 @@ export interface StoreState extends AppData {
   setMidday: (date: string, data: { priorityDone: boolean; energy: number; note: string; partial?: boolean }) => void;
   /** Atualiza campos do diário fora do fechamento (sono, humor, foco...). */
   patchDiary: (date: string, patch: Partial<Diary>) => void;
+  /**
+   * Registra uma emoção (1–3 por dia). Espelha no `diary.emotions` do dia para o
+   * mapa das revisões não ficar dessincronizado. Devolve o motivo da recusa.
+   */
+  addEmotion: (input: {
+    emotion: string;
+    date?: string;
+    moment?: EmotionMoment;
+    intensity?: number;
+    note?: string;
+  }) => { ok: true; entry: EmotionEntry } | { ok: false; reason: string };
+  removeEmotion: (at: string) => void;
   /**
    * Move um bloco do cronograma (arrastar / +15min / −15min).
    * Fica em `day.scheduleOverrides` e é sempre sugestão, nunca registro.
@@ -437,6 +456,50 @@ export const useStore = create<StoreState>((set, get) => ({
     ]);
   },
 
+  addEmotion(input) {
+    const state = get();
+    const date = input.date ?? todayKey();
+    // Dia fechado é registro encerrado — mesma trava das outras ações (defeito 2/3 da auditoria).
+    if (isClosed(state.days.find((d) => d.date === date))) {
+      return { ok: false, reason: 'Dia fechado: reabra o dia para registrar emoção.' };
+    }
+    const result = addEmotion(state.emotions, { ...input, date });
+    if (!result.entry) return { ok: false, reason: result.reason ?? 'Não foi possível registrar.' };
+
+    const emotions = result.log;
+    // Espelho no diário do dia: o mapa de emoções das revisões lê `diary.emotions`.
+    if (!state.days.some((d) => d.date === date)) state.ensureDay(date);
+    const days = get().days.map((d) =>
+      d.date === date
+        ? { ...d, diary: { ...d.diary, emotions: diaryEmotionsFor(emotions, date) } }
+        : d,
+    );
+    set({ emotions, days });
+    void persistMany([
+      ['emotions', emotions],
+      ['days', days],
+    ]);
+    return { ok: true, entry: result.entry };
+  },
+
+  removeEmotion(at) {
+    const state = get();
+    const entry = state.emotions.find((e) => e.at === at);
+    if (!entry) return;
+    if (isClosed(state.days.find((d) => d.date === entry.date))) return;
+    const emotions = removeEmotion(state.emotions, at);
+    const days = state.days.map((d) =>
+      d.date === entry.date
+        ? { ...d, diary: { ...d.diary, emotions: diaryEmotionsFor(emotions, entry.date) } }
+        : d,
+    );
+    set({ emotions, days });
+    void persistMany([
+      ['emotions', emotions],
+      ['days', days],
+    ]);
+  },
+
   setScheduleOverride(date, key, start) {
     const state = get();
     if (isClosed(state.days.find((d) => d.date === date))) return;
@@ -455,6 +518,10 @@ export const useStore = create<StoreState>((set, get) => ({
     const state = get();
     const existing = state.days.find((d) => d.date === date) ?? makeDay(date, state.goals);
     const draft: Day = { ...existing, diary, closedAt: new Date().toISOString() };
+    // O diário vem da tela e pode estar desatualizado — se a pessoa registrou emoção
+    // no meio do dia (módulo de emoções) e depois fechou o dia pelo sheet do diário,
+    // o array enviado sobrescreveria o espelho. O log é a fonte da verdade.
+    draft.diary = { ...draft.diary, emotions: diaryEmotionsFor(state.emotions, date) };
     const previousDays = state.days.filter((d) => d.date < date);
     const score = computeScore({ day: draft, goals: state.goals, previousDays });
     const closed: Day = { ...draft, score };

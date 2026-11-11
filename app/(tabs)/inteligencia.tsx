@@ -457,6 +457,15 @@ export default function IntelligenceScreen() {
 
         <Card>
           <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Mapa de emoções</Txt>
+          <Muted style={{ marginBottom: spacing.sm }}>
+            Resumo dos dias fechados. O diário completo (registro por momento, mapa de 12 semanas e
+            efeito no dia seguinte) fica no módulo de emoções.
+          </Muted>
+          <SecondaryButton
+            label="Abrir diário de emoções"
+            color={colors.pink}
+            onPress={() => router.push('/modulo/emocoes')}
+          />
           {emotions.length ? (
             <>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>

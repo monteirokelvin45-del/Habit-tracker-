@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { emptyDiary } from './types';
+import { sanitizeEmotionLog } from './emotions';
 import type {
   AppData,
   BadgeState,
@@ -29,6 +30,7 @@ export const KEYS = {
   ayanokoji: '@myprime:ayanokoji',
   weeklyFocus: '@myprime:weeklyFocus',
   routeAdjustments: '@myprime:routeAdjustments',
+  emotions: '@myprime:emotions',
 } as const;
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -70,6 +72,7 @@ export const EMPTY_DATA: AppData = {
   ayanokoji: { startDate: '', scores: [], tasksDone: {} },
   weeklyFocus: {},
   routeAdjustments: {},
+  emotions: [],
 };
 
 async function read<T>(key: string, fallback: T): Promise<T> {
@@ -201,6 +204,8 @@ export function normalizeData(input: Partial<AppData> | null | undefined, base: 
     ayanokoji: raw.ayanokoji ?? base.ayanokoji,
     weeklyFocus: raw.weeklyFocus ?? {},
     routeAdjustments: raw.routeAdjustments ?? {},
+    // Log de emoções: entrada inválida é descartada, nunca inventada.
+    emotions: sanitizeEmotionLog((raw as { emotions?: unknown }).emotions),
   };
 }
 
@@ -267,6 +272,7 @@ export async function loadAll(): Promise<AppData> {
     ayanokoji,
     weeklyFocus,
     routeAdjustments,
+    emotions,
   ] = await Promise.all([
     read<boolean>(KEYS.onboarded, false),
     read<User>(KEYS.user, EMPTY_USER),
@@ -282,6 +288,8 @@ export async function loadAll(): Promise<AppData> {
     read<AppData['ayanokoji']>(KEYS.ayanokoji, { startDate: '', scores: [], tasksDone: {} }),
     read<Record<string, string[]>>(KEYS.weeklyFocus, {}),
     read<Record<string, string[]>>(KEYS.routeAdjustments, {}),
+    // Leitura crua: `sanitizeEmotionLog` valida cada entrada (storage antigo não tem a chave).
+    read<unknown>(KEYS.emotions, []),
   ]);
 
   return {
@@ -299,6 +307,7 @@ export async function loadAll(): Promise<AppData> {
     ayanokoji: ayanokoji ?? { startDate: '', scores: [], tasksDone: {} },
     weeklyFocus: weeklyFocus ?? {},
     routeAdjustments: routeAdjustments ?? {},
+    emotions: sanitizeEmotionLog(emotions),
   };
 }
 

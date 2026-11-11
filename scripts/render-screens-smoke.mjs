@@ -424,6 +424,18 @@ const cheio = {
   ayanokoji: { startDate: key(-12), scores: days.map((d) => d.score.total), tasksDone: {} },
   weeklyFocus: {},
   routeAdjustments: {},
+  // Diário de emoções: 2 registros/dia nos últimos 20 dias, para exercitar o mapa,
+  // o ranking e a comparação com o score do dia seguinte (que precisa de ≥ 4 lados).
+  emotions: Array.from({ length: 20 }).flatMap((_, i) =>
+    (i % 3 === 0 ? ['Ansioso'] : ['Calmo', 'Motivado']).map((emotion, k) => ({
+      at: `${key(-i)}T${k === 0 ? '08' : '20'}:00:00.000Z`,
+      date: key(-i),
+      emotion,
+      moment: k === 0 ? 'manhã' : 'noite',
+      intensity: 3,
+      note: k === 0 ? 'contexto do dia' : undefined,
+    })),
+  ),
   recovery: null,
   energy: { physical: 7, mental: 6, stress: 4 },
 };
@@ -436,6 +448,7 @@ const vazio = {
   books: [],
   finances: [],
   ayanokoji: { startDate: '', scores: [], tasksDone: {} },
+  emotions: [],
 };
 
 /* ─────────────────────── execução ─────────────────────── */
@@ -468,6 +481,7 @@ const screens = [
   ['Conquistas', 'app/modulo/conquistas.js'],
   ['Widget', 'app/modulo/widget.js'],
   ['Ayanokoji', 'app/modulo/ayanokoji.js'],
+  ['Emoções', 'app/modulo/emocoes.js'],
 ];
 
 // Caminho do store em relação ao arquivo compilado (as telas ficam em

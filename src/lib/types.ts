@@ -1,3 +1,4 @@
+import type { EmotionEntry } from './emotions';
 /**
  * Modelo de dados — espelha exatamente as chaves @myprime:* do AsyncStorage.
  */
@@ -244,6 +245,8 @@ export interface AppData {
   };
   weeklyFocus: Record<string, string[]>;
   routeAdjustments: Record<string, string[]>;
+  /** Diário de emoções (1–3 registros/dia) — ver `lib/emotions.ts`. */
+  emotions: EmotionEntry[];
 }
 
 export const PRIORITY_META: Record<Priority, { emoji: string; label: string; color: string }> = {

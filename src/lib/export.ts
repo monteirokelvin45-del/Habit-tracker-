@@ -28,6 +28,7 @@ export async function exportJson(data: AppData): Promise<string | null> {
     ayanokoji: data.ayanokoji,
     weeklyFocus: data.weeklyFocus,
     routeAdjustments: data.routeAdjustments,
+    emotions: data.emotions,
     // Formato explícito: um backup sem esta chave é lido como v0.
     schemaVersion: SCHEMA_VERSION,
   };

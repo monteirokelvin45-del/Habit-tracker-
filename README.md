@@ -25,10 +25,10 @@ npm start          # Expo dev server (QR code no Expo Go)
 npm run android    # emulador/dispositivo
 npm run web        # preview rápido no navegador
 npm run typecheck  # tsc --noEmit (strict)
-npm run test:logic  # 328 testes de lógica pura (score, modos, insights, parser, importador, timer, finanças, dieta, edital, semana)
-npm run test:store  # 31 testes de AÇÃO do store (dia fechado, reabrir, pomodoro, metas, fechar o dia)
+npm run test:logic  # 385 testes de lógica pura (score, modos, insights, parser, importador, timer, finanças, dieta, edital, semana, emoções)
+npm run test:store  # 46 testes de AÇÃO do store (dia fechado, reabrir, pomodoro, metas, fechar o dia, emoções)
 npm run test:render # 42 renders dos 21 gráficos + tela, com e sem dado (react-dom/server, sem emulador)
-npm run test:screens # 40 montagens de tela: app com histórico e app zerado (SSR, sem emulador)
+npm run test:screens # 42 montagens de tela: app com histórico e app zerado (SSR, sem emulador)
 npm test            # os quatro
 ```
 
@@ -93,12 +93,13 @@ src/
     notifications.ts     Lembretes locais (carregamento sob demanda)
     haptics.ts           Feedback tátil respeitando o toggle
     stats.ts             Métricas puras dos 21 gráficos (sem dado = null)
+    emotions.ts          Diário de emoções: limites, mapa de semanas, pares e efeito no dia seguinte
   components/            ui.tsx (design system), charts.tsx + StatsCharts.tsx (svg), sheets, cartões
 scripts/
-  run-logic-tests.mjs    testes das funções puras (328 asserções)
-  audited-store.mjs      testes das ações do Zustand com stub de persistência (31 asserções)
+  run-logic-tests.mjs    testes das funções puras (385 asserções)
+  audited-store.mjs      testes das ações do Zustand com stub de persistência (46 asserções)
   render-charts-smoke.mjs  render dos gráficos com e sem dado (42 montagens)
-  render-screens-smoke.mjs montagem das telas com store de cenário (40 montagens)
+  render-screens-smoke.mjs montagem das telas com store de cenário (42 montagens)
 ```
 
 ## O loop, na prática
@@ -126,6 +127,7 @@ em cinza — nunca um número inventado.
 | Projetos | `modulo/projeto` | marcos com prazo, risco de atraso (trabalho feito × tempo consumido), próximo marco |
 | Finanças | `modulo/financas` | 3 baldes (necessidade/vontade/futuro), Regra do Dia de Pagamento, impulso com justificativa obrigatória |
 | Dieta | `modulo/dieta` | refeições com gatilho obrigatório quando sai do plano, hidratação, tendência de 14 dias |
+| Emoções | `modulo/emocoes` | 1–3 registros/dia (momento + intensidade + nota), mapa de 12 semanas, ranking da janela e efeito no score do dia seguinte (só com ≥ 4 dias de cada lado) |
 | Sono | `modulo/sono` | horários → horas, qualidade, bloqueadores, correlação com o score |
 
 Cronograma: `components/ScheduleView.tsx` mostra a semana (setas esquerda/direita) e

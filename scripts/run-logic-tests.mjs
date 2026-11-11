@@ -1094,5 +1094,155 @@ console.log('\n── Auditoria: cronograma e métricas do dashboard ──');
   check('valida HH:MM', sched.isHHmm('23:59') && !sched.isHHmm('24:00') && !sched.isHHmm('7h'));
 }
 
+/* ═══════════════════════ DIÁRIO DE EMOÇÕES ═══════════════════════ */
+
+console.log('\n── Diário de emoções ──');
+{
+  const emot = await import(path.join(outRoot, 'lib/emotions.mjs'));
+
+  // momento do dia a partir da hora local
+  check('manhã antes das 12h', emot.momentOf(8) === 'manhã');
+  check('tarde entre 12h e 18h', emot.momentOf(15) === 'tarde');
+  check('noite depois das 18h', emot.momentOf(21) === 'noite');
+
+  // limite de 3 por dia — barrado na lib, não só na tela
+  const now = new Date('2026-11-10T09:00:00');
+  let log = [];
+  for (const e of ['Calmo', 'Ansioso', 'Motivado']) {
+    const r = emot.addEmotion(log, { emotion: e, date: '2026-11-10', now });
+    log = r.log;
+  }
+  const quarto = emot.addEmotion(log, { emotion: 'Grato', date: '2026-11-10', now });
+  check('aceita 3 emoções no dia', log.length === 3);
+  check('recusa a 4ª com motivo', quarto.entry === null && /já registrou/.test(quarto.reason ?? ''), quarto.reason);
+  check('4ª recusada não altera o log', quarto.log.length === 3);
+
+  // dia seguinte tem orçamento novo
+  const amanha = emot.addEmotion(log, { emotion: 'Grato', date: '2026-11-11', now });
+  check('o limite é por dia, não global', amanha.entry !== null && amanha.log.length === 4);
+
+  // emoção vazia é recusada
+  const vazia = emot.addEmotion(log, { emotion: '   ', date: '2026-11-10', now });
+  check('emoção vazia é recusada', vazia.entry === null && !!vazia.reason);
+
+  // intensidade fora da faixa é presa em 1–5
+  const alta = emot.addEmotion([], { emotion: 'Calmo', date: '2026-11-10', intensity: 99, now });
+  const baixa = emot.addEmotion([], { emotion: 'Calmo', date: '2026-11-10', intensity: -3, now });
+  check('intensidade acima de 5 vira 5', alta.entry?.intensity === 5);
+  check('intensidade abaixo de 1 vira 1', baixa.entry?.intensity === 1);
+
+  // momento padrão vem da hora quando não informado
+  const semMomento = emot.addEmotion([], { emotion: 'Calmo', now: new Date('2026-11-10T20:30:00') });
+  check('momento padrão segue a hora do registro', semMomento.entry?.moment === 'noite');
+
+  // remoção por timestamp
+  const removido = emot.removeEmotion(log, log[0].at);
+  check('remove pelo carimbo de hora', removido.length === 2 && !removido.some((e) => e.at === log[0].at));
+  check('remover timestamp inexistente não muda nada', emot.removeEmotion(log, 'nao-existe').length === 3);
+
+  // sanitização: storage/backup sujo não entra
+  check('entrada sem data válida é descartada', emot.sanitizeEmotionEntry({ emotion: 'Calmo' }) === null);
+  check('entrada sem emoção é descartada', emot.sanitizeEmotionEntry({ date: '2026-11-10' }) === null);
+  check('sanitiza momento desconhecido para manhã', emot.sanitizeEmotionEntry({ date: '2026-11-10', emotion: 'Calmo', moment: 'madrugada' })?.moment === 'manhã');
+  check('sanitiza intensidade inválida para 3', emot.sanitizeEmotionEntry({ date: '2026-11-10', emotion: 'Calmo', intensity: 'alta' })?.intensity === 3);
+  check('log sujo devolve só o válido', emot.sanitizeEmotionLog([null, { date: '2026-11-10', emotion: 'Calmo' }, 42, { foo: 1 }]).length === 1);
+  check('log não-array vira lista vazia', emot.sanitizeEmotionLog({}) .length === 0);
+
+  // mapa de calor: grade completa, dia sem registro é null
+  const logGrid = [
+    { at: '2026-11-05T09:00:00.000Z', date: '2026-11-05', emotion: 'Ansioso', moment: 'manhã', intensity: 4 },
+    { at: '2026-11-05T20:00:00.000Z', date: '2026-11-05', emotion: 'Ansioso', moment: 'noite', intensity: 2 },
+    { at: '2026-11-06T09:00:00.000Z', date: '2026-11-06', emotion: 'Calmo', moment: 'manhã', intensity: 5 },
+  ];
+  const grid = emot.emotionGrid(logGrid, 4, '2026-11-10');
+  check('grade tem 4 semanas × 7 dias', grid.length === 4 && grid.every((w) => w.length === 7));
+  const flat = grid.flat();
+  check('último dia da grade é hoje', flat[flat.length - 1].date === '2026-11-10');
+  const cell5 = flat.find((c) => c.date === '2026-11-05');
+  check('dia com 2 registros é dominado e conta os dois', cell5?.emotion === 'Ansioso' && cell5?.count === 2);
+  check('dia sem registro fica null (não "neutro")', flat.find((c) => c.date === '2026-11-07')?.emotion === null);
+  check('intensidade média do dia', cell5?.intensity === 3);
+
+  // streak: hoje aberto não zera; buraco zera
+  const streakLog = [
+    { at: '2026-11-10T09:00:00.000Z', date: '2026-11-10', emotion: 'Calmo', moment: 'manhã', intensity: 3 },
+    { at: '2026-11-09T09:00:00.000Z', date: '2026-11-09', emotion: 'Calmo', moment: 'manhã', intensity: 3 },
+    { at: '2026-11-08T09:00:00.000Z', date: '2026-11-08', emotion: 'Calmo', moment: 'manhã', intensity: 3 },
+  ];
+  check('sequência conta 3 dias seguidos', emot.emotionStreak(streakLog, '2026-11-10') === 3);
+  check('hoje ainda sem registro não zera a sequência', emot.emotionStreak(streakLog.slice(1), '2026-11-10') === 2);
+  const comBuraco = [streakLog[0], { ...streakLog[2] }];
+  check('buraco no meio zera a sequência', emot.emotionStreak(comBuraco, '2026-11-10') === 1);
+  check('log vazio = 0', emot.emotionStreak([], '2026-11-10') === 0);
+
+  // stats da janela: contagem, intensidade média, momento dominante
+  const dataStats = {
+    days: [
+      { ...day('2026-11-05', []), score: { regularity: 5, continuity: 5, recovery: 5, honesty: 5, progress: 5, total: 5 } },
+      { ...day('2026-11-06', []), score: { regularity: 8, continuity: 8, recovery: 8, honesty: 8, progress: 8, total: 8 } },
+    ],
+    goals: [],
+  };
+  const stats = emot.emotionStats(dataStats, logGrid, 30);
+  const ansioso = stats.find((s) => s.emotion === 'Ansioso');
+  check('ranking ordena por frequência', stats[0]?.emotion === 'Ansioso');
+  check('conta as ocorrências da emoção', ansioso?.count === 2);
+  check('intensidade média da emoção', ansioso?.intensity === 3);
+  check('momento mais comum', ansioso?.commonMoment === 'manhã' || ansioso?.commonMoment === 'noite');
+  check('score médio dos dias com a emoção', ansioso?.scoreWith === 5);
+  check('emoção de dia sem score não inventa média', stats.find((s) => s.emotion === 'Calmo')?.scoreWith === 8);
+  check('janela curta descarta o que ficou fora', emot.emotionStats(dataStats, logGrid, 1).length === 0);
+
+  // efeito no dia seguinte: gate de amostra
+  const dataEfeito = { days: [], goals: [] };
+  // 5 dias com score de cada lado do pareamento (o último dia não tem "seguinte").
+  for (let i = 0; i < 14; i += 1) {
+    const date = dates.addDays('2026-11-10', i);
+    const total = i < 6 ? 8 : 4;
+    dataEfeito.days.push({ ...day(date, []), score: { regularity: total, continuity: total, recovery: total, honesty: total, progress: total, total } });
+  }
+  const logEfeito = [0, 1, 2].map((i) => ({
+    at: `${dates.addDays('2026-11-10', i)}T09:00:00.000Z`,
+    date: dates.addDays('2026-11-10', i),
+    emotion: 'Ansioso',
+    moment: 'manhã',
+    intensity: 4,
+  }));
+  const semBase = emot.emotionEffect(dataEfeito, logEfeito, 'Ansioso');
+  check('sem 4 dias de cada lado não afirma efeito', semBase?.eligible === false && semBase.missing > 0);
+  check('frase sem base diz quantos dias faltam', /faltam \d+ dia/.test(emot.effectLine(semBase)));
+
+  const logForte = [...logEfeito, { at: '2026-11-13T09:00:00.000Z', date: '2026-11-13', emotion: 'Ansioso', moment: 'manhã', intensity: 4 }];
+  const comBase = emot.emotionEffect(dataEfeito, logForte, 'Ansioso');
+  check('com amostra suficiente calcula o delta', comBase?.eligible === true && typeof comBase?.delta === 'number', JSON.stringify(comBase));
+  check(
+    'delta descreve score do dia seguinte',
+    comBase?.eligible === true && comBase.avgWith === 8 && comBase.avgWithout === 4.4 && comBase.delta === 3.6,
+    JSON.stringify(comBase),
+  );
+  check('frase do efeito cita a amostra', /4 dia\(s\) com Ansioso/.test(emot.effectLine(comBase)));
+  check('emoção nunca registrada devolve null', emot.emotionEffect(dataEfeito, logForte, 'Eufórico') === null);
+
+  // pares
+  const pares = emot.emotionPairs([
+    ...logGrid,
+    { at: '2026-11-05T22:00:00.000Z', date: '2026-11-05', emotion: 'Calmo', moment: 'noite', intensity: 3 },
+  ], 60, '2026-11-10');
+  check('par repetido no mesmo dia conta uma vez', pares[0]?.label === 'Ansioso + Calmo' && pares[0]?.count === 1);
+
+  // espelho no diário
+  check('espelho do diário usa a emoção registrada', emot.diaryEmotionsFor(logGrid, '2026-11-05').join() === 'Ansioso');
+  check('espelho respeita o teto de 3', emot.diaryEmotionsFor(log, '2026-11-10').length <= 3);
+  check('dia sem registro não espelha nada', emot.diaryEmotionsFor(logGrid, '2026-11-09').length === 0);
+
+  // normalização de backup/início: a chave nova não pode quebrar dados antigos
+  const storageMod = await import(path.join(outRoot, 'lib/storage.mjs'));
+  const antigo = storageMod.normalizeData({ days: [], goals: [] }, storageMod.EMPTY_DATA);
+  check('base vazia já tem o log de emoções', Array.isArray(antigo.emotions) && antigo.emotions.length === 0);
+  const importado = storageMod.normalizeData({ emotions: [{ date: '2026-11-10', emotion: 'Calmo' }, 'lixo'] }, storageMod.EMPTY_DATA);
+  check('import de backup sanitiza o log', importado.emotions.length === 1 && importado.emotions[0].emotion === 'Calmo');
+  check('chave ausente no backup vira lista vazia', storageMod.normalizeData({}, storageMod.EMPTY_DATA).emotions.length === 0);
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

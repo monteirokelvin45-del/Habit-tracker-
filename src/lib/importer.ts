@@ -1,3 +1,4 @@
+import { sanitizeEmotionLog } from './emotions';
 import type { AppData, Book, FinanceEntry, Goal, Reward, Rule, WeightEntry } from './types';
 import { todayKey } from './date';
 import { parsePlans, guessArea, AREA_HINTS } from './parser';
@@ -516,6 +517,8 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
       ayanokoji: backup.ayanokoji ?? current.ayanokoji,
       weeklyFocus: backup.weeklyFocus ?? {},
       routeAdjustments: backup.routeAdjustments ?? {},
+      // Log de emoções entra pelo mesmo caminho dos dias: sanitizado.
+      emotions: sanitizeEmotionLog((backup as { emotions?: unknown }).emotions),
       onboarded: true,
     };
     const summary: Omit<ImportSummary, 'pending'> = {
