@@ -81,6 +81,8 @@ export default function WeightScreen() {
               labels={entries.map((e) => e.date.slice(8, 10))}
               max={Math.max(...entries.map((e) => e.kg), goal ?? 0) + 2}
               goal={goal}
+              goalLabel={goal ? `meta ${goal}kg` : undefined}
+              unit="kg"
               series={[
                 { name: 'Peso', color: colors.blue, points: entries.map((e) => e.kg) },
                 { name: 'Média 7d', color: colors.green, points: movingAverage },

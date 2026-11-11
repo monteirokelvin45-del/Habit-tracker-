@@ -95,12 +95,18 @@ export function LineChart({
   max = 10,
   height = 160,
   goal,
+  goalLabel,
+  unit = '',
 }: {
   series: { name: string; color: string; points: (number | null)[] }[];
   labels: string[];
   max?: number;
   height?: number;
   goal?: number;
+  /** Texto da linha de meta (ex: "meta 7,5h"). */
+  goalLabel?: string;
+  /** Sufixo do valor no ponto de topo (ex: "h", "kg"). */
+  unit?: string;
 }) {
   const Svg = require('react-native-svg').default as React.ComponentType<any>;
   const { Path, Line, Circle, Text: SvgText, G } = require('react-native-svg') as any;
@@ -132,11 +138,26 @@ export function LineChart({
     <View style={{ gap: 8 }}>
       <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
         <G>
-          {[0, 2.5, 5, 7.5, 10].map((g) => (
-            <Line key={g} x1={padX} x2={width} y1={yOf(g)} y2={yOf(g)} stroke={colors.border} strokeWidth={1} />
-          ))}
+          {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+            const value = max * f;
+            return (
+              <G key={f}>
+                <Line x1={padX} x2={width} y1={yOf(value)} y2={yOf(value)} stroke={colors.border} strokeWidth={1} />
+                <SvgText x={padX - 4} y={yOf(value) + 3} fill={colors.textMuted} fontSize={7} textAnchor="end">
+                  {Math.round(value * 10) / 10}
+                </SvgText>
+              </G>
+            );
+          })}
           {goal != null ? (
-            <Line x1={padX} x2={width} y1={yOf(goal)} y2={yOf(goal)} stroke={colors.green} strokeWidth={1} strokeDasharray="4 4" />
+            <G>
+              <Line x1={padX} x2={width} y1={yOf(goal)} y2={yOf(goal)} stroke={colors.green} strokeWidth={1} strokeDasharray="4 4" />
+              {goalLabel ? (
+                <SvgText x={width} y={yOf(goal) - 3} fill={colors.green} fontSize={7} textAnchor="end">
+                  {goalLabel}
+                </SvgText>
+              ) : null}
+            </G>
           ) : null}
           {series.map((s) => (
             <Path key={`p-${s.name}`} d={pathFor(s.points)} stroke={s.color} strokeWidth={2} fill="none" />
@@ -159,7 +180,10 @@ export function LineChart({
         {series.map((s) => (
           <View key={`leg-${s.name}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: s.color }} />
-            <Txt variant="micro" color={colors.textSecondary}>{s.name}</Txt>
+            <Txt variant="micro" color={colors.textSecondary}>
+              {s.name}
+              {unit ? ` (${unit})` : ''}
+            </Txt>
           </View>
         ))}
       </View>
@@ -311,7 +335,7 @@ export function DonutChart({
           })}
         </G>
         <SvgText x={size / 2} y={size / 2} fill={colors.textPrimary} fontSize={13} textAnchor="middle">
-          R$ {Math.round(total)}
+          {total >= 1000 ? `R$ ${(total / 1000).toFixed(1)}k` : `R$ ${total.toFixed(0)}`}
         </SvgText>
       </Svg>
       <View style={{ gap: 4, flex: 1, minWidth: 130 }}>

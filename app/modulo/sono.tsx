@@ -81,11 +81,22 @@ export default function SleepScreen() {
         <Card>
           <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Horas por noite</Txt>
           {nights.length >= 3 ? (
-            <BarChart data={data} max={12} colorFor={(v) => (v >= store.settings.sleepGoalHours ? colors.blue : colors.yellow)} />
+            <>
+              <BarChart
+                data={data}
+                max={12}
+                colorFor={(v) => (v >= store.settings.sleepGoalHours ? colors.blue : colors.yellow)}
+              />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                <View style={{ width: 16, height: 0, borderTopWidth: 1, borderTopColor: colors.green, borderStyle: 'dashed' }} />
+                <Muted>
+                  Meta {store.settings.sleepGoalHours}h · barra azul = atingiu, amarela = abaixo
+                </Muted>
+              </View>
+            </>
           ) : (
             <NoData label="Gráficos a partir de 3 pontos de dado" />
           )}
-          <Muted style={{ marginTop: spacing.sm }}>Linha de meta: {store.settings.sleepGoalHours}h (barra azul = meta atingida).</Muted>
         </Card>
 
         <Card>
