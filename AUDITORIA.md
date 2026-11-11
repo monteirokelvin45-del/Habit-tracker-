@@ -242,6 +242,21 @@ Corrigido: `version: 1.1.0` + `versionCode: 2` nos dois arquivos de config, e o 
 do pacote (`expo-constants`) e mostra `build N`. Teste compara `version`/`versionCode` entre `app.json` e
 `app.config.ts` e exige que a tela mostre a versão.
 
+### Defeito 8 — o CI publicava APK sem testar render nem telas
+
+O passo "Checagem rápida" do workflow rodava `tsc` + lógica + store. `test:render` e `test:screens`
+(que é onde os crashes de tela aparecem) ficavam só na máquina: uma tela quebrada virava APK assinado.
+
+Agora o CI roda os quatro, e depois do prebuild:
+
+1. compara `versionName`/`versionCode` do `android/app/build.gradle` com `app.json`;
+2. abre o APK com `aapt2 dump badging` e **falha o build** se a versão dentro do arquivo não é a da config;
+3. grava versão verificada + `sha256` no sumário do run (o log do runner não é acessível do sandbox);
+
+E a release passou a publicar dois nomes: `my-prime-latest.apk` (link estável) e
+`my-prime-v<versão>-<commit>.apk` (build identificado) — o nome fixo sozinho fazia duas builds
+diferentes parecerem o mesmo arquivo.
+
 ### Verificado e OK (não só "parece ok")
 
 Datas (`addDays`, `weekStart`, `daysInMonth(2028, 1) = 29`, `diffDays`), `generalStreak` com buraco e
