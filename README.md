@@ -25,8 +25,12 @@ npm start          # Expo dev server (QR code no Expo Go)
 npm run android    # emulador/dispositivo
 npm run web        # preview rápido no navegador
 npm run typecheck  # tsc --noEmit (strict)
-npm run test:logic # 232 testes de lógica pura (score, modos, insights, parser, importador, mural, gráficos, widgets)
+npm run test:logic  # 232 testes de lógica pura (score, modos, insights, parser, importador, mural, gráficos, widgets)
+npm run test:render # 42 renders dos 21 gráficos + tela, com e sem dado (react-dom/server, sem emulador)
+npm test            # os dois
 ```
+
+Verificação usada antes de cada commit: `npm run typecheck && npm test` (tipos strict + lógica + render).
 
 ## Gerando o APK (Android)
 
@@ -180,6 +184,12 @@ Regras que valem nessa tela (e estão testadas):
   motivo conta como pulada.
 - **Score "conta" quando o dia foi fechado** (`score` presente); dias futuros do waffle ficam marcados como
   `future` e não entram em nenhuma contagem.
+
+Como isso é verificado sem emulador: `scripts/run-logic-tests.mjs` compila `src/lib` e roda as funções puras em
+Node (232 asserções); `scripts/render-charts-smoke.mjs` compila os componentes, troca `react-native` por
+`react-native-web` e monta cada gráfico com `renderToStaticMarkup` — uma vez com 40 dias de dados e outra sem
+dado nenhum. É o teste que pega o que o `tsc` não vê: `.map` de `undefined`, divisão por zero e arco de círculo
+com `NaN`.
 
 ## Assets
 

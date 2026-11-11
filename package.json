@@ -9,6 +9,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test:logic": "node scripts/run-logic-tests.mjs",
+    "test:render": "node scripts/render-charts-smoke.mjs",
+    "test": "npm run test:logic && npm run test:render",
     "build:apk": "eas build -p android --profile preview",
     "build:aab": "eas build -p android --profile production",
     "ios": "expo run:ios"

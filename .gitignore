@@ -6,3 +6,4 @@ web-build/
 android/
 ios/
 .logic-build/
+.render-build/
