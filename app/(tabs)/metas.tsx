@@ -20,6 +20,7 @@ import {
   Txt,
 } from '../../src/components/ui';
 import { useStore, newId } from '../../src/lib/store';
+import { SwipeableRow } from '../../src/components/SwipeableRow';
 import { AREA_EMOJI, LIFE_AREAS, PRIORITY_META, type Goal, type Priority } from '../../src/lib/types';
 import { goalStreak } from '../../src/lib/score';
 import { todayKey } from '../../src/lib/date';
@@ -154,42 +155,50 @@ export default function GoalsScreen() {
               const streak = goalStreak(store.days, goal.id, today);
               const open = expandedGoal === goal.id;
               return (
-                <Pressable
+                <SwipeableRow
                   key={goal.id}
-                  onPress={() => setExpandedGoal(open ? null : goal.id)}
-                  onLongPress={() => openEdit(goal)}
-                  style={{
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    borderRadius: 12,
-                    padding: spacing.md,
-                    gap: 6,
-                    backgroundColor: colors.bgPrimary,
-                  }}
+                  actions={[
+                    { label: 'EDITAR', color: colors.green, onPress: () => openEdit(goal) },
+                    { label: goal.archived ? 'ATIVAR' : 'ARQUIVAR', color: colors.yellow, onPress: () => store.archiveGoal(goal.id) },
+                    { label: 'EXCLUIR', color: colors.red, onPress: () => store.deleteGoal(goal.id) },
+                  ]}
                 >
-                  <Row style={{ justifyContent: 'space-between' }}>
-                    <Row gap={6} style={{ flex: 1 }}>
-                      <Txt variant="caption">{PRIORITY_META[goal.priority].emoji}</Txt>
-                      <Txt variant="body" style={{ flexShrink: 1 }}>{goal.name}</Txt>
+                  <Pressable
+                    onPress={() => setExpandedGoal(open ? null : goal.id)}
+                    onLongPress={() => openEdit(goal)}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      borderRadius: 12,
+                      padding: spacing.md,
+                      gap: 6,
+                      backgroundColor: colors.bgPrimary,
+                    }}
+                  >
+                    <Row style={{ justifyContent: 'space-between' }}>
+                      <Row gap={6} style={{ flex: 1 }}>
+                        <Txt variant="caption">{PRIORITY_META[goal.priority].emoji}</Txt>
+                        <Txt variant="body" style={{ flexShrink: 1 }}>{goal.name}</Txt>
+                      </Row>
+                      <Badge label={goal.active ? '✅ ativa' : 'inativa'} color={goal.active ? colors.green : colors.textMuted} />
                     </Row>
-                    <Badge label={goal.active ? '✅ ativa' : 'inativa'} color={goal.active ? colors.green : colors.textMuted} />
-                  </Row>
-                  <Row gap={6} style={{ flexWrap: 'wrap' }}>
-                    <Badge label={`mín ${goal.min}`} color={colors.textSecondary} />
-                    <Badge label={`ideal ${goal.ideal}`} color={colors.textSecondary} />
-                    <Badge label={`exc ${goal.excellent}`} color={colors.textSecondary} />
-                    {streak > 0 ? <Badge label={`🔥 ${streak}d`} color={colors.orange} /> : null}
-                  </Row>
-                  {open ? (
-                    <Row gap={spacing.lg} style={{ marginTop: 4, flexWrap: 'wrap' }}>
-                      <Txt variant="micro" color={colors.green} onPress={() => openEdit(goal)}>Editar</Txt>
-                      <Txt variant="micro" color={colors.yellow} onPress={() => store.archiveGoal(goal.id)}>Arquivar</Txt>
-                      <Txt variant="micro" color={colors.red} onPress={() => store.deleteGoal(goal.id)}>Excluir</Txt>
+                    <Row gap={6} style={{ flexWrap: 'wrap' }}>
+                      <Badge label={`mín ${goal.min}`} color={colors.textSecondary} />
+                      <Badge label={`ideal ${goal.ideal}`} color={colors.textSecondary} />
+                      <Badge label={`exc ${goal.excellent}`} color={colors.textSecondary} />
+                      {streak > 0 ? <Badge label={`🔥 ${streak}d`} color={colors.orange} /> : null}
                     </Row>
-                  ) : (
-                    <Muted style={{ fontSize: 11 }}>Toque para editar / arquivar / excluir</Muted>
-                  )}
-                </Pressable>
+                    {open ? (
+                      <Row gap={spacing.lg} style={{ marginTop: 4, flexWrap: 'wrap' }}>
+                        <Txt variant="micro" color={colors.green} onPress={() => openEdit(goal)}>Editar</Txt>
+                        <Txt variant="micro" color={colors.yellow} onPress={() => store.archiveGoal(goal.id)}>Arquivar</Txt>
+                        <Txt variant="micro" color={colors.red} onPress={() => store.deleteGoal(goal.id)}>Excluir</Txt>
+                      </Row>
+                    ) : (
+                      <Muted style={{ fontSize: 11 }}>Deslize para a esquerda: editar · arquivar · excluir</Muted>
+                    )}
+                  </Pressable>
+                </SwipeableRow>
               );
             })}
             <SecondaryButton label="+ Nova meta nesta área" onPress={() => { setArea(groupArea); openNew(); }} />

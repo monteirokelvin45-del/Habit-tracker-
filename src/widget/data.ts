@@ -1,5 +1,5 @@
 import type { AppData, Day, DayMode, Goal } from '../lib/types';
-import { addDays, nowHHmm, todayKey } from '../lib/date';
+import { nowHHmm, todayKey } from '../lib/date';
 import { buildChecklist, generalStreak } from '../lib/score';
 
 /**

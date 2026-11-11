@@ -10,6 +10,7 @@ export const colors = {
   bgInput: '#111111',
 
   green: '#00FF88',
+  greenNeon: '#39FF14',
   red: '#FF4444',
   yellow: '#FFAA00',
   purple: '#AA66FF',
@@ -88,8 +89,8 @@ export function areaColor(area: string): string {
 export function scoreColor(score: number): string {
   if (score < 4) return colors.red;
   if (score < 6) return colors.yellow;
-  if (score < 8) return colors.green;
-  return colors.green;
+  if (score < 8) return colors.green; // verde claro
+  return colors.greenNeon; // verde neon (8-10)
 }
 
 export function scoreLabel(score: number): string {

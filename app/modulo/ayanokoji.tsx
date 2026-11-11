@@ -72,6 +72,22 @@ export default function AyanokojiScreen() {
             <View style={{ width: `${progress}%`, height: '100%', borderRadius: 4, backgroundColor: '#9B7BFF' }} />
           </View>
           <Muted style={{ marginTop: 6 }}>Início em {start} · {daysPassed} dia(s) de protocolo</Muted>
+          <View style={{ marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}>
+            <Txt variant="micro" color={colors.textSecondary}>PRÓXIMO NÍVEL</Txt>
+            <Txt variant="caption" color="#9B7BFF" style={{ marginTop: 2 }}>
+              Próximo nível — Autocontrole {currentScores?.selfControl ?? 5} → {(currentScores?.selfControl ?? 5) >= 9 ? 10 : (currentScores?.selfControl ?? 5) + 1}
+            </Txt>
+            <View style={{ height: 4, borderRadius: 2, backgroundColor: colors.track, marginTop: 6 }}>
+              <View
+                style={{
+                  width: `${Math.min(100, ((currentScores?.selfControl ?? 5) / 10) * 100)}%`,
+                  height: '100%',
+                  borderRadius: 2,
+                  backgroundColor: '#9B7BFF',
+                }}
+              />
+            </View>
+          </View>
         </Card>
 
         <Card>

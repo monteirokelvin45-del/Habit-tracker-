@@ -17,6 +17,7 @@ import { buildChecklist, detectDanger, generalStreak, goalStreak, priorityTasksU
 import { nextReward } from '../../src/lib/insights';
 import { haptic } from '../../src/lib/haptics';
 import { useWidgetSync } from '../../src/widget/sync';
+import { FadeInDown } from '../../src/components/FadeIn';
 import type { Day, DayMode, Goal } from '../../src/lib/types';
 
 export default function TodayScreen() {
@@ -223,6 +224,7 @@ export default function TodayScreen() {
         </Row>
 
         {/* CHECK-IN DE ENERGIA */}
+        <FadeInDown delay={40}>
         <EnergyCard
           day={day}
           yesterdayScore={scoreOf(yesterday) ?? undefined}
@@ -235,6 +237,7 @@ export default function TodayScreen() {
             store.setMode(today, mode);
           }}
         />
+        </FadeInDown>
 
         <Muted style={{ marginTop: -4 }}>{modeHint(day.mode)}</Muted>
 
@@ -265,6 +268,7 @@ export default function TodayScreen() {
         </Card>
 
         {/* CHECKLIST */}
+        <FadeInDown delay={90}>
         <ChecklistCard
           day={day}
           goals={store.goals}
@@ -278,6 +282,7 @@ export default function TodayScreen() {
             store.setTaskNote(today, goalId, note);
           }}
         />
+        </FadeInDown>
 
         {/* ALERTAS RÁPIDOS */}
         {highUndone.length && day.closedAt === undefined ? (

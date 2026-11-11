@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Platform, ScrollView, View } from 'react-native';
 import { colors, spacing } from '../../src/theme';
-import { Card, Muted, NoData, PrimaryButton, Row, SecondaryButton, Txt } from '../../src/components/ui';
+import { Card, Muted, NoData, Row, SecondaryButton, Txt } from '../../src/components/ui';
 import { ModalHeader } from '../../src/components/ModalHeader';
 import { useStore } from '../../src/lib/store';
 import { useWidgetSync } from '../../src/widget/sync';
