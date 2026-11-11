@@ -168,14 +168,71 @@ Varredura feita em `src/lib`, `src/components` e `app/**`: cada defeito abaixo f
 | 22 | Editar meta descartava `originId` | vínculo com histórico importado se perdia | `originId` preservado |
 | 23 | Fechar o dia 2× recriava o dia seguinte | perdia o que já tinha sido preenchido em "amanhã" | dia seguinte nunca é recriado se já existe |
 | 24 | Meta sem nome / dia sem tarefas no gauge e no anel | projeção confusa e numerador inflado | projeção mínima 0 e anel limitado ao checklist do modo |
+| 25 | Meta de storage antigo sem `priority`/`active` | meta sumia do checklist ou o badge fatal quebrava a tela | `sanitizeGoal` no boot e no import |
+| 26 | Backup sem `schemaVersion` | formato impossível de evoluir sem adivinhar | `schemaVersion` no export + normalização na entrada |
+| 27 | Nenhuma recuperação após perda de histórico | dias zerados = app recomeçava vazio em silêncio | snapshot automático + "Restaurar histórico" no Perfil |
+| 28 | `hardReset` deixava snapshot órfão | aviso de recuperação voltava num app zerado de propósito | `hardReset` descarta snapshots |
+| 29 | `scheduleReminders` rodava a cada mudança de `days`/`goals` | releitura de 14 chaves + streak O(n) dezenas de vezes por sessão | reagenda 1× por dia |
 
 Testes que guardam essas correções:
 
-- `npm run test:store` — **25 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
+- `npm run test:store` — **31 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
   dado antigo). Compila o store real com stub de persistência; é o teste que pega estado errado.
 - `npm run test:logic` — **241 asserções** (inclui as novas de janela por data, threshold por meta,
   badge de honestidade e anel do dia).
 - `npm run test:render` — **42 montagens** dos gráficos com e sem dado.
+
+## Memória de dados (persistência) — como está
+
+Pergunta objetiva: **o app guarda dados de forma confiável?** Resposta medida, não estimada.
+
+### O que é bom
+
+| Aspecto | Situação |
+|---|---|
+| Modelo | chaves separadas por domínio (`@myprime:days`, `:goals`, `:finances`…): 14 chaves, não um blob gigante |
+| Escrita | cada ação do store grava só a chave que mudou (`persist`), alguns fluxos usam `persistMany` |
+| Formato | JSON versionado a partir de agora (`schemaVersion: 1` no backup exportado) |
+| Recuperação de formato | `normalizeDay` / `sanitizeGoal` no boot, no import de backup e no snapshot: prioridade ausente vira `normal`, meta sem `active` continua ativa, dia sem diário ganha `emptyDiary()` |
+| Perda silenciosa | falha de gravação agora é visível (`storageHealth` + aviso no Perfil) |
+| Perda de histórico | snapshot automático por chave + botão **Restaurar histórico** no Perfil |
+| Portabilidade | export JSON completo + import de backup com validação e resumo do que entrou |
+
+### Números medidos (payload real do app)
+
+Dia completo (diário, energia, 6 tarefas, pomodoro, score, sono):
+
+| Histórico | Tamanho de `@myprime:days` | `JSON.stringify` |
+|---|---|---|
+| 30 dias | 27 KB | 0,24 ms |
+| 90 dias | 82 KB | 0,83 ms |
+| 1 ano | 333 KB | 3,1 ms |
+| 2 anos | 667 KB | 6,2 ms |
+
+Conclusão: o custo por ação continua irrelevante (alguns ms). O gargalo nunca foi o tamanho
+do JSON — era ler/gravar tudo em toda mudança de estado, que foi corrigido (os lembretes
+agora são reagendados 1× por dia, não a cada edição).
+
+### Limites que continuam existindo (declarados)
+
+1. **Sem servidor**: tudo é local no AsyncStorage. Trocar de celular = exportar JSON e importar.
+   Não há sincronização entre dispositivos.
+2. **Snapshot é espelho da última versão boa**, não histórico versionado: protege contra
+   perda total (dias zerados), não contra edição errada (ex.: apagar uma meta que você queria).
+3. **Um arquivo por chave**: `days` cresce ~27 KB/mês. Em ~5 anos chega a ~1,6 MB — ainda ok
+   para AsyncStorage, mas a partir daí valeria arquivar anos fechados.
+4. **Fotos** do diário/progresso são gravadas como URI do arquivo; se o usuário apagar o arquivo
+   do sistema, a foto quebra (o app trata como ausente, não como erro).
+5. **Web** não tem AsyncStorage nativo persistente por padrão — a memória boa se aplica ao app
+   Android/iOS, que é o alvo.
+
+### Testes que guardam isso
+
+- `npm run test:store` → 31 asserções, incluindo: boot sem dias + snapshot marca recuperação,
+  restaurar devolve histórico e recalcula badges, boot normal não acusa perda, restore sem
+  snapshot retorna `false` (sem falso sucesso).
+- Verificação direta de `normalizeData` com backup incompleto (meta sem `id`, sem `priority`,
+  dia com tarefa inválida): meta inválida é descartada, dia é normalizado, settings preservadas.
 
 ## Desvios e limites — declarados honestamente
 
@@ -195,7 +252,7 @@ Testes que guardam essas correções:
 - `node scripts/run-logic-tests.mjs` → **241/241** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
-- `node scripts/audited-store.mjs` → **25/25** (ações do store: dia fechado, reabrir, pomodoro, metas,
+- `node scripts/audited-store.mjs` → **31/31** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200

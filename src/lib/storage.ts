@@ -86,10 +86,19 @@ export interface StorageHealth {
 
 export const storageHealth: StorageHealth = { lastFailedKey: null, failedWrites: 0 };
 
+/**
+ * Chaves espelhadas num snapshot automático. Se `days` um dia voltar vazio (bug de
+ * migração, multiRemove acidental, storage corrompido), o app consegue recuperar a
+ * última versão boa em vez de começar do zero.
+ */
+const SNAPSHOT_KEYS = ['days', 'goals', 'user', 'settings', 'badges'] as const;
+export const SNAPSHOT_PREFIX = '@myprime:backup:';
+
 async function write(key: string, value: unknown): Promise<void> {
   try {
     await AsyncStorage.setItem(key, JSON.stringify(value));
     storageHealth.lastFailedKey = null;
+    await mirror(key, value);
   } catch (e) {
     // Antes era só um warn no console: o app seguia mostrando o dado como salvo.
     // Agora a falha fica registrada e o Perfil consegue avisar o usuário.
@@ -97,6 +106,65 @@ async function write(key: string, value: unknown): Promise<void> {
     storageHealth.failedWrites += 1;
     console.warn('[MY PRIME] falha ao salvar', key, e);
   }
+}
+
+/** Espelha a última versão BOA de cada chave protegida (nunca grava lista vazia). */
+async function mirror(key: string, value: unknown): Promise<void> {
+  const field = (Object.keys(KEYS) as (keyof typeof KEYS)[]).find((k) => KEYS[k] === key);
+  if (!field || !(SNAPSHOT_KEYS as readonly string[]).includes(field)) return;
+  if (Array.isArray(value) && value.length === 0) return;
+  try {
+    await AsyncStorage.setItem(
+      `${SNAPSHOT_PREFIX}${field}`,
+      JSON.stringify({ at: new Date().toISOString(), value }),
+    );
+  } catch {
+    /* espelho é best-effort: nunca deve atrapalhar a gravação principal */
+  }
+}
+
+/**
+ * Versão do formato persistido. Fica gravada no backup para que uma migração
+ * futura saiba o que está lendo (o app aceita qualquer versão, mas registra).
+ */
+export const SCHEMA_VERSION = 1;
+
+/** Dia vindo de storage/backup/snapshot: sempre com energia, tarefas e diário. */
+export function normalizeDay(input: Partial<Day>): Day {
+  return {
+    ...input,
+    date: String(input.date),
+    energy: input.energy ?? { physical: 5, mental: 5, stress: 5 },
+    mode: input.mode ?? 'normal',
+    tasks: (Array.isArray(input.tasks) ? input.tasks : [])
+      .filter((t): t is NonNullable<typeof t> => !!t && typeof t === 'object' && typeof t.goalId === 'string')
+      .map((t) => ({ ...t, done: !!t.done, note: t.note ?? '' })),
+    diary: { ...emptyDiary(), ...(input.diary ?? {}) },
+  } as Day;
+}
+
+const PRIORITIES = ['high', 'normal', 'low'] as const;
+
+/** Meta de storage antigo/backup: sem defaults ela some do checklist ou quebra a tela. */
+export function sanitizeGoal(input: Partial<Goal>): Goal {
+  const g = input as Partial<Goal> & { priority?: string };
+  return {
+    id: String(g.id ?? ''),
+    name: String(g.name ?? 'Meta sem nome'),
+    area: String(g.area ?? 'Projeto Pessoal'),
+    // `priority` ausente deixava `PRIORITY_META[undefined].emoji` fatal no checklist.
+    priority: (PRIORITIES as readonly string[]).includes(g.priority ?? '')
+      ? (g.priority as Goal['priority'])
+      : 'normal',
+    min: String(g.min ?? '10min'),
+    ideal: String(g.ideal ?? '30min'),
+    excellent: String(g.excellent ?? '1h'),
+    // `active` ausente era falsy: a meta desaparecia do checklist sem aviso.
+    active: g.active ?? true,
+    archived: g.archived ?? false,
+    ...(g.originId ? { originId: g.originId } : {}),
+    createdAt: g.createdAt ?? new Date().toISOString(),
+  };
 }
 
 /**
@@ -110,17 +178,13 @@ export function normalizeData(input: Partial<AppData> | null | undefined, base: 
   // Dia sem diário/energia quebrava o fechamento e o histórico (crash em computeScore).
   const days = arr<Partial<Day>>(raw.days)
     .filter((d) => !!d && typeof d === 'object' && typeof d.date === 'string')
-    .map((d) => ({
-      ...d,
-      energy: d.energy ?? { physical: 5, mental: 5, stress: 5 },
-      mode: d.mode ?? 'normal',
-      tasks: Array.isArray(d.tasks) ? d.tasks : [],
-      diary: { ...emptyDiary(), ...(d.diary ?? {}) },
-    })) as Day[];
+    .map(normalizeDay);
   return {
     onboarded: raw.onboarded ?? base.onboarded,
     user: { ...base.user, ...(raw.user ?? {}), areas: arr<string>((raw.user as User | undefined)?.areas) },
-    goals: arr<Goal>(raw.goals),
+    goals: arr<Partial<Goal> | null>(raw.goals)
+      .filter((g): g is Partial<Goal> => !!g && typeof g === 'object' && typeof g.id === 'string')
+      .map(sanitizeGoal),
     days,
     rules: arr<Rule>(raw.rules),
     rewards: arr<Reward>(raw.rewards),
@@ -135,7 +199,53 @@ export function normalizeData(input: Partial<AppData> | null | undefined, base: 
   };
 }
 
-/** Carrega tudo de uma vez (boot do app). */
+export interface SnapshotInfo {
+  key: string;
+  field: string;
+  at: string;
+  count: number;
+}
+
+async function readSnapshot(field: string): Promise<{ at: string; value: unknown } | null> {
+  return read<{ at: string; value: unknown } | null>(`${SNAPSHOT_PREFIX}${field}`, null);
+}
+
+/** Lista os snapshots existentes (o Perfil mostra a data e a quantidade recuperável). */
+export async function listSnapshots(): Promise<SnapshotInfo[]> {
+  const entries = await Promise.all(
+    SNAPSHOT_KEYS.map(async (field): Promise<SnapshotInfo | null> => {
+      const snap = await readSnapshot(field);
+      if (!snap) return null;
+      const value = snap.value;
+      return {
+        key: KEYS[field],
+        field: String(field),
+        at: snap.at,
+        count: Array.isArray(value) ? value.length : value ? 1 : 0,
+      };
+    }),
+  );
+  return entries.filter((e): e is SnapshotInfo => !!e && (e.field !== 'days' || e.count > 0));
+}
+
+/**
+ * Recupera os dias (e metas, se vieram junto) do último snapshot bom.
+ * Usado quando o boot encontra 0 dias mas existe cópia com histórico — cenário de
+ * perda de dados silenciosa, em que antes o app simplesmente abria vazio.
+ */
+export async function restoreSnapshots(): Promise<{ days: Day[]; goals: Goal[] } | null> {
+  const [daysSnap, goalsSnap] = await Promise.all([readSnapshot('days'), readSnapshot('goals')]);
+  const days = Array.isArray(daysSnap?.value) ? (daysSnap!.value as Day[]) : [];
+  if (!days.length) return null;
+  const goals = Array.isArray(goalsSnap?.value) ? (goalsSnap!.value as Goal[]) : [];
+  return { days: days.map((d) => normalizeDay(d)), goals: goals.map(sanitizeGoal) };
+}
+
+export async function discardSnapshots(): Promise<void> {
+  await AsyncStorage.multiRemove(SNAPSHOT_KEYS.map((f) => `${SNAPSHOT_PREFIX}${f}`));
+}
+
+
 export async function loadAll(): Promise<AppData> {
   const [
     onboarded,

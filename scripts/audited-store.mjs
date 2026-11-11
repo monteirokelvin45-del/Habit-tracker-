@@ -35,7 +35,30 @@ export const EMPTY_DATA = {
   ayanokoji: { startDate: '', scores: [], tasksDone: {} },
   weeklyFocus: {}, routeAdjustments: {},
 };
-export async function loadAll() { return EMPTY_DATA; }
+export const snapshots = {};
+export function sanitizeGoal(g) {
+  return { id: String(g.id ?? ''), name: String(g.name ?? ''), area: String(g.area ?? ''),
+    priority: ['high','normal','low'].includes(g.priority) ? g.priority : 'normal',
+    min: g.min ?? '10min', ideal: g.ideal ?? '30min', excellent: g.excellent ?? '1h',
+    active: g.active ?? true, archived: g.archived ?? false, createdAt: g.createdAt ?? '' };
+}
+export function normalizeDay(d) {
+  return { ...d, energy: d.energy ?? { physical: 5, mental: 5, stress: 5 }, mode: d.mode ?? 'normal',
+    tasks: Array.isArray(d.tasks) ? d.tasks : [], diary: d.diary ?? {} };
+}
+export async function loadAll() { return globalThis.__loadAllResult ?? EMPTY_DATA; }
+export async function listSnapshots() {
+  return Object.entries(snapshots).map(([field, snap]) => ({
+    key: field, field, at: snap.at,
+    count: Array.isArray(snap.value) ? snap.value.length : snap.value ? 1 : 0,
+  }));
+}
+export async function restoreSnapshots() {
+  const days = snapshots.days?.value ?? [];
+  if (!days.length) return null;
+  return { days: days.map((d) => ({ ...d, diary: d.diary ?? {} })), goals: snapshots.goals?.value ?? [] };
+}
+export async function discardSnapshots() { for (const k of Object.keys(snapshots)) delete snapshots[k]; }
 export async function persist(key, value) { state.writes.push([key, value]); }
 export async function persistMany(entries) { state.writes.push(...entries); }
 export async function resetAll() { state.writes.push(['reset']); }
@@ -54,7 +77,10 @@ for (const file of fs
   }).outputText;
   js = js
     .replace(/from '\.\/storage'/g, "from './storage-stub.mjs'")
-    .replace(/from '(\.\/[a-zA-Z0-9_-]+)'/g, "from '$1.mjs'");
+    .replace(/from '(\.\/[a-zA-Z0-9_-]+)'/g, "from '$1.mjs'")
+    // `await import('./storage')` (carregamento tardio no store) também vai ao stub.
+    .replace(/import\('\.\/storage'\)/g, "import('./storage-stub.mjs')")
+    .replace(/import\('(\.\/[a-zA-Z0-9_-]+)'\)/g, "import('$1.mjs')");
   fs.writeFileSync(path.join(outRoot, file.replace(/\.ts$/, '.mjs')), js);
 }
 
@@ -242,6 +268,33 @@ console.log('\n── Store: dado antigo não quebra o app ──');
     crashed = true;
   }
   check('computeScore aceita dia normalizado (sem crash)', !crashed);
+}
+
+console.log('\n── Memória de dados: snapshot e recuperação ──');
+{
+  const storageStub = await import(pathToFileURL(path.join(outRoot, 'storage-stub.mjs')).href);
+  const historique = [closedDay(yesterday, [{ goalId: 'g1', done: true, note: '' }], 8)];
+
+  // boot sem dias + snapshot com histórico → o app avisa em vez de abrir vazio
+  storageStub.snapshots.days = { at: '2026-11-09T10:00:00.000Z', value: historique };
+  globalThis.__loadAllResult = { ...storageStub.EMPTY_DATA, onboarded: true };
+  await useStore.getState().load();
+  check('boot sem dias mas com snapshot marca a recuperação', useStore.getState().recovery?.days === 1);
+
+  const ok = await useStore.getState().restoreFromSnapshot();
+  check('restaurar devolve o histórico do snapshot', ok && useStore.getState().days.length === 1);
+  check('restaurar recalcula badges sem quebrar', Array.isArray(useStore.getState().badges));
+  check('restaurar limpa o aviso', useStore.getState().recovery === null);
+
+  // boot normal (com dias) não deve acusar perda
+  globalThis.__loadAllResult = { ...storageStub.EMPTY_DATA, onboarded: true, days: historique };
+  await useStore.getState().load();
+  check('boot com dias não acusa recuperação', useStore.getState().recovery === null);
+
+  // restore sem snapshot não finge sucesso
+  storageStub.snapshots.days = { at: '2026-11-09T10:00:00.000Z', value: [] };
+  check('restore sem histórico devolve false', (await useStore.getState().restoreFromSnapshot()) === false);
+  globalThis.__loadAllResult = undefined;
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);

@@ -3,6 +3,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import type { AppData } from './types';
+import { SCHEMA_VERSION } from './storage';
 import { colors } from '../theme';
 import { areaConsistency, closedDays, failureMap, topExcuse } from './insights';
 import { avg, round1 } from './score';
@@ -27,6 +28,8 @@ export async function exportJson(data: AppData): Promise<string | null> {
     ayanokoji: data.ayanokoji,
     weeklyFocus: data.weeklyFocus,
     routeAdjustments: data.routeAdjustments,
+    // Formato explícito: um backup sem esta chave é lido como v0.
+    schemaVersion: SCHEMA_VERSION,
   };
   const json = JSON.stringify(payload, null, 2);
 

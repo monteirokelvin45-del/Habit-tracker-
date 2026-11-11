@@ -37,6 +37,10 @@ export interface StoreState extends AppData {
   booted: boolean;
   load: () => Promise<void>;
   setBooted: () => void;
+  /** Existe snapshot automático com histórico enquanto o app abriu sem dias. */
+  recovery: { at: string; days: number } | null;
+  restoreFromSnapshot: () => Promise<boolean>;
+  dismissRecovery: () => void;
 
   finishOnboarding: (payload: {
     user: User;
@@ -155,14 +159,51 @@ export const useStore = create<StoreState>((set, get) => ({
   ...EMPTY_DATA,
   status: 'idle',
   booted: false,
+  recovery: null,
 
   async load() {
     set({ status: 'loading' });
     const { loadAll } = await import('./storage');
     const data = await loadAll();
-    // Dado gravado por versão antiga pode ter dia sem diário/energia: normaliza no
-    // boot para nenhuma tela quebrar no meio do uso.
-    set({ ...data, days: data.days.map(sanitizeDay), status: 'ready' });
+    // Dado gravado por versão antiga pode ter dia sem diário/energia ou meta sem
+    // prioridade: normaliza no boot para nenhuma tela quebrar no meio do uso.
+    const { sanitizeGoal } = await import('./storage');
+    set({
+      ...data,
+      days: data.days.map(sanitizeDay),
+      goals: data.goals.map(sanitizeGoal),
+      status: 'ready',
+    });
+
+    // Abriu sem nenhum dia mas existe cópia automática com histórico: sinaliza em
+    // vez de começar do zero calado (era exatamente o sintoma de perda de dados).
+    if (!data.days.length) {
+      const { listSnapshots } = await import('./storage');
+      const snap = (await listSnapshots()).find((s) => s.field === 'days' && s.count > 0);
+      if (snap) set({ recovery: { at: snap.at, days: snap.count } });
+    }
+  },
+
+  async restoreFromSnapshot() {
+    const { restoreSnapshots } = await import('./storage');
+    const restored = await restoreSnapshots();
+    if (!restored) return false;
+    const current = get();
+    // Recupera o histórico; metas só entram se o app também estiver sem elas
+    // (senão as atuais mandam e o snapshot serve apenas de histórico).
+    const goals = current.goals.length ? current.goals : restored.goals;
+    const days = restored.days.map(sanitizeDay).sort((a, b) => (a.date < b.date ? -1 : 1));
+    set({ days, goals, recovery: null, badges: evaluateBadges({ ...current, days, goals }) });
+    const { persistMany } = await import('./storage');
+    await persistMany([
+      ['days', days],
+      ['goals', goals],
+    ]);
+    return true;
+  },
+
+  dismissRecovery() {
+    set({ recovery: null });
   },
 
   setBooted() {
@@ -676,7 +717,12 @@ export const useStore = create<StoreState>((set, get) => ({
       // Backup pode estar incompleto/editado à mão: normaliza antes de gravar.
       const { normalizeData } = await import('./storage');
       const raw = normalizeData(summary.full, { ...EMPTY_DATA, settings: state.settings });
-      const full: typeof raw = { ...raw, days: raw.days.map(sanitizeDay) };
+      const { sanitizeGoal } = await import('./storage');
+      const full: typeof raw = {
+        ...raw,
+        days: raw.days.map(sanitizeDay),
+        goals: raw.goals.map(sanitizeGoal),
+      };
       set({
         onboarded: true,
         user: full.user,
@@ -761,7 +807,11 @@ export const useStore = create<StoreState>((set, get) => ({
 
   async hardReset() {
     await resetAll();
-    set({ ...EMPTY_DATA, status: 'ready', booted: true });
+    // Recusar o histórico de propósito precisa apagar também o snapshot: senão o
+    // aviso de recuperação reapareceria no próximo boot de um app zerado.
+    const { discardSnapshots } = await import('./storage');
+    await discardSnapshots();
+    set({ ...EMPTY_DATA, status: 'ready', booted: true, recovery: null });
   },
 }));
 

@@ -51,6 +51,29 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bgPrimary }} edges={['top']}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}>
+        {store.recovery ? (
+          <Card accent={colors.yellow + '55'}>
+            <Txt variant="h3" color={colors.yellow}>
+              Histórico encontrado
+            </Txt>
+            <Muted style={{ marginTop: 4 }}>
+              O app abriu sem dias registrados, mas existe uma cópia automática de{' '}
+              {new Date(store.recovery.at).toLocaleDateString('pt-BR')} com {store.recovery.days} dias. Nada foi
+              perdido até agora — restaure antes de continuar.
+            </Muted>
+            <Row gap={spacing.sm} style={{ marginTop: spacing.sm }}>
+              <PrimaryButton
+                label="Restaurar histórico"
+                onPress={async () => {
+                  const ok = await store.restoreFromSnapshot();
+                  haptic(ok ? 'success' : 'error');
+                }}
+              />
+              <SecondaryButton label="Ignorar" onPress={store.dismissRecovery} />
+            </Row>
+          </Card>
+        ) : null}
+
         {storageHealth.failedWrites > 0 ? (
           <Card accent={colors.red + '55'}>
             <Txt variant="caption" color={colors.red}>
