@@ -18,11 +18,16 @@ function longestStreakAbove(days: Day[], threshold: number): number {
   let prev: string | null = null;
   for (const d of closed) {
     const ok = (d.score?.total ?? 0) > threshold;
-    if (ok && prev && addDays(prev, 1) === d.date) run += 1;
-    else if (ok) run = 1;
-    else run = 0;
+    // O contador só anda se o dia anterior também passou E é o dia imediatamente anterior.
+    // (Antes, `prev` nulo fazia `run = 1` mesmo com lacunas no meio da sequência.)
+    if (ok) {
+      run = prev && addDays(prev, 1) === d.date ? run + 1 : 1;
+      prev = d.date;
+    } else {
+      run = 0;
+      prev = null;
+    }
     best = Math.max(best, run);
-    prev = ok ? d.date : null;
   }
   return best;
 }

@@ -25,6 +25,8 @@ export interface Goal {
   active: boolean;
   archived?: boolean;
   createdAt: string;
+  /** Id usado por tarefas antigas quando a meta foi reimportada com outro id. */
+  originId?: string;
 }
 
 export interface Excuse {

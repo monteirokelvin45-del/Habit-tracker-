@@ -22,7 +22,7 @@ import { ModalHeader } from '../../src/components/ModalHeader';
 
 const CRITERIA = [
   { key: 'streak' as const, label: 'Streak de dias (score > 5)', unit: 'dias' },
-  { key: 'score' as const, label: 'Dias seguidos com score ≥ alvo', unit: 'dias' },
+  { key: 'score' as const, label: 'Dias seguidos atingindo a meta diária de score', unit: 'dias' },
   { key: 'consistency' as const, label: 'Consistência (%) em N dias', unit: '%' },
 ];
 
@@ -48,7 +48,10 @@ export default function RewardsScreen() {
     store.addReward({
       id: newId('reward'),
       name: name.trim(),
-      criteria: `${selected?.label ?? ''} — ${value}${selected?.unit ?? ''}`,
+      criteria:
+        criteriaType === 'score'
+          ? `${selected?.label ?? ''} — ${value} dia(s) com score ≥ ${store.settings.targetDailyScore}`
+          : `${selected?.label ?? ''} — ${value}${selected?.unit ?? ''}`,
       criteriaType,
       target: value,
       current: 0,

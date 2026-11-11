@@ -12,12 +12,15 @@ export function ChecklistCard({
   onToggle,
   onLongFail,
   onNote,
+  readOnly = false,
 }: {
   day: Day;
   goals: Goal[];
   onToggle: (goalId: string, done: boolean) => void;
   onLongFail: (goalId: string) => void;
   onNote: (goalId: string, note: string) => void;
+  /** Dia encerrado: o registro está fechado; nada muda sem reabrir. */
+  readOnly?: boolean;
 }) {
   const items = useMemo(() => buildChecklist(goals, day.mode), [goals, day.mode]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -76,10 +79,12 @@ export function ChecklistCard({
                   <Checkbox
                     checked={done}
                     onPress={() => {
+                      if (readOnly) return;
                       haptic(done ? 'light' : 'success');
                       onToggle(key, !done);
                     }}
                     onLongPress={() => {
+                      if (readOnly) return;
                       haptic('warning');
                       onLongFail(key);
                     }}
@@ -133,7 +138,7 @@ export function ChecklistCard({
                       fontSize: 14,
                     }}
                   />
-                  {!done ? (
+                  {!done && !readOnly ? (
                     <Pressable onPress={() => onLongFail(key)} style={{ paddingVertical: 6 }}>
                       <Txt variant="caption" color={colors.red}>
                         ✗ Registrar falha (motivo + custo + plano)

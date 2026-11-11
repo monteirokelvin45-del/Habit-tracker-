@@ -1,7 +1,34 @@
 import type { Day, DayMode, Goal, Priority, ScoreBreakdown, Settings } from './types';
 import { addDays, formatMinutes, parseDurationToMinutes, todayKey } from './date';
 
+
+/* ──────────────────── Resolução de tarefas (ids x extras) ──────────────────── */
+
+/** Chaves de tarefa válidas para uma meta: o id atual e o id de origem ("goal:slug"). */
+function goalKeys(goal: Goal): string[] {
+  const keys = [goal.id];
+  const origin = (goal as Goal & { originId?: string }).originId;
+  if (origin && !keys.includes(origin)) keys.push(origin);
+  return keys;
+}
+
+/** Id de origem de uma tarefa (quando o importador gerou um id novo para a meta). */
+export function taskGoalId(task: { goalId: string }): string {
+  return task.goalId;
+}
+
+/**
+ * Encontra a meta de uma tarefa. Uma tarefa "extra:" (modo ataque/recuperação)
+ * não pertence a nenhuma meta — usar a área dela como fallback faria uma meta
+ * aleatória ser marcada como feita/falhada.
+ */
+export function goalForTask(goals: Goal[], task: { goalId: string }): Goal | undefined {
+  if (task.goalId.startsWith('extra:')) return undefined;
+  return goals.find((g) => goalKeys(g).includes(task.goalId));
+}
+
 /* ────────────────────────────── Checklist por modo ────────────────────────────── */
+
 
 export interface ChecklistItem {
   goal: Goal;
@@ -148,16 +175,18 @@ export function generalStreak(days: Day[], end: string | null = todayKey()): num
   if (!end) return 0;
   let streak = 0;
   let cursor: string = end;
+  // Hoje ainda não registrado (ou ontem pendente) não pode zerar a série:
+  // só pulamos a lacuna no início da contagem, como já fazia goalStreak.
   for (let i = 0; i < 500; i++) {
     const day = map.get(cursor);
-    if (!day) {
-      if (i === 0) {
+    if (!day || !day.score) {
+      if (i === 0 || (i === 1 && !map.get(end)?.score)) {
         cursor = addDays(cursor, -1);
         continue;
       }
       break;
     }
-    if (day.score && day.score.total > 5) streak++;
+    if (day.score.total > 5) streak++;
     else break;
     cursor = addDays(cursor, -1);
   }
@@ -192,7 +221,7 @@ export function computeScore({ day, goals, previousDays }: ScoreInput): ScoreBre
   let wTotal = 0;
   let wDone = 0;
   for (const t of day.tasks) {
-    const goal = goals.find((g) => g.id === t.goalId);
+    const goal = goalForTask(goals, t);
     const w = weights[(goal?.priority ?? 'normal') as Priority];
     wTotal += w;
     if (t.done) wDone += w;
@@ -221,7 +250,10 @@ export function computeScore({ day, goals, previousDays }: ScoreInput): ScoreBre
     dh.correction.trim().length > 0 || regularity >= 6,
   ].filter(Boolean).length;
   let honesty = (filled / 5) * 8;
-  if (dh.context.where.trim() && (dh.context.trigger.trim() || dh.context.distraction.trim())) honesty += 2;
+  // Bônus só quando o máximo de campos já está preenchido: evita soma acima de 8 com base parcial.
+  if (filled === 5 && dh.context.where.trim() && (dh.context.trigger.trim() || dh.context.distraction.trim())) {
+    honesty += 2;
+  }
   const unresolvedFlags = (day.honestyFlags ?? []).filter((f) => !f.resolved).length;
   honesty = Math.max(0, Math.min(10, honesty - unresolvedFlags * 2));
 
@@ -253,26 +285,32 @@ export function computeScore({ day, goals, previousDays }: ScoreInput): ScoreBre
 export function priorityTasksUndone(day: Day, goals: Goal[]): { goal: Goal; task: Day['tasks'][number] }[] {
   return day.tasks
     .filter((t) => !t.done)
-    .map((task) => ({ task, goal: goals.find((g) => g.id === task.goalId) }))
+    .map((task) => ({ task, goal: goalForTask(goals, task) }))
     .filter((x): x is { task: Day['tasks'][number]; goal: Goal } => !!x.goal && x.goal.priority === 'high');
 }
 
 export function victoryLine(day: Day, score: number, goals: Goal[]): string {
   const done = day.tasks.filter((t) => t.done);
   const areas = Array.from(
-    new Set(done.map((t) => goals.find((g) => g.id === t.goalId)?.area).filter((a): a is string => !!a)),
+    new Set(done.map((t) => goalForTask(goals, t)?.area).filter((a): a is string => !!a)),
   );
   const area = areas[0] ?? goals[0]?.area ?? 'sua rotina';
 
+  // Regra 2: sem elogio vazio. Sem tarefa concluída, o texto descreve o fato — não parabeniza.
+  if (!done.length) {
+    return score >= 5
+      ? 'Nenhuma tarefa marcada como feita. O score reflete presença no loop, não execução.'
+      : 'Dia difícil e sem entrega registrada. O registro existe para corrigir amanhã, não para consolar.';
+  }
   if (score > 7) {
     return `Você dominou ${area} hoje. Consistência real: ${done.length} de ${day.tasks.length} entregues sem depender do humor.`;
   }
   if (score >= 5) {
     const firstDone = done[0];
-    const name = goals.find((g) => g.id === firstDone?.goalId)?.name;
+    const name = firstDone ? goalForTask(goals, firstDone)?.name : undefined;
     return `Você não fez tudo, mas avançou no que importava: ${name ?? 'a prioridade do dia'}.`;
   }
-  return 'Dia difícil, mas você registrou. Isso já é mais do que a maioria faz.';
+  return `Dia difícil, com ${done.length} de ${day.tasks.length} entregues. O registro já permite corrigir.`;
 }
 
 export function chargeLines(day: Day, goals: Goal[]): { text: string; goal: Goal; task: Day['tasks'][number] }[] {

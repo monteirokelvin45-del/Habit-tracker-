@@ -35,8 +35,10 @@ export default function ImportScreen() {
   const [templateOpen, setTemplateOpen] = useState(false);
   const [pastedOpen, setPastedOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const analyze = (content: string, name: string) => {
+    setImportError(null);
     const result = readPlan(content, name, store);
     setSummary(result);
     setFilename(name);
@@ -44,6 +46,9 @@ export default function ImportScreen() {
   };
 
   const pickFile = async () => {
+    // O picker pode falhar com "Already reading" se tocado duas vezes: trava a entrada.
+    if (busy) return;
+    setBusy(true);
     try {
       const res = await DocumentPicker.getDocumentAsync({
         type: ['text/plain', 'application/json', 'text/markdown', 'text/*'],
@@ -53,8 +58,7 @@ export default function ImportScreen() {
       const asset = res.assets[0];
       if ((asset.name ?? '').toLowerCase().endsWith('.pdf')) {
         haptic('error');
-        setFilename(asset.name ?? 'arquivo.pdf');
-        setSummary(null);
+        setImportError('PDF é binário e não é lido. Abra o arquivo, copie o texto e use "Colar o plano".');
         return;
       }
       const content = new File(asset.uri).textSync();
@@ -62,6 +66,9 @@ export default function ImportScreen() {
     } catch (e) {
       console.warn('[MY PRIME] importar', e);
       haptic('error');
+      setImportError('Não consegui ler este arquivo. Use .md, .txt ou .json exportado pelo MY PRIME.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -103,7 +110,16 @@ export default function ImportScreen() {
               </Txt>
             </Card>
 
-            <PrimaryButton label="📎 Escolher arquivo (.md, .txt, .json)" onPress={pickFile} />
+            <PrimaryButton
+              label={busy ? 'Lendo arquivo...' : '📎 Escolher arquivo (.md, .txt, .json)'}
+              disabled={busy}
+              onPress={pickFile}
+            />
+            {importError ? (
+              <Card accent={colors.red + '44'}>
+                <Txt variant="caption" color={colors.red}>{importError}</Txt>
+              </Card>
+            ) : null}
             <SecondaryButton label="📋 Colar o plano" onPress={() => setPastedOpen(true)} />
             <SecondaryButton color={colors.cyan} label="📄 Ver modelo de arquivo" onPress={() => setTemplateOpen(true)} />
 

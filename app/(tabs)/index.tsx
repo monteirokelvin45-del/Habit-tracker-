@@ -70,7 +70,8 @@ export default function TodayScreen() {
   const [confetti, setConfetti] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [middayOpen, setMiddayOpen] = useState(false);
-  const [honestyNote, setHonestyNote] = useState<string | null>(null);
+  const [honestyNote, setHonestyNote] = useState<{ goalId: string; text: string } | null>(null);
+  const [sheetNote, setSheetNote] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const activeGoals = store.goals.filter((g) => g.active && !g.archived);
@@ -96,8 +97,14 @@ export default function TodayScreen() {
     if (!store.days.some((d) => d.date === today)) store.ensureDay(today);
   };
 
+  const dayClosed = !!day.closedAt;
+
   const onToggle = (goalId: string, done: boolean) => {
     ensureDayExists();
+    if (dayClosed) {
+      setSheetNote('Dia encerrado: reabra o dia para mudar o checklist. Registro fechado não muda sozinho.');
+      return;
+    }
     if (!done) {
       // Desmarcar = registrar falha (motivo + custo + plano). Só desmarca ao salvar.
       setFailFor(goalId);
@@ -120,9 +127,10 @@ export default function TodayScreen() {
     const goal = store.goals.find((g) => g.id === goalId);
     const avgEnergy = (day.energy.physical + day.energy.mental) / 2;
     if (goal?.priority === 'high' && avgEnergy < 3) {
-      setHonestyNote(
-        `Energia ${avgEnergy.toFixed(1)}/10 hoje e prioridade alta concluída. Foi completo ou parcial? O registro honesto vale mais que o número.`,
-      );
+      setHonestyNote({
+        goalId,
+        text: `Energia ${avgEnergy.toFixed(1)}/10 hoje e prioridade alta concluída. Foi completo ou parcial? O registro honesto vale mais que o número.`,
+      });
     }
   };
 
@@ -132,6 +140,12 @@ export default function TodayScreen() {
     store.setTaskExcuse(today, failFor, payload);
     setFailFor(null);
     haptic('warning');
+  };
+
+  // Fechar sem salvar não pode "desmarcar pela metade": a tarefa continua como estava.
+  const onFailureClose = () => {
+    setFailFor(null);
+    setSheetNote('Falha não registrada — a tarefa continua como estava. Desmarcar exige o motivo.');
   };
 
   const closeDay = (diary: Day['diary']) => {
@@ -286,9 +300,19 @@ export default function TodayScreen() {
 
         {/* CHECKLIST */}
         <FadeInDown delay={90}>
+        {dayClosed ? (
+          <Card accent={colors.cyan + '44'}>
+            <Row style={{ justifyContent: 'space-between' }}>
+              <Txt variant="caption" color={colors.cyan}>Dia encerrado — checklist congelado.</Txt>
+              <Txt variant="micro" color={colors.cyan} onPress={() => store.reopenDay(today)}>reabrir</Txt>
+            </Row>
+            <Muted style={{ marginTop: 2 }}>O score já foi calculado sobre este registro.</Muted>
+          </Card>
+        ) : null}
         <ChecklistCard
           day={day}
           goals={store.goals}
+          readOnly={dayClosed}
           onToggle={onToggle}
           onLongFail={(goalId) => {
             ensureDayExists();
@@ -333,12 +357,7 @@ export default function TodayScreen() {
               <SecondaryButton label="Reabrir dia" style={{ flex: 1 }} onPress={() => { store.reopenDay(today); setShowResult(false); }} />
               <SecondaryButton label="Ver revisões" color={colors.cyan} style={{ flex: 1 }} onPress={() => router.push('/(tabs)/revisoes')} />
             </Row>
-            <Pressable
-              onPress={() => {
-                store.setMode(today, day.mode === 'recovery' ? 'normal' : 'recovery');
-                router.push('/(tabs)/inteligencia');
-              }}
-            >
+            <Pressable onPress={() => router.push('/(tabs)/inteligencia')}>
               <Card>
                 <Row style={{ justifyContent: 'space-between' }}>
                   <Txt variant="caption" color={colors.textSecondary}>Amanhã o loop recomeça.</Txt>
@@ -347,6 +366,14 @@ export default function TodayScreen() {
               </Card>
             </Pressable>
           </>
+        ) : null}
+
+        {sheetNote ? (
+          <Card accent={colors.yellow + '44'}>
+            <Txt variant="caption" color={colors.yellow} onPress={() => setSheetNote(null)}>
+              {sheetNote}
+            </Txt>
+          </Card>
         ) : null}
 
         <Muted style={{ textAlign: 'center', marginTop: spacing.md }}>
@@ -371,7 +398,7 @@ export default function TodayScreen() {
       <FailureSheet
         visible={!!failFor}
         goal={failGoal}
-        onClose={() => setFailFor(null)}
+        onClose={onFailureClose}
         onSave={onFailureSave}
       />
 
@@ -381,12 +408,31 @@ export default function TodayScreen() {
         title="🤔 Confere comigo"
         footer={
           <Row gap={spacing.sm}>
-            <SecondaryButton label="Ajustar registro" color={colors.yellow} style={{ flex: 1 }} onPress={() => setHonestyNote(null)} />
-            <PrimaryButton label="Confirmar como feito" style={{ flex: 1 }} onPress={() => setHonestyNote(null)} />
+            <SecondaryButton
+              label="Ajustar registro"
+              color={colors.yellow}
+              style={{ flex: 1 }}
+              onPress={() => {
+                if (!honestyNote) return;
+                store.resolveHonestyFlag(today, honestyNote.goalId, 'adjusted');
+                // Ajustar = a tarefa volta a "não feita" e o motivo é registrado (regra 7).
+                setFailFor(honestyNote.goalId);
+                setHonestyNote(null);
+              }}
+            />
+            <PrimaryButton
+              label="Confirmar como feito"
+              style={{ flex: 1 }}
+              onPress={() => {
+                if (!honestyNote) return;
+                store.resolveHonestyFlag(today, honestyNote.goalId, 'confirmed');
+                setHonestyNote(null);
+              }}
+            />
           </Row>
         }
       >
-        <Txt variant="caption" color={colors.textPrimary} style={{ lineHeight: 20 }}>{honestyNote}</Txt>
+        <Txt variant="caption" color={colors.textPrimary} style={{ lineHeight: 20 }}>{honestyNote?.text}</Txt>
         <Muted>Não é acusação: é o sistema pedindo consistência entre o que você marca e o que aconteceu.</Muted>
       </Sheet>
 

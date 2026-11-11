@@ -40,6 +40,7 @@ export default function ProfileScreen() {
 
   const [resetStep, setResetStep] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
+  const [exportInfo, setExportInfo] = useState<string | null>(null);
 
   const closed = closedDays(store.days);
   const streak = generalStreak(store.days);
@@ -102,7 +103,10 @@ export default function ProfileScreen() {
           <Field
             label="Meta de sono (horas)"
             value={String(store.settings.sleepGoalHours)}
-            onChangeText={(t) => store.updateSettings({ sleepGoalHours: Number(t.replace(',', '.')) || 7.5 })}
+            onChangeText={(t) => {
+              const v = Number(t.replace(',', '.'));
+              store.updateSettings({ sleepGoalHours: Number.isFinite(v) && v > 0 && v <= 16 ? Math.round(v * 10) / 10 : 7.5 });
+            }}
             keyboardType="decimal-pad"
           />
         </Card>
@@ -114,9 +118,16 @@ export default function ProfileScreen() {
             label={busy === 'json' ? 'Exportando...' : 'Exportar dados (JSON)'}
             onPress={async () => {
               setBusy('json');
-              await exportJson(store);
+              const out = await exportJson(store);
               setBusy(null);
               haptic('success');
+              setExportInfo(
+                out && out.startsWith('{')
+                  ? 'Backup gerado, mas este dispositivo não abriu o menu de compartilhar. O conteúdo está na área de transferência.'
+                  : out
+                    ? 'Backup pronto: escolha onde salvar/enviar.'
+                    : 'Não foi possível exportar neste dispositivo.',
+              );
             }}
           />
           <SecondaryButton
@@ -124,11 +135,13 @@ export default function ProfileScreen() {
             label={busy === 'pdf' ? 'Gerando PDF...' : 'Exportar relatório (PDF)'}
             onPress={async () => {
               setBusy('pdf');
-              await exportPdf(store);
+              const out = await exportPdf(store);
               setBusy(null);
-              haptic('success');
+              if (out) haptic('success');
+              setExportInfo(out ? 'Relatório gerado: escolha onde salvar/enviar.' : 'Não foi possível gerar o PDF neste dispositivo.');
             }}
           />
+          {exportInfo ? <Muted>{exportInfo}</Muted> : null}
           <SecondaryButton color={colors.purple} label="Enviar meus planos e dados" onPress={() => router.push('/importar')} />
           <Muted>
             Organiza metas, regras SE-ENTÃO, recompensas, leitura, finanças e identidade — e lista o que ainda

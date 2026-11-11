@@ -85,6 +85,32 @@ async function write(key: string, value: unknown): Promise<void> {
   }
 }
 
+/**
+ * Normaliza dados vindos de fora (backup importado, arquivo editado à mão).
+ * Sem isso, uma chave faltando no JSON vira `undefined` no meio do app e
+ * quebra em qualquer `.filter`/`.length`.
+ */
+export function normalizeData(input: Partial<AppData> | null | undefined, base: AppData): AppData {
+  const raw = input ?? {};
+  const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  return {
+    onboarded: raw.onboarded ?? base.onboarded,
+    user: { ...base.user, ...(raw.user ?? {}), areas: arr<string>((raw.user as User | undefined)?.areas) },
+    goals: arr<Goal>(raw.goals),
+    days: arr<Day>(raw.days),
+    rules: arr<Rule>(raw.rules),
+    rewards: arr<Reward>(raw.rewards),
+    books: arr<Book>(raw.books),
+    finances: arr<FinanceEntry>(raw.finances),
+    weight: arr<WeightEntry>(raw.weight),
+    settings: { ...DEFAULT_SETTINGS, ...base.settings, ...(raw.settings ?? {}) },
+    badges: arr<BadgeState>(raw.badges),
+    ayanokoji: raw.ayanokoji ?? base.ayanokoji,
+    weeklyFocus: raw.weeklyFocus ?? {},
+    routeAdjustments: raw.routeAdjustments ?? {},
+  };
+}
+
 /** Carrega tudo de uma vez (boot do app). */
 export async function loadAll(): Promise<AppData> {
   const [

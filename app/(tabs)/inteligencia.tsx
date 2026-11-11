@@ -27,13 +27,14 @@ import {
   emotionsHeatmap,
   failureHour,
   failureMap,
+  declarationDivergences,
   honestyChecks,
   sleepCorrelation,
   topExcuse,
   triggerMap,
 } from '../../src/lib/insights';
 import { detectDanger } from '../../src/lib/score';
-import { lastNDays, todayKey, weekStart } from '../../src/lib/date';
+import { lastNDays, shortDate, todayKey, weekStart } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 import type { Rule } from '../../src/lib/types';
 
@@ -61,6 +62,11 @@ export default function IntelligenceScreen() {
   const sleep = sleepCorrelation(store);
   const emotions = emotionsHeatmap(store);
   const honest = honestyChecks(store);
+  const divergences = declarationDivergences(store);
+  const resolvedHonesty = store.days.reduce(
+    (acc, d) => acc + (d.honestyFlags ?? []).filter((f) => !!f.resolved).length,
+    0,
+  );
   const areas = Array.from(new Set(store.goals.map((g) => g.area)));
 
   const [selectedAreas, setSelectedAreas] = useState<string[]>(areas.slice(0, 4));
@@ -241,7 +247,15 @@ export default function IntelligenceScreen() {
         <SectionTitle>Checagem de honestidade</SectionTitle>
         {honest.length === 0 ? (
           <Card>
-            <Muted>Nenhuma inconsistência sinalizada. Registros batem com energia, duração e cronômetro.</Muted>
+            {resolvedHonesty > 0 ? (
+              // Sem elogio vazio: quando houve resposta, o texto reconhece o gesto sem afirmar que "está tudo certo".
+              <Muted>
+                {resolvedHonesty} checagem(ns) já respondida(s). Nenhuma inconsistência em aberto — os números
+                refletem o que você confirmou ou ajustou.
+              </Muted>
+            ) : (
+              <NoData label="Sem dado suficiente para checar honestidade" />
+            )}
           </Card>
         ) : (
           honest.map((h) => {
@@ -269,6 +283,21 @@ export default function IntelligenceScreen() {
             );
           })
         )}
+
+        {divergences.length ? (
+          <>
+            <SectionTitle>Diário vs checklist</SectionTitle>
+            {divergences.map((d) => (
+              <Card key={`${d.kind}-${d.date}`} accent={colors.cyan + '44'}>
+                <Txt variant="caption" color={colors.cyan}>
+                  {shortDate(d.date)} · o diário e o checklist contam histórias diferentes
+                </Txt>
+                <Muted style={{ marginTop: 2 }}>{d.detail}</Muted>
+                <Muted style={{ marginTop: 4 }}>Sem acusação: só vale conferir qual dos dois você quer manter.</Muted>
+              </Card>
+            ))}
+          </>
+        ) : null}
 
         {/* 4 · MAPAS */}
         <SectionTitle>Mapas de longo prazo</SectionTitle>

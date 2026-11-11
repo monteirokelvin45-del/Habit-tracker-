@@ -97,6 +97,14 @@ export interface StoreState extends AppData {
   hardReset: () => Promise<void>;
 }
 
+/** Aceita YYYY-MM-DD ou ISO e devolve ISO completo (ou null). */
+function toIsoCreatedAt(value: string | undefined): string | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(`${value}T12:00:00`).toISOString();
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? new Date(time).toISOString() : null;
+}
+
 function makeDay(date: string, goals: Goal[], mode: DayMode = 'normal'): Day {
   return {
     date,
@@ -136,7 +144,8 @@ export const useStore = create<StoreState>((set, get) => ({
       identity: user.identity || current.user.identity,
       noMore: user.noMore || current.user.noMore,
       areas: Array.from(new Set([...(user.areas ?? []), ...areas, ...current.user.areas])),
-      createdAt: user.createdAt || current.user.createdAt || new Date().toISOString(),
+      // onboarding grava todayKey() ("2026-11-10"); normaliza para ISO completo.
+      createdAt: toIsoCreatedAt(user.createdAt) || current.user.createdAt || new Date().toISOString(),
     };
 
     // Metas vindas de um plano importado não podem ser perdidas no onboarding.
@@ -207,6 +216,9 @@ export const useStore = create<StoreState>((set, get) => ({
 
   toggleTask(date, goalId, done) {
     const state = get();
+    // Dia já encerrado é registro fechado: alterar tarefa depois mudaria o passado.
+    const closed = state.days.find((d) => d.date === date)?.closedAt;
+    if (closed && date !== todayKey()) return;
     let day = state.days.find((d) => d.date === date);
     if (!day) day = makeDay(date, state.goals);
     const exists = day.tasks.some((t) => t.goalId === goalId);
@@ -223,21 +235,25 @@ export const useStore = create<StoreState>((set, get) => ({
             : t,
         )
       : [...day.tasks, { goalId, done, note: '', doneAt: done ? nowHHmm() : undefined, failAt: done ? undefined : nowHHmm() }];
-    const updated: Day = { ...day, tasks };
+    let updated: Day = { ...day, tasks };
 
-    const days = state.days.some((d) => d.date === date)
+    const withDay = state.days.some((d) => d.date === date)
       ? state.days.map((d) => (d.date === date ? updated : d))
       : [...state.days, updated].sort((a, b) => (a.date < b.date ? -1 : 1));
 
-    // Mantém o score vivo mesmo antes de fechar o dia (dashboard mostra progresso real).
+    // Mantém o score vivo quando o dia já foi fechado (dashboard mostra progresso real).
+    // O cálculo PRECISA entrar no array persistido — antes ficava só no objeto local.
     if (updated.score) {
-      const goals = state.goals;
-      updated.score = computeScore({
-        day: updated,
-        goals,
-        previousDays: days.filter((d) => d.date < date),
-      });
+      updated = {
+        ...updated,
+        score: computeScore({
+          day: updated,
+          goals: state.goals,
+          previousDays: withDay.filter((d) => d.date < date),
+        }),
+      };
     }
+    const days = withDay.map((d) => (d.date === date ? updated : d));
 
     set({ days });
     void persist('days', days);
@@ -252,7 +268,8 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setTaskExcuse(date, goalId, data) {
-    const days = get().days.map((d) =>
+    const state = get();
+    const next = state.days.map((d) =>
       d.date === date
         ? {
             ...d,
@@ -261,6 +278,7 @@ export const useStore = create<StoreState>((set, get) => ({
                 ? {
                     ...t,
                     done: false,
+                    doneAt: undefined,
                     failAt: t.failAt ?? nowHHmm(),
                     excuse: { type: data.type, legitimacy: data.legitimacy },
                     cost: data.cost,
@@ -268,6 +286,19 @@ export const useStore = create<StoreState>((set, get) => ({
                   }
                 : t,
             ),
+          }
+        : d,
+    );
+    // Registrar a falha muda o dia: se já havia score, ele precisa refletir a falha.
+    const days = next.map((d) =>
+      d.date === date && d.score
+        ? {
+            ...d,
+            score: computeScore({
+              day: d,
+              goals: state.goals,
+              previousDays: next.filter((x) => x.date < date),
+            }),
           }
         : d,
     );
@@ -324,14 +355,24 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   resolveHonestyFlag(date, goalId, resolution) {
-    const days = get().days.map((d) =>
-      d.date === date
-        ? {
-            ...d,
-            honestyFlags: (d.honestyFlags ?? []).map((f) =>
-              f.goalId === goalId ? { ...f, resolved: resolution } : f,
-            ),
-          }
+    const state = get();
+    const withFlag = (d: Day, resolved: 'confirmed' | 'adjusted'): Day => {
+      const existing = d.honestyFlags ?? [];
+      const has = existing.some((f) => f.goalId === goalId);
+      return {
+        ...d,
+        honestyFlags: has
+          ? existing.map((f) => (f.goalId === goalId ? { ...f, resolved } : f))
+          : // A checagem é calculada na hora: se ainda não havia flag gravada, criamos.
+            [...existing, { goalId, reason: 'resposta do usuário', resolved }],
+      };
+    };
+
+    const next = state.days.map((d) => (d.date === date ? withFlag(d, resolution) : d));
+    // Responder a checagem muda a honestidade — e a honestidade muda o score do dia fechado.
+    const days = next.map((d) =>
+      d.date === date && d.score
+        ? { ...d, score: computeScore({ day: d, goals: state.goals, previousDays: next.filter((x) => x.date < date) }) }
         : d,
     );
     set({ days });
@@ -385,9 +426,24 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   deleteGoal(id) {
-    const goals = get().goals.filter((g) => g.id !== id);
-    set({ goals });
-    void persist('goals', goals);
+    const state = get();
+    const target = state.goals.find((g) => g.id === id);
+    const goals = state.goals.filter((g) => g.id !== id);
+    // Tarefa de meta excluída vira órfã: some do checklist (a meta não existe mais).
+    // O histórico do dia é preservado como está — não reescrevemos o passado.
+    const today = todayKey();
+    const days = target
+      ? state.days.map((d) =>
+          d.date === today || !d.closedAt
+            ? { ...d, tasks: d.tasks.filter((t) => t.goalId !== id) }
+            : d,
+        )
+      : state.days;
+    set({ goals, days });
+    void persistMany([
+      ['goals', goals],
+      ['days', days],
+    ]);
   },
 
   updateUser(patch) {
@@ -543,7 +599,9 @@ export const useStore = create<StoreState>((set, get) => ({
 
     // A) Backup completo do app: substitui tudo de forma atômica.
     if (summary.full) {
-      const full = summary.full;
+      // Backup pode estar incompleto/editado à mão: normaliza antes de gravar.
+      const { normalizeData } = await import('./storage');
+      const full = normalizeData(summary.full, { ...EMPTY_DATA, settings: state.settings });
       set({
         onboarded: true,
         user: full.user,
@@ -580,7 +638,12 @@ export const useStore = create<StoreState>((set, get) => ({
     }
 
     // B) Plano: soma ao que existe, sem duplicar metas.
-    const goals = [...state.goals, ...summary.goals];
+    // `relinked` são metas já existentes que ganharam originId — preserva o histórico do dia.
+    const relinkedById = new Map((summary.relinked ?? []).map((g) => [g.id, g]));
+    const goals = [
+      ...state.goals.map((g) => relinkedById.get(g.id) ?? g),
+      ...summary.goals,
+    ];
     const rules = [...state.rules, ...summary.rules.filter((r) => !state.rules.some((x) => x.trigger === r.trigger && x.action === r.action))];
     const rewards = [...state.rewards, ...summary.rewards.filter((r) => !state.rewards.some((x) => x.name === r.name))];
     const books = [...state.books, ...summary.books.filter((b) => !state.books.some((x) => x.title.toLowerCase() === b.title.toLowerCase()))];

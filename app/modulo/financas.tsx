@@ -16,7 +16,7 @@ import {
 import { ModalHeader } from '../../src/components/ModalHeader';
 import { DonutChart, GroupedBars, LineChart } from '../../src/components/charts';
 import { useStore, newId } from '../../src/lib/store';
-import { todayKey, monthLabel, MONTHS_SHORT } from '../../src/lib/date';
+import { addDays, todayKey, monthLabel, MONTHS_SHORT } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 import { FINANCE_CATEGORIES } from '../../src/lib/types';
 
@@ -65,7 +65,7 @@ export default function FinanceScreen() {
   })).filter((c) => c.value > 0);
 
   const impulseWeek = store.finances
-    .filter((f) => f.isImpulse && f.date >= addDaysKey(todayKey(), -6))
+    .filter((f) => f.isImpulse && f.date >= addDays(todayKey(), -6))
     .reduce((a, b) => a + b.amount, 0);
 
   // "Y dias de [meta]": compara o impulso com o custo médio diário declarado no diário.
@@ -111,7 +111,7 @@ export default function FinanceScreen() {
 
         <Card>
           <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Receita vs despesa (6 meses)</Txt>
-          {byMonth.length ? (
+          {byMonth.length >= 2 ? (
             <GroupedBars
               data={byMonth.map(([key, v]) => ({ label: MONTHS_SHORT[Number(key.slice(5, 7)) - 1] ?? key, a: v.income, b: v.expense }))}
             />
@@ -122,7 +122,11 @@ export default function FinanceScreen() {
 
         <Card>
           <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Despesas por categoria (mês)</Txt>
-          <DonutChart data={expenseByCategory} />
+          {expenseByCategory.length ? (
+            <DonutChart data={expenseByCategory} />
+          ) : (
+            <NoData label="Sem despesa lançada neste mês" />
+          )}
         </Card>
 
         <Card>
@@ -171,13 +175,13 @@ export default function FinanceScreen() {
         footer={
           <PrimaryButton
             label="Registrar"
-            disabled={!Number(amount)}
+            disabled={!Number(amount.replace(',', '.'))}
             onPress={() => {
               store.addFinance({
                 id: newId('fin'),
                 date,
                 type,
-                amount: Number(amount) || 0,
+                amount: Number(amount.replace(',', '.')) || 0,
                 category,
                 isImpulse,
                 note: note.trim(),
@@ -208,10 +212,4 @@ export default function FinanceScreen() {
       </Sheet>
     </View>
   );
-}
-
-function addDaysKey(key: string, n: number): string {
-  const d = new Date(key);
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

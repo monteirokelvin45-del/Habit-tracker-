@@ -93,7 +93,9 @@ export function scoreColor(score: number): string {
   return colors.greenNeon; // verde neon (8-10)
 }
 
-export function scoreLabel(score: number): string {
+export function scoreLabel(score: number, done = 1): string {
+  // Regra 2: "Domínio" sem nenhuma tarefa entregue seria elogio vazio.
+  if (done === 0) return score < 4 ? 'Zona de risco' : 'Sem entrega registrada';
   if (score < 4) return 'Zona de risco';
   if (score < 6) return 'Abaixo do padrão';
   if (score < 8) return 'Consistente';

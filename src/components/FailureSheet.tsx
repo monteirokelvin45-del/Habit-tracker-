@@ -95,6 +95,7 @@ export function FailureSheet({
       <Muted>Prioridade alta vem com cobrança direta. As outras vêm com ajuste.</Muted>
       <Muted style={{ color: colors.textMuted }}>
         Desmarcar uma tarefa exige o registro: é isso que separa falha de esquecimento.
+        Se você fechar sem salvar, a tarefa continua como está — nada é desmarcado pela metade.
       </Muted>
     </Sheet>
   );

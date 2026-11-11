@@ -37,7 +37,7 @@ export default function WeightScreen() {
   const delta = last && first ? last.kg - first.kg : null;
 
   const movingAverage = useMemo(() => {
-    return entries.map((e, i) => {
+    return entries.map((_e, i) => {
       const window = entries.slice(Math.max(0, i - 6), i + 1);
       return window.reduce((a, b) => a + b.kg, 0) / window.length;
     });
@@ -166,11 +166,11 @@ export default function WeightScreen() {
                 date: todayKey(),
                 kg: Number(kg.replace(',', '.')) || 0,
                 measurements: {
-                  waist: Number(waist) || undefined,
-                  chest: Number(chest) || undefined,
-                  shoulder: Number(shoulder) || undefined,
-                  arm: Number(arm) || undefined,
-                  thigh: Number(thigh) || undefined,
+                  waist: Number(waist.replace(',', '.')) || undefined,
+                  chest: Number(chest.replace(',', '.')) || undefined,
+                  shoulder: Number(shoulder.replace(',', '.')) || undefined,
+                  arm: Number(arm.replace(',', '.')) || undefined,
+                  thigh: Number(thigh.replace(',', '.')) || undefined,
                 },
               });
               setKg('');

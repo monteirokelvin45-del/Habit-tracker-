@@ -115,7 +115,11 @@ export default function SleepScreen() {
           <Field
             label="Horas alvo"
             value={String(store.settings.sleepGoalHours)}
-            onChangeText={(t) => store.updateSettings({ sleepGoalHours: Number(t.replace(',', '.')) || 7.5 })}
+            onChangeText={(t) => {
+              // Campo controlado pelo valor salvo não pode reverter a digitação a cada tecla.
+              const v = Number(t.replace(',', '.'));
+              store.updateSettings({ sleepGoalHours: Number.isFinite(v) && v > 0 && v <= 16 ? Math.round(v * 10) / 10 : 7.5 });
+            }}
             keyboardType="decimal-pad"
           />
         </Card>
@@ -138,7 +142,13 @@ export default function SleepScreen() {
                         ...d,
                         diary: {
                           ...d.diary,
-                          sleep: { hours: computed, quality: Number(quality) || 0, blockers, bedTime: bed, wakeTime: wake },
+                          sleep: {
+                            hours: computed,
+                            quality: Math.min(10, Math.max(0, Number(quality) || 0)),
+                            blockers,
+                            bedTime: bed,
+                            wakeTime: wake,
+                          },
                         },
                       }
                     : d,

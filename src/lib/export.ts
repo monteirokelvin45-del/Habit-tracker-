@@ -42,8 +42,10 @@ export async function exportJson(data: AppData): Promise<string | null> {
     const uri = file.uri;
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Exportar dados MY PRIME' });
+      return uri;
     }
-    return uri;
+    // Sem share sheet (emulador sem app de arquivos): devolve o conteúdo para a tela exibir/copiar.
+    return json;
   } catch (e) {
     console.warn('[MY PRIME] exportJson', e);
     return null;
@@ -93,8 +95,9 @@ export async function sharePlanTemplate(): Promise<string | null> {
     file.write(PLAN_TEMPLATE);
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(file.uri, { mimeType: 'text/markdown', dialogTitle: 'Modelo de plano MY PRIME' });
+      return file.uri;
     }
-    return file.uri;
+    return PLAN_TEMPLATE;
   } catch (e) {
     console.warn('[MY PRIME] template', e);
     return null;

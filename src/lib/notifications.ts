@@ -60,7 +60,13 @@ export async function ensurePermission(): Promise<boolean> {
 
 function parseTime(hhmm: string): { hour: number; minute: number } {
   const [h, m] = hhmm.split(':');
-  return { hour: Number(h ?? 7), minute: Number(m ?? 0) };
+  const hour = Number(h);
+  const minute = Number(m);
+  // Valor inválido vira o padrão em vez de agendar em horário inexistente.
+  return {
+    hour: Number.isFinite(hour) && hour >= 0 && hour <= 23 ? hour : 7,
+    minute: Number.isFinite(minute) && minute >= 0 && minute <= 59 ? minute : 0,
+  };
 }
 
 /** Reagenda todos os lembretes locais segundo as configurações. */
@@ -68,8 +74,9 @@ export async function scheduleReminders(settings: Settings, streakDays: number, 
   const N = getNotifications();
   if (!N) return;
   try {
-    const granted = await ensurePermission();
-    if (!granted) return;
+    // Reagendar (a cada boot/check-in) não deve abrir o diálogo de permissão de novo.
+    const perm = await N.getPermissionsAsync();
+    if (!perm.granted) return;
     await N.cancelAllScheduledNotificationsAsync();
 
     const trigger = (type: 'DAILY' | 'WEEKLY', extra: Record<string, number>) => ({
@@ -99,7 +106,8 @@ export async function scheduleReminders(settings: Settings, streakDays: number, 
         'streak',
         `🔥 ${streakDays} ${streakDays === 1 ? 'dia' : 'dias'} seguidos`,
         `Você está em série em ${streakArea}. Não quebre.`,
-        settings.morningReminder,
+        // 30 min depois do bom dia: dois lembretes no mesmo minuto se anulavam na prática.
+        addMinutes(settings.morningReminder, 30),
       );
     }
 
@@ -127,4 +135,11 @@ export async function notifyNow(title: string, body: string): Promise<void> {
 
 export async function dangerNotification(area: string): Promise<void> {
   await notifyNow('⚠️ Atenção', `${area} em queda. Abra o app e ative o modo recuperação.`);
+}
+
+/** Soma minutos a um HH:mm, voltando para 00:00 depois de 23:59. */
+export function addMinutes(hhmm: string, delta: number): string {
+  const { hour, minute } = parseTime(hhmm);
+  const total = (hour * 60 + minute + delta + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }

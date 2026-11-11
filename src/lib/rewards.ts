@@ -10,13 +10,16 @@ function currentFor(reward: Reward, data: AppData): number {
   }
 
   if (reward.criteriaType === 'score') {
-    // Dias consecutivos (do mais recente para trás) com score >= target como nota (ex: 7).
+    // `target` = quantidade de dias seguidos. O piso de score é a meta diária do usuário
+    // (settings.targetDailyScore). Antes o mesmo número era usado para as duas coisas:
+    // uma recompensa de 30 dias exigia score ≥ 30 — impossível, pois o score vai até 10.
+    const floor = data.settings.targetDailyScore ?? 7;
     const map = new Map(closed.map((d) => [d.date, d]));
     let cursor = closed.length ? closed[closed.length - 1]!.date : null;
     let run = 0;
     while (cursor && run < reward.target) {
       const day = map.get(cursor);
-      if (!day?.score || day.score.total < reward.target) break;
+      if (!day?.score || day.score.total < floor) break;
       run += 1;
       cursor = addDays(cursor, -1);
     }

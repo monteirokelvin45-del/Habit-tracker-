@@ -110,11 +110,14 @@ const { computeScore, buildChecklist, suggestMode, continuityFactor, generalStre
 const { parsePlans, toGoals } = await import(path.join(outRoot, 'lib/parser.mjs'));
 const insights = await import(path.join(outRoot, 'lib/insights.mjs'));
 const { evaluateRewards } = await import(path.join(outRoot, 'lib/rewards.mjs'));
-const { badgeState, BADGES } = await import(path.join(outRoot, 'lib/badges.mjs'));
+const badgesLib = await import(path.join(outRoot, 'lib/badges.mjs'));
+const { badgeState, BADGES } = badgesLib;
+const { evaluateBadges } = badgesLib;
 const dates = await import(path.join(outRoot, 'lib/date.mjs'));
 const widget = await import(path.join(outRoot, 'widget/data.mjs'));
 const importer = await import(path.join(outRoot, 'lib/importer.mjs'));
 const heat = await import(path.join(outRoot, 'lib/heatmap.mjs'));
+const scoreLib = await import(path.join(outRoot, 'lib/score.mjs'));
 
 let pass = 0;
 let fail = 0;
@@ -509,6 +512,128 @@ const resized = await runHandler('Constancia', 'WIDGET_RESIZED', muralData);
 check('resize redesenha o mural', resized.rendered.length === 1);
 const deleted = await runHandler('Constancia', 'WIDGET_DELETED', muralData);
 check('widget removido não tenta renderizar', deleted.rendered.length === 0);
+
+console.log('\n── Auditoria: honestidade ──');
+// Regressão: a UI lista via honestyChecks (calculado) e resolve via day.honestyFlags.
+// Se ninguém grava a flag, o botão nunca resolve nada.
+const honestGoal = { id: 'gH', name: 'Estudar', area: 'Estudo', priority: 'high', min: '10min', ideal: '30min', excellent: '2h', active: true, createdAt: '' };
+const honestData = {
+  ...wData,
+  goals: [honestGoal],
+  days: [
+    day(today, [{ goalId: 'gH', done: true, note: '', doneAt: '22:10' }], {
+      energy: { physical: 2, mental: 2, stress: 8 },
+      score: { regularity: 5, continuity: 4, recovery: 5, honesty: 6, progress: 5, total: 5 },
+    }),
+  ],
+};
+const flagsShown = insights.honestyChecks(honestData);
+check('checagem de honestidade sinaliza o caso', flagsShown.length === 1, String(flagsShown.length));
+check('checagem não cria flag persistida no dia', (honestData.days[0].honestyFlags ?? []).length === 0);
+
+console.log('\n── Auditoria: score, streaks e recompensas ──');
+// Honestidade não pode passar de 8 com base parcial (bônus exigia os 5 campos).
+const partialDiary = {
+  ...day(today, [{ goalId: 'gH', done: true, note: '' }]).diary,
+  avoided: '',
+  blocked: '',
+  correction: '',
+  context: { where: 'casa', when: '15h', distraction: 'celular', trigger: '' },
+};
+const partialScore = scoreLib.computeScore({
+  day: day(today, [{ goalId: 'gH', done: true, note: '' }], { diary: partialDiary }),
+  goals: [honestGoal],
+  previousDays: [],
+});
+check('honestidade com base parcial não cola no teto', partialScore.honesty < 10, String(partialScore.honesty));
+
+// Streak: hoje sem registro não zera a série de ontem.
+const streakDay = (d, total) => day(d, [], { score: { regularity: total, continuity: 5, recovery: 5, honesty: 5, progress: total, total } });
+const gapStreakDays = [streakDay(dates.addDays(today, -1), 7), streakDay(dates.addDays(today, -2), 7)];
+check('streak sobrevive ao dia de hoje ainda sem registro', scoreLib.generalStreak(gapStreakDays, today) === 2, String(scoreLib.generalStreak(gapStreakDays, today)));
+check('streak conta até o dia registrado', scoreLib.generalStreak([streakDay(today, 7)], today) === 1);
+
+// Recompensa de N dias seguidos não pode exigir score >= N (score máximo é 10).
+const rewardLong = { id: 'r', name: 'Viagem', criteria: '', criteriaType: 'score', target: 30, current: 0, unlocked: false };
+const tenGoodDays = Array.from({ length: 10 }, (_, i) =>
+  streakDay(dates.addDays(today, -9 + i), 8),
+);
+const evaluatedLong = evaluateRewards({
+  ...wData,
+  settings: { ...wData.settings, targetDailyScore: 7 },
+  days: tenGoodDays,
+  rewards: [rewardLong],
+});
+check('recompensa de 30 dias progride com 10 dias bons', evaluatedLong[0].current === 10, String(evaluatedLong[0].current));
+check('recompensa de 30 dias não desbloqueia cedo', evaluatedLong[0].unlocked === false);
+
+// Badge: sequência não pode "colar" dias separados por lacuna.
+const gapDays = [
+  streakDay('2026-01-01', 9),
+  streakDay('2026-01-02', 9),
+  streakDay('2026-01-10', 9),
+  streakDay('2026-01-11', 9),
+  streakDay('2026-01-12', 9),
+  streakDay('2026-01-13', 9),
+  streakDay('2026-01-14', 9),
+  streakDay('2026-01-15', 9),
+];
+const badgeData = { ...wData, days: gapDays, settings: { ...wData.settings, targetDailyScore: 7 } };
+check('badge de sequência respeita lacunas entre dias', evaluateBadges(badgeData).some((b) => b.id === 'streak_7') === false);
+
+console.log('\n── Auditoria: backup incompleto ──');
+// Backup editado à mão / de versão antiga: chaves faltando não podem virar undefined.
+const partialBackup = JSON.stringify({
+  app: 'MY PRIME',
+  version: '1.0',
+  user: { name: 'Ana' },
+  goals: [{ name: 'Correr', area: 'Treino', priority: 'alta', min: '10min', ideal: '30min', excellent: '1h' }],
+  days: [{ date: today, tasks: [], diary: {} }],
+  settings: { targetDailyScore: 8 },
+});
+const parsedPartial = importer.readPlan(partialBackup, 'backup-parcial.json', wData);
+check('backup sem user.areas não quebra', Array.isArray(parsedPartial.areas), JSON.stringify(parsedPartial.areas));
+check('backup aceita apenas 1 dia', parsedPartial.counts.days === 1);
+check('backup não derruba o app com arrays ausentes', Array.isArray(parsedPartial.full?.finances) && Array.isArray(parsedPartial.full?.weight));
+
+console.log('\n── Auditoria: divergência diário vs checklist (regra 11) ──');
+const divergedDay = day(today, [{ goalId: 'gH', done: false, note: '' }], {
+  diary: { ...day(today, []).diary, done: 'fiz tudo, treinei e estudei' },
+  score: { regularity: 2, continuity: 4, recovery: 5, honesty: 6, progress: 2, total: 4 },
+});
+const divOut = insights.declarationDivergences({ ...wData, goals: [honestGoal], days: [divergedDay] });
+check('detecta diário dizendo feito e checklist vazio', divOut.length === 1 && divOut[0].kind === 'declared-not-done');
+const okDay = day(today, [{ goalId: 'gH', done: true, note: '' }], {
+  diary: { ...day(today, []).diary, done: 'treino feito' },
+  score: { regularity: 8, continuity: 6, recovery: 5, honesty: 8, progress: 8, total: 8 },
+});
+check('não sinaliza quando os dois batem', insights.declarationDivergences({ ...wData, goals: [honestGoal], days: [okDay] }).length === 0);
+check('não inventa divergência sem dia fechado', insights.declarationDivergences({ ...wData, days: [] }).length === 0);
+
+console.log('\n── Auditoria: tom do resultado (regra 2: sem elogio vazio) ──');
+const nothingDone = day(today, [{ goalId: 'gH', done: false, note: '' }]);
+const emptyLine = scoreLib.victoryLine(nothingDone, 4, [honestGoal]);
+check('sem tarefa feita não parabeniza', !/domin|parab|mais do que a maioria/i.test(emptyLine), emptyLine);
+const oneDone = day(today, [{ goalId: 'gH', done: true, note: '' }]);
+check('com tarefa feita cita a entrega', /Estudar/.test(scoreLib.victoryLine(oneDone, 6, [honestGoal])));
+
+console.log('\n── Auditoria: tarefa extra x meta real ──');
+// Tarefa extra ("extra:revisao") não pertence a nenhuma meta: não pode virar "meta feita".
+const attackItem = buildChecklist([honestGoal], 'attack').find((i) => i.extra);
+check('modo ataque cria tarefa extra', !!attackItem);
+check('tarefa extra não resolve para uma meta', scoreLib.goalForTask([honestGoal], { goalId: attackItem.extraKey }) === undefined);
+check('tarefa normal resolve para a meta', scoreLib.goalForTask([honestGoal], { goalId: 'gH' })?.name === 'Estudar');
+// Meta reimportada com outro id: o histórico continua encontrando a meta.
+const renamed = { ...honestGoal, id: 'goal_novo', originId: 'gH' };
+check('id de origem mantém o vínculo com o histórico', scoreLib.goalForTask([renamed], { goalId: 'gH' })?.id === 'goal_novo');
+
+// Importador: mesma meta (área+nome) não duplica, mas registra o vínculo.
+const reimport = importer.readPlan('## Estudo\n- Estudar', 'plano.md', {
+  ...wData,
+  goals: [{ ...honestGoal, id: 'goal_existente', name: 'Estudar' }],
+});
+check('reimportação não duplica a meta', reimport.goals.length === 0);
+check('reimportação gera vínculo com o id antigo', (reimport.relinked ?? []).length === 1, JSON.stringify(reimport.relinked));
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

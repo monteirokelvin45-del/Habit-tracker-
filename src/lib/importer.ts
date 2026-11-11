@@ -48,6 +48,8 @@ export interface ImportSummary {
 
   pending: PendingItem[];
   skippedDuplicates: string[];
+  /** Metas já existentes que ganharam vínculo com o id antigo (histórico preservado). */
+  relinked?: Goal[];
   unknownSections: string[];
   ignoredLines: number;
 }
@@ -329,6 +331,10 @@ function guessFinanceCategory(line: string): string {
 function buildPending(summary: Omit<ImportSummary, 'pending'>, goalsBefore: Goal[], data: AppData): PendingItem[] {
   const pending: PendingItem[] = [];
   const push = (p: Omit<PendingItem, 'id'>) => pending.push({ id: `${p.kind}:${pending.length}`, ...p });
+  // Backup parcial não pode derrubar a revisão de pendências.
+  const finances = data.finances ?? [];
+  const ayanokojiScores = data.ayanokoji?.scores ?? [];
+  const days = data.days ?? [];
 
   // 1. Identidade
   if (!summary.user.identity || summary.user.identity.trim().length < 20) {
@@ -415,7 +421,7 @@ function buildPending(summary: Omit<ImportSummary, 'pending'>, goalsBefore: Goal
 
   // 6. Finanças
   const financeGoals = summary.goals.filter((g) => g.area === 'Finanças');
-  if (financeGoals.length && !data.finances.length) {
+  if (financeGoals.length && !finances.length) {
     push({
       kind: 'finance',
       severity: 'optional',
@@ -438,7 +444,7 @@ function buildPending(summary: Omit<ImportSummary, 'pending'>, goalsBefore: Goal
   }
 
   // 8. Ayanokoji sem nota semanal
-  if (data.ayanokoji.scores.length === 0) {
+  if (ayanokojiScores.length === 0) {
     push({
       kind: 'dia',
       severity: 'optional',
@@ -450,7 +456,7 @@ function buildPending(summary: Omit<ImportSummary, 'pending'>, goalsBefore: Goal
   }
 
   // 9. Diário de hoje
-  if (!data.days.some((d) => d.date === todayKey())) {
+  if (!days.some((d) => d.date === todayKey())) {
     push({
       kind: 'dia',
       severity: 'blocker',
@@ -485,9 +491,19 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
   // A) Backup completo do app
   if (parsedJson && isBackup(parsedJson)) {
     const backup = parsedJson as AppData;
+    // Arquivo pode estar incompleto (versão antiga, editado à mão, truncado).
+    // Normalizar aqui evita `undefined.length` mais adiante.
     const full: AppData = {
       ...current,
-      user: { ...backup.user, areas: backup.user?.areas ?? [] },
+      user: {
+        ...current.user,
+        ...backup.user,
+        name: backup.user?.name ?? current.user.name,
+        identity: backup.user?.identity ?? current.user.identity,
+        noMore: backup.user?.noMore ?? current.user.noMore,
+        createdAt: backup.user?.createdAt ?? current.user.createdAt,
+        areas: backup.user?.areas ?? [],
+      },
       goals: backup.goals ?? [],
       days: backup.days ?? [],
       rules: backup.rules ?? [],
@@ -567,6 +583,7 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
         finances: [],
         weight: [],
         skippedDuplicates: goals.skipped,
+        relinked: goals.relinked,
         unknownSections: [],
         ignoredLines: 0,
       };
@@ -686,6 +703,7 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
     finances,
     weight,
     skippedDuplicates: merged.skipped,
+    relinked: merged.relinked,
     unknownSections,
     ignoredLines: 0,
   };
@@ -773,19 +791,38 @@ function levelsFor(area: string): [string, string, string] {
   }
 }
 
-function mergeGoals(incoming: Goal[], existing: Goal[]): { fresh: Goal[]; skipped: string[] } {
-  const existingKeys = new Set(existing.filter((g) => !g.archived).map((g) => `${g.area}|${g.name.toLowerCase().replace(/\s+/g, ' ').trim()}`));
+const goalKey = (g: Goal) => `${g.area}|${g.name.toLowerCase().replace(/\s+/g, ' ').trim()}`;
+
+function mergeGoals(
+  incoming: Goal[],
+  existing: Goal[],
+): { fresh: Goal[]; skipped: string[]; relinked: Goal[] } {
+  const byKey = new Map(existing.filter((g) => !g.archived).map((g) => [goalKey(g), g]));
+  const claimed = new Set(existing.filter((g) => !g.archived).map((g) => g.id));
   const fresh: Goal[] = [];
   const skipped: string[] = [];
+  const relinked: Goal[] = [];
+
   for (const goal of incoming) {
-    const key = `${goal.area}|${goal.name.toLowerCase().replace(/\s+/g, ' ').trim()}`;
-    if (existingKeys.has(key) || fresh.some((g) => g.id === goal.id)) {
+    const key = goalKey(goal);
+    const same = byKey.get(key);
+    // Já existe meta com mesmo nome/área: não duplica (senão inflaria o checklist),
+    // mas garante o vínculo com o id antigo — o histórico do dia não pode ficar órfão.
+    if (same) {
+      skipped.push(`${goal.area}: ${goal.name}`);
+      if (same.id !== goal.id && same.originId !== goal.id) {
+        relinked.push({ ...same, originId: same.originId ?? goal.id });
+      }
+      continue;
+    }
+    if (claimed.has(goal.id)) {
       skipped.push(`${goal.area}: ${goal.name}`);
       continue;
     }
+    claimed.add(goal.id);
     fresh.push(goal);
   }
-  return { fresh, skipped };
+  return { fresh, skipped, relinked };
 }
 
 /* ────────────────────────── template ────────────────────────── */

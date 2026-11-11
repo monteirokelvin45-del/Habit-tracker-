@@ -265,6 +265,16 @@ export interface HonestyFlag {
   detail: string;
 }
 
+/**
+ * Resolução já gravada de uma checagem (persistida em day.honestyFlags).
+ * Sem isso o app mostrava o botão "Confirmar/Ajustar" e nada acontecia:
+ * a UI lista via honestyChecks (calculado), mas resolve por goalId+date.
+ */
+export function resolutionFor(data: AppData, date: string, goalId: string): 'confirmed' | 'adjusted' | null {
+  const flags = data.days.find((d) => d.date === date)?.honestyFlags ?? [];
+  return flags.find((f) => f.goalId === goalId && f.resolved)?.resolved ?? null;
+}
+
 export function honestyChecks(data: AppData): HonestyFlag[] {
   const flags: HonestyFlag[] = [];
   const closed = closedDays(data.days);
@@ -319,7 +329,8 @@ export function honestyChecks(data: AppData): HonestyFlag[] {
     }
   }
 
-  return flags.slice(0, 5);
+  // Checagem já respondida não volta a incomodar (e não penaliza o score de novo).
+  return flags.filter((f) => !resolutionFor(data, f.date, f.goalId)).slice(0, 5);
 }
 
 /** Fila de "dias para desbloquear recompensa" para o dashboard. */
@@ -371,3 +382,41 @@ export function last7Keys(): string[] {
 }
 
 export type { Day, Goal };
+
+/**
+ * Divergência sem acusar (regra 11): o que foi declarado no diário não bate com o checklist.
+ * Não é fraude presumida — é convite a olhar o registro.
+ */
+export interface Divergence {
+  date: string;
+  kind: 'declared-not-done' | 'done-not-declared';
+  detail: string;
+}
+
+export function declarationDivergences(data: AppData): Divergence[] {
+  const out: Divergence[] = [];
+  for (const d of closedDays(data.days)) {
+    const declaredDone = d.diary.done.trim().length > 0;
+    const doneTasks = d.tasks.filter((t) => t.done).length;
+    const undone = d.tasks.filter((t) => !t.done).length;
+    if (!d.tasks.length) continue;
+    // Declarou execução no diário, mas nenhuma tarefa marcada (e há tarefas abertas).
+    if (declaredDone && doneTasks === 0 && undone > 0) {
+      out.push({
+        date: d.date,
+        kind: 'declared-not-done',
+        detail: 'O diário descreve execução, mas nenhuma tarefa do checklist foi marcada.',
+      });
+      continue;
+    }
+    // Marcou tudo como feito e escreveu que nada foi feito.
+    if (doneTasks === d.tasks.length && undone === 0 && /nada|não fiz|nao fiz/i.test(d.diary.done) ) {
+      out.push({
+        date: d.date,
+        kind: 'done-not-declared',
+        detail: 'Todas as tarefas estão marcadas, mas o diário diz que nada foi feito.',
+      });
+    }
+  }
+  return out.slice(0, 5);
+}

@@ -21,7 +21,7 @@ import { ConstancyHeatmap } from '../../src/components/Heatmap';
 import { useStore } from '../../src/lib/store';
 import { addDays, daysInMonth, monthLabel, quarterOf, shortDate, todayKey, weekKeys, weekStart, weekdayShort, MONTHS } from '../../src/lib/date';
 import { areaConsistency, closedDays, excuseRanking, failureMap, sleepCorrelation, topExcuse, triggerMap } from '../../src/lib/insights';
-import { avg, round1 } from '../../src/lib/score';
+import { avg, goalForTask, round1 } from '../../src/lib/score';
 import { haptic } from '../../src/lib/haptics';
 
 type Tab = 'semanal' | 'mensal' | 'trimestral' | 'anual';
@@ -830,7 +830,7 @@ function AnnualReview() {
       <Card>
         <Txt variant="caption" color={colors.textSecondary}>
           {wins.length ? 'Manter o que já funciona' : 'Sem dado'}:{' '}
-          {Array.from(new Set(closed.filter((d) => (d.score?.total ?? 0) > 7).flatMap((d) => d.tasks.filter((t) => t.done).map((t) => store.goals.find((g) => g.id === t.goalId)?.name ?? '')).filter(Boolean)))
+          {Array.from(new Set(closed.filter((d) => (d.score?.total ?? 0) > 7).flatMap((d) => d.tasks.filter((t) => t.done).map((t) => goalForTask(store.goals, t)?.name ?? '')).filter(Boolean)))
             .slice(0, 3)
             .join(', ') || 'Sem dado'}
         </Txt>

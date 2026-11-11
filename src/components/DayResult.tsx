@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { colors, scoreColor, scoreLabel, spacing } from '../theme';
 import { Card, Muted, Row, Txt } from './ui';
 import { ScoreRing } from '../lib/anim';
-import { CLOSING_LINE, chargeLines, victoryLine } from '../lib/score';
+import { CLOSING_LINE, chargeLines, goalForTask, victoryLine } from '../lib/score';
 import type { Day, Goal } from '../lib/types';
 
 const FACTORS: { key: keyof NonNullable<Day['score']>; label: string; weight: string }[] = [
@@ -29,18 +29,18 @@ export function DayResult({ day, goals, animate = true }: { day: Day; goals: Goa
 
   const doneTasks = day.tasks.filter((t) => t.done);
   const highlightGoal = doneTasks
-    .map((t) => goals.find((g) => g.id === t.goalId))
-    .find((g) => g?.priority === 'high') ?? goals.find((g) => g.id === doneTasks[0]?.goalId);
+    .map((t) => goalForTask(goals, t))
+    .find((g) => g?.priority === 'high') ?? (doneTasks[0] ? goalForTask(goals, doneTasks[0]) : undefined);
   const highlight = highlightGoal
     ? `${highlightGoal.name} (${highlightGoal.area}) entregue${doneTasks.length > 1 ? ` — ${doneTasks.length} tarefas no total` : ''}.`
     : day.diary.smallWin.trim() || 'Sem tarefa concluída hoje.';
 
   const undone = day.tasks.filter((t) => !t.done);
-  const focusGoal = undone.map((t) => goals.find((g) => g.id === t.goalId)).find((g) => g?.priority === 'high');
+  const focusGoal = undone.map((t) => goalForTask(goals, t)).find((g) => g?.priority === 'high');
   const focusLine = focusGoal
     ? `${focusGoal.name} — mínimo ${focusGoal.min}, antes da metade do dia.`
     : undone.length
-      ? `${goals.find((g) => g.id === undone[0]?.goalId)?.name ?? 'Tarefa em aberto'} continua em aberto.`
+      ? `${(undone[0] ? goalForTask(goals, undone[0])?.name : undefined) ?? 'Tarefa em aberto'} continua em aberto.`
       : day.diary.correction.trim() || 'Nada em aberto: mantenha o padrão.';
 
   const blockers = Array.from(
@@ -59,7 +59,7 @@ export function DayResult({ day, goals, animate = true }: { day: Day; goals: Goa
       <Card accent={color + '55'} style={{ alignItems: 'center', gap: spacing.sm }}>
         <ScoreRing score={score} color={color} animated={animate} />
         <Txt variant="caption" color={color} style={{ fontWeight: '700', letterSpacing: 1 }}>
-          {scoreLabel(score)}
+          {scoreLabel(score, doneTasks.length)}
         </Txt>
         <Txt variant="body" style={{ textAlign: 'center', marginTop: spacing.sm }}>
           {victoryLine(day, score, goals)}

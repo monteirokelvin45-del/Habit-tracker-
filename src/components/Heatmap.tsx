@@ -3,6 +3,7 @@ import { ScrollView, View } from 'react-native';
 import { colors, scoreColor, spacing } from '../theme';
 import { Badge, Card, Muted, NoData, Row, Sheet, Txt } from './ui';
 import { buildHeatmap, levelFor, type HeatCell, type HeatLevel } from '../lib/heatmap';
+import { goalForTask } from '../lib/score';
 import { shortDate, weekdayShort } from '../lib/date';
 import { haptic } from '../lib/haptics';
 import type { Day, Goal } from '../lib/types';
@@ -207,7 +208,7 @@ function DayDetail({ cell, goals }: { cell: HeatCell; goals: Goal[] }) {
         <Txt variant="micro" color={colors.textMuted}>FEITAS</Txt>
         {done.length ? (
           done.map((t) => {
-            const goal = goals.find((g) => g.id === t.goalId);
+            const goal = goalForTask(goals, t);
             return (
               <Txt key={t.goalId} variant="caption" color={colors.textPrimary} style={{ marginTop: 2 }}>
                 ✓ {goal?.name ?? 'Tarefa'} {t.doneAt ? `· ${t.doneAt}` : ''}
@@ -223,7 +224,7 @@ function DayDetail({ cell, goals }: { cell: HeatCell; goals: Goal[] }) {
         <View>
           <Txt variant="micro" color={colors.textMuted}>NÃO FEITAS</Txt>
           {missed.map((t) => {
-            const goal = goals.find((g) => g.id === t.goalId);
+            const goal = goalForTask(goals, t);
             return (
               <Txt key={t.goalId} variant="caption" color={colors.textSecondary} style={{ marginTop: 2 }}>
                 ✗ {goal?.name ?? 'Tarefa'}
