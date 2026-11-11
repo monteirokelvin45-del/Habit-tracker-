@@ -25,13 +25,14 @@ npm start          # Expo dev server (QR code no Expo Go)
 npm run android    # emulador/dispositivo
 npm run web        # preview rápido no navegador
 npm run typecheck  # tsc --noEmit (strict)
-npm run test:logic  # 241 testes de lógica pura (score, modos, insights, parser, importador, mural, gráficos, widgets)
+npm run test:logic  # 328 testes de lógica pura (score, modos, insights, parser, importador, timer, finanças, dieta, edital, semana)
 npm run test:store  # 31 testes de AÇÃO do store (dia fechado, reabrir, pomodoro, metas, fechar o dia)
 npm run test:render # 42 renders dos 21 gráficos + tela, com e sem dado (react-dom/server, sem emulador)
-npm test            # os três
+npm run test:screens # 40 montagens de tela: app com histórico e app zerado (SSR, sem emulador)
+npm test            # os quatro
 ```
 
-Verificação usada antes de cada commit: `npm run typecheck && npm test` (tipos strict + lógica + ações do store + render).
+Verificação usada antes de cada commit: `npm run typecheck && npm test` (tipos strict + lógica + ações do store + render + telas).
 
 ## Gerando o APK (Android)
 
@@ -67,7 +68,8 @@ app/
     inteligencia.tsx     Zona de perigo, padrões, honestidade, mapas, regras SE-ENTÃO
     perfil.tsx           Identidade, configurações, exportação, upload, reset
   modulo/
-    leitura · financas · peso · sono · pomodoro · recompensas · conquistas · ayanokoji
+    treino · estudo · leitura · projeto · dieta · financas · sono · peso
+    pomodoro · recompensas · conquistas · ayanokoji   (detalhamento por área)
     graficos.tsx         central com as 21 visões do histórico (filtro por grupo)
 src/
   theme.ts               Design system (dark-only, cores/tipografia/áreas)
@@ -75,7 +77,15 @@ src/
     types.ts             Modelo de dados (@myprime:*)
     storage.ts           Persistência AsyncStorage
     store.ts             Zustand: todo o loop em ações atômicas
-    score.ts             Score 5 fatores + checklist por modo + streaks + zona de perigo
+    score.ts             Score 5 fatores + checklist por modo (ordem arrastada) + streaks + zona de perigo
+    schedule.ts          Cronograma por área + horário manual (semana)
+    training.ts          Sessão de treino, séries, carga e volume
+    study.ts/studies.ts  Blocos de estudo, edital, próximo tópico, apoio a TDAH
+    reading.ts           Progresso de leitura (só prevê com velocidade medida)
+    projects.ts          Marcos, prazo e risco de atraso
+    finance.ts           Três baldes + Regra do Dia de Pagamento
+    diet.ts              Refeições com gatilho + hidratação
+    timer.ts             Modelo puro do Pomodoro (estado testável)
     insights.ts          Padrões, gatilhos, correlações, checagem de honestidade
     parser.ts            Extração de metas de .txt/.md/.json
     export.ts            Export JSON + relatório PDF
@@ -85,9 +95,10 @@ src/
     stats.ts             Métricas puras dos 21 gráficos (sem dado = null)
   components/            ui.tsx (design system), charts.tsx + StatsCharts.tsx (svg), sheets, cartões
 scripts/
-  run-logic-tests.mjs    testes das funções puras (241 asserções)
+  run-logic-tests.mjs    testes das funções puras (328 asserções)
   audited-store.mjs      testes das ações do Zustand com stub de persistência (31 asserções)
   render-charts-smoke.mjs  render dos gráficos com e sem dado (42 montagens)
+  render-screens-smoke.mjs montagem das telas com store de cenário (40 montagens)
 ```
 
 ## O loop, na prática
@@ -101,6 +112,26 @@ scripts/
 5. **Score** — média ponderada: regularidade 30%, continuidade 20%, recuperação 15%, honestidade 15%,
    progresso real 20%. Nunca "% de tarefas" puro.
 6. **Narrativa** — vitória específica do dia, cobrança só em prioridade alta, fechamento do loop.
+
+## Detalhamento por área (Fase 2)
+
+Cada card de área do dashboard abre a tela dedicada. Tela sem dado escreve "Sem dado"
+em cinza — nunca um número inventado.
+
+| Área | Tela | O que faz |
+|---|---|---|
+| Treino | `modulo/treino` | sessão com séries, carga por série, volume, comparativo com a última sessão, timer de descanso |
+| Estudo | `modulo/estudo` | blocos por matéria, material, Pomodoro 25/5 e 50/10, Modo Foco Rígido com detector de fuga, edital (próximo tópico por peso × dias), apoio a TDAH |
+| Leitura | `modulo/leitura` | páginas, páginas/dia e previsão só com velocidade medida (2+ registros), citação e fila |
+| Projetos | `modulo/projeto` | marcos com prazo, risco de atraso (trabalho feito × tempo consumido), próximo marco |
+| Finanças | `modulo/financas` | 3 baldes (necessidade/vontade/futuro), Regra do Dia de Pagamento, impulso com justificativa obrigatória |
+| Dieta | `modulo/dieta` | refeições com gatilho obrigatório quando sai do plano, hidratação, tendência de 14 dias |
+| Sono | `modulo/sono` | horários → horas, qualidade, bloqueadores, correlação com o score |
+
+Cronograma: `components/ScheduleView.tsx` mostra a semana (setas esquerda/direita) e
+respeita o horário que a pessoa arrastou (`day.scheduleOverrides`). Reordenar metas usa
+`components/DragHandle.tsx` (Reanimated + Gesture Handler), com botão acessível como
+alternativa ao gesto.
 
 ## Regras absolutas implementadas (e testadas)
 

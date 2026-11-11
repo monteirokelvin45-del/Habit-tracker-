@@ -178,9 +178,11 @@ Testes que guardam essas correções:
 
 - `npm run test:store` — **31 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
   dado antigo). Compila o store real com stub de persistência; é o teste que pega estado errado.
-- `npm run test:logic` — **241 asserções** (inclui as novas de janela por data, threshold por meta,
-  badge de honestidade e anel do dia).
+- `npm run test:logic` — **328 asserções** (inclui as novas de janela por data, threshold por meta,
+  badge de honestidade, anel do dia, timer de foco, três baldes de finanças, dieta, edital e cronograma).
 - `npm run test:render` — **42 montagens** dos gráficos com e sem dado.
+- `npm run test:screens` — **40 montagens de tela** (app com histórico e app zerado) com store trocado
+  por cenário: pega crash em runtime, tela vazia e `NaN`/`undefined` visível.
 
 ## Memória de dados (persistência) — como está
 
@@ -249,7 +251,7 @@ agora são reagendados 1× por dia, não a cada edição).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **241/241** (modos, score, streaks, cobrança, gate de 7 dias,
+- `node scripts/run-logic-tests.mjs` → **328/328** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
 - `node scripts/audited-store.mjs` → **31/31** (ações do store: dia fechado, reabrir, pomodoro, metas,
