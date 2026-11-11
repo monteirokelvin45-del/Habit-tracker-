@@ -171,10 +171,19 @@ jobs:
           EXPECTED="$(node -e "const c=require('./app.json').expo;console.log(c.version+' '+c.android.versionCode)")"
           ACTUAL="$("$AAPT" dump badging "$APK" | sed -n "s/^package:.*versionCode='\([0-9]*\)'.*versionName='\([^']*\)'.*/\2 \1/p")"
           echo "esperado: $EXPECTED | no APK: $ACTUAL"
+          {
+            echo "### Versão do APK"
+            echo ""
+            echo "- config: \`$EXPECTED\`"
+            echo "- dentro do APK (aapt2): \`$ACTUAL\`"
+          } >> "$GITHUB_STEP_SUMMARY"
           if [ "$EXPECTED" != "$ACTUAL" ]; then
             echo "::error title=Versão::o APK saiu com '$ACTUAL' mas a config diz '$EXPECTED'"
             exit 1
           fi
+          SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"
+          echo "- sha256: \`$SHA256\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "sha256 do APK: $SHA256"
 
       # Sem isso o link do APK é um endereço de blob do Azure, que expira e não abre
       # para o usuário final. A release com `latest` sempre aponta para o APK atual.
