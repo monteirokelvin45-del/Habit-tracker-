@@ -25,7 +25,7 @@ npm start          # Expo dev server (QR code no Expo Go)
 npm run android    # emulador/dispositivo
 npm run web        # preview rápido no navegador
 npm run typecheck  # tsc --noEmit (strict)
-npm run test:logic # 132 testes de lógica pura (score, modos, insights, parser, importador, mural, widgets)
+npm run test:logic # 177 testes de lógica pura (score, modos, insights, parser, importador, mural, widgets)
 ```
 
 ## Gerando o APK (Android)
