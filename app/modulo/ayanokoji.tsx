@@ -17,7 +17,7 @@ import {
 import { ModalHeader } from '../../src/components/ModalHeader';
 import { RadarChart } from '../../src/components/charts';
 import { useStore } from '../../src/lib/store';
-import { addDays, todayKey } from '../../src/lib/date';
+import { addDays, diffDays, todayKey } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 
 const AXES = [
@@ -40,7 +40,8 @@ export default function AyanokojiScreen() {
   const store = useStore();
   const start = store.ayanokoji.startDate || todayKey();
   const today = todayKey();
-  const daysPassed = Math.floor((new Date(today).getTime() - new Date(start).getTime()) / 86400000);
+  // diffDays usa data local (new Date('YYYY-MM-DD') é UTC e erra o dia em fusos negativos).
+  const daysPassed = Math.max(0, diffDays(today, start));
   const week = Math.min(24, Math.max(1, Math.floor(daysPassed / 7) + 1));
   const progress = Math.min(100, (week / 24) * 100);
 

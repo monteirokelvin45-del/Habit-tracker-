@@ -1,5 +1,5 @@
 import type { Day } from './types';
-import { addDays, todayKey, weekdayIndex, MONTHS_SHORT } from './date';
+import { addDays, diffDays, todayKey, weekdayIndex, MONTHS_SHORT } from './date';
 
 /**
  * Mural de constância (estilo GitHub contributions) — dias cumpridos.
@@ -128,28 +128,33 @@ export function buildHeatmap(days: Day[], opts?: { weeks?: number; end?: string 
 
 /** Mural de um mês específico (grade 7 × N, começando na segunda). */
 export function buildMonthGrid(days: Day[], year: number, month: number): HeatWeek[] {
-  const first = new Date(year, month, 1, 12);
   const start = mondayOf(`${year}-${String(month + 1).padStart(2, '0')}-01`);
-  const last = new Date(year, month + 1, 0, 12);
+  const daysInMonth = new Date(year, month + 1, 0, 12).getDate();
   const byDate = new Map(days.map((d) => [d.date, d]));
   const today = todayKey();
-  const totalDays = Math.ceil((last.getDate() + new Date(start).getDay()) / 7) * 7 + 7;
+
+  // Da segunda antes do dia 1 até a semana que contém o último dia do mês.
+  const lastOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+  const lastWeekStart = mondayOf(lastOfMonth);
+  const weekCount = Math.round(diffDays(lastWeekStart, start) / 7) + 1;
 
   const weeks: HeatWeek[] = [];
-  for (let w = 0; w * 7 < totalDays + 7; w++) {
+  for (let w = 0; w < weekCount; w++) {
     const weekStart = addDays(start, w * 7);
     const cells: HeatCell[] = [];
     let inMonth = false;
     for (let d = 0; d < 7; d++) {
       const date = addDays(weekStart, d);
-      const dateObj = new Date(date);
-      const belongs = dateObj.getMonth() === month && dateObj.getFullYear() === year;
+      const belongs = date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`);
       if (belongs) inMonth = true;
-      cells.push(belongs ? cellFor(byDate.get(date), date, today) : { ...cellFor(undefined, date, today), hasRecord: false, level: 0 });
+      cells.push(
+        belongs
+          ? cellFor(byDate.get(date), date, today)
+          : { ...cellFor(undefined, date, today), hasRecord: false, level: 0 },
+      );
     }
     if (inMonth) weeks.push({ index: w, cells });
   }
-  void first;
   return weeks;
 }
 

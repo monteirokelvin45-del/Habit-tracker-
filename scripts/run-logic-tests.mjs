@@ -635,5 +635,16 @@ const reimport = importer.readPlan('## Estudo\n- Estudar', 'plano.md', {
 check('reimportação não duplica a meta', reimport.goals.length === 0);
 check('reimportação gera vínculo com o id antigo', (reimport.relinked ?? []).length === 1, JSON.stringify(reimport.relinked));
 
+console.log('\n── Auditoria: grade mensal do mural ──');
+for (const [y, m, total] of [[2026, 1, 31], [2026, 2, 28], [2024, 2, 29], [2026, 11, 30]]) {
+  const grid = heat.buildMonthGrid([], y, m - 1);
+  const prefix = `${y}-${String(m).padStart(2, '0')}`;
+  const inMonth = grid.flatMap((w) => w.cells).filter((c) => c.date.startsWith(prefix));
+  const unique = new Set(inMonth.map((c) => c.date));
+  check(`grade de ${m}/${y} traz todos os ${total} dias`, unique.size === total, String(unique.size));
+  check(`grade de ${m}/${y} começa na segunda`, grid.every((w) => dates.weekdayIndex(w.cells[0].date) === 1));
+  check(`grade de ${m}/${y} não inventa dia fora do mês`, inMonth.every((c) => c.date.startsWith(prefix)));
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

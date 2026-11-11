@@ -16,7 +16,7 @@ import {
 import { ModalHeader } from '../../src/components/ModalHeader';
 import { Heatmap, LineChart } from '../../src/components/charts';
 import { useStore, newId } from '../../src/lib/store';
-import { todayKey } from '../../src/lib/date';
+import { lastNDays, todayKey } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 import type { Book } from '../../src/lib/types';
 
@@ -34,14 +34,11 @@ export default function ReadingScreen() {
   const pagesThisYear = allLogs.filter((l) => l.date.startsWith(todayKey().slice(0, 4))).reduce((a, b) => a + b.pages, 0);
 
   const daysWithReading = Array.from(new Set(allLogs.map((l) => l.date))).sort();
-  const last14 = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (13 - i));
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  });
+  const last14 = lastNDays(14);
+  // Aqui o eixo é "leu ou não leu": usa 6 (faixa verde), não 8 (que pintaria tudo como nível máximo).
   const heat = last14.map((date) => ({
     date,
-    score: daysWithReading.includes(date) ? 8 : null,
+    score: daysWithReading.includes(date) ? 6 : null,
   }));
 
   const avgDaily = (() => {
@@ -57,11 +54,15 @@ export default function ReadingScreen() {
   const registerPages = (book: Book, pages: number) => {
     if (!book || pages <= 0) return;
     const nextPage = Math.min(book.totalPages, book.currentPage + pages);
+    // O log registra o que foi realmente lido, não o que foi pedido:
+    // num livro a 440/443, "+30" não pode virar 30 páginas lidas.
+    const actuallyRead = Math.max(0, nextPage - book.currentPage);
+    if (!actuallyRead) return;
     const updated: Book = {
       ...book,
       currentPage: nextPage,
       finished: nextPage >= book.totalPages,
-      log: [...(book.log ?? []), { date: todayKey(), pages }],
+      log: [...(book.log ?? []), { date: todayKey(), pages: actuallyRead }],
     };
     store.updateBook(updated);
     haptic('success');
