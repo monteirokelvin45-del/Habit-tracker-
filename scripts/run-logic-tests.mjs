@@ -1673,6 +1673,96 @@ console.log('\n── Tema softGlass (Soft Light Glass) ──');
   check('isThemeId aceita softGlass', theme.isThemeId('softGlass'));
 }
 
+/* ═══════════════ Treino: sequência, PR, volume e grupos musculares ═══════════════ */
+
+console.log('\n── Treino: dados que a tela FITPULSE afirma ──');
+{
+  const tr = await import(path.join(outRoot, 'lib/training.mjs'));
+  const mk = (date, exs, extra = {}) => ({
+    date,
+    label: 'Treino',
+    exercises: exs.map(([name, weight, done = true]) => ({
+      name,
+      sets: [{ reps: 10, weight, done }],
+    })),
+    ...extra,
+  });
+
+  // Sessão só conta com série feita: sessão aberta e vazia não é treino.
+  check('sessão sem série feita não conta', !tr.isRecorded(mk('2026-03-01', [['Supino', 60, false]])));
+  check('sessão com série feita conta', tr.isRecorded(mk('2026-03-01', [['Supino', 60]])));
+
+  // Sequência: hoje sem treino não zera (a série vem de ontem).
+  const seq = [mk('2026-03-01', [['Supino', 60]]), mk('2026-03-02', [['Supino', 62]]), mk('2026-03-03', [['Supino', 64]])];
+  check('sequência conta dias seguidos', tr.trainingStreak(seq, '2026-03-03').streak === 3, String(tr.trainingStreak(seq, '2026-03-03').streak));
+  check('hoje sem treino mantém a sequência de ontem', tr.trainingStreak(seq, '2026-03-04').streak === 3);
+  check('buraco no meio zera para 1', tr.trainingStreak([seq[0], seq[2]], '2026-03-03').streak === 1);
+  check('recordes de sequência = 3', tr.trainingStreak(seq, '2026-03-04').best === 3);
+
+  // PR: primeira sessão NÃO inventa delta.
+  const pr1 = tr.personalRecords([mk('2026-03-01', [['Supino', 60]])]);
+  check('primeira sessão: delta null (não "+5kg")', pr1[0]?.delta === null, JSON.stringify(pr1[0]?.delta));
+  const pr2 = tr.personalRecords([mk('2026-03-01', [['Supino', 60]]), mk('2026-03-02', [['Supino', 65]])]);
+  check('PR calcula +5kg sobre a sessão anterior', pr2[0]?.delta === 5, JSON.stringify(pr2[0]));
+  check('PR usa a MAIOR carga do exercício', pr2[0]?.weight === 65);
+
+  // Volume: reps × carga só das séries feitas; peso corporal conta 0.
+  check('volume soma reps × carga', tr.sessionVolume(mk('2026-03-01', [['Supino', 60], ['Remada', 40]])) === 1000);
+  check('série não feita não soma', tr.sessionVolume(mk('2026-03-01', [['Supino', 60, false]])) === 0);
+
+  // Cardio separado: dia sem treino é null (barra oca), não zero.
+  const days = ['2026-03-01', '2026-03-02', '2026-03-03'];
+  const wv = tr.weeklyVolume([mk('2026-03-01', [['Supino', 60]]), mk('2026-03-03', [], { kind: 'cardio', cardioMin: 30 })], days);
+  check('dia sem sessão é null no gráfico', wv[1]?.strength === null && wv[1]?.cardio === null, JSON.stringify(wv[1]));
+  check('dia de cardio não vira volume de força', wv[2]?.strength === 0 && wv[2]?.cardio === 30, JSON.stringify(wv[2]));
+
+  // Minutos: cronômetro manda; sem cronômetro, cardio declarado.
+  check('minutos usam o cronômetro', tr.sessionMinutes(mk('2026-03-01', [['Supino', 60]], { durationSec: 3480 })) === 58);
+  check('sem cronômetro, usa o cardio', tr.sessionMinutes(mk('2026-03-01', [], { cardioMin: 25 })) === 25);
+
+  // Grupos musculares: reconhece pelo nome, e não chuta quando não sabe.
+  check('agachamento → Quads', tr.exerciseMuscle('Agachamento livre') === 'Quads');
+  check('stiff → Posterior', tr.exerciseMuscle('Stiff') === 'Posterior');
+  check('supino → Peito', tr.exerciseMuscle('Supino reto') === 'Peito');
+  check('bike → Cardio', tr.exerciseMuscle('Bike 20min') === 'Cardio');
+  check('nome desconhecido → null (sem chute)', tr.exerciseMuscle('Exercício secreto') === null);
+  check('grupo explícito vence o nome', tr.muscleOf({ name: 'Supino', sets: [], muscle: 'Peito' }) === 'Peito');
+}
+
+console.log('\n── Tema fitPulse (FITPULSE Dark Lime) ──');
+{
+  const theme = await import(path.join(outRoot, 'theme.mjs'));
+  const palette = theme.THEMES.fitPulse?.palette;
+  check('tema fitPulse existe', !!palette);
+  check('fundo preto puro #0D0E12', palette?.bgPrimary === '#0D0E12', String(palette?.bgPrimary));
+  check('card grafite #13151A', palette?.bgCard === '#13151A', String(palette?.bgCard));
+  check('acento é verde lima #A3E635', palette?.neon === '#A3E635' && palette?.neonDeep === '#84CC16', `${palette?.neon}/${palette?.neonDeep}`);
+
+  const lum = (hex) => {
+    const c = hex.replace('#', '');
+    const v = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
+    const lin = v.map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  };
+  const ratio = (a, b) => {
+    const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (l1 + 0.05) / (l2 + 0.05);
+  };
+  const r1 = ratio(palette.textPrimary, palette.bgPrimary);
+  check('texto principal sobre preto tem contraste >= 4.5', r1 >= 4.5, `${r1.toFixed(2)}:1`);
+  const r2 = ratio(palette.textSecondary, palette.bgCard);
+  check('texto secundário sobre grafite tem contraste >= 4.5', r2 >= 4.5, `${r2.toFixed(2)}:1`);
+  const r3 = ratio(palette.onNeon, palette.neon);
+  check('texto sobre o lima tem contraste >= 4.5 (branco reprovaria)', r3 >= 4.5, `${r3.toFixed(2)}:1`);
+  check('branco sobre o lima reprovaria — por isso onNeon é escuro', ratio('#FFFFFF', palette.neon) < 4.5);
+  check('applyTheme troca para o tema lima e volta', (() => {
+    theme.applyTheme('fitPulse');
+    const ok = theme.colors.bgPrimary === '#0D0E12' && theme.accent() === '#A3E635';
+    theme.applyTheme('emerald');
+    return ok && theme.colors.bgPrimary === '#051F20';
+  })());
+}
+
 /* ═══════════════ AUDITORIA: app.json e app.config.ts não podem divergir ═══════════════ */
 
 console.log('\n── Configuração: app.json x app.config.ts ──');

@@ -596,6 +596,113 @@ for (const [label, file] of screens) {
   }
 }
 
+/* ───────── Treino (FITPULSE): Regra 1 em cada card da referência ───────── */
+{
+  const renderTreino = async (name, fixture, themeId = 'fitPulse') => {
+    const themeMod = await import(pathToFileURL(path.join(outRoot, 'src/theme.js')).href);
+    themeMod.applyTheme(themeId);
+    const copy = await withStore('app/modulo/treino.js', name, fixture);
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const html = renderToStaticMarkup(React.createElement(Screen));
+    themeMod.applyTheme('emerald');
+    return html;
+  };
+  const semTreino = { ...vazio, goals: [], days: [], weight: [], settings: { ...vazio.settings, theme: 'fitPulse' } };
+
+  // 1) App zerado: nenhum número da vitrine da referência pode aparecer.
+  const zero = await renderTreino('treino-zero', semTreino);
+  // Texto VISÍVEL: o HTML tem centenas de números em estilo inline (0.16, 16%),
+  // então a checagem precisa olhar só o que a pessoa lê.
+  const visible = (html) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+  const zeroText = visible(zero);
+  const vitrine = zeroText.match(/\b(128|12\.450|845|78%|22,4|42%|16%)\b/g) ?? [];
+  log(vitrine.length === 0, 'Treino vazio: nenhum número da referência (128, 12.450, 78%, 22,4…)', vitrine.join(' '));
+  log(/Sem dado|Sem registro|—/.test(zero), 'Treino vazio escreve "Sem dado"/—');
+  log(!/NaN|Infinity/.test(zero), 'Treino vazio sem NaN/Infinity');
+  log(/Sem recorde/.test(zero), 'Treino vazio: PR diz "Sem recorde" (não inventa +5kg)');
+  log(!/PR \+/.test(zero), 'Treino vazio não imprime badge de PR');
+
+  // 2) IMC precisa de altura: sem altura cadastrada é "Sem dado".
+  const semAltura = await renderTreino('treino-sem-altura', {
+    ...vazio,
+    goals: [goal('t1', 'Treino', 'Treino A', 'high')],
+    weight: [{ id: 'w1', date: key(0), kg: 78 }],
+    days: [],
+    settings: { ...vazio.settings, theme: 'fitPulse' },
+  });
+  log(/precisa de peso e altura/.test(semAltura), 'IMC sem altura cadastrada não inventa número');
+
+  // 3) Com altura + peso reais o IMC aparece calculado.
+  const comAltura = await renderTreino('treino-altura', {
+    ...vazio,
+    goals: [goal('t1', 'Treino', 'Treino A', 'high')],
+    weight: [{ id: 'w1', date: key(0), kg: 78 }],
+    days: [],
+    settings: { ...vazio.settings, theme: 'fitPulse', heightCm: 178 },
+  });
+  // 78 / 1.78² = 24.6
+  log(/24,6/.test(comAltura), 'IMC calculado com peso e altura reais', (comAltura.match(/24[,.]\d/g) ?? []).join(' '));
+
+  // 4) Sessão de hoje com séries feitas: volume e progresso reais.
+  const fxTreinado = {
+    ...cheio,
+    goals: [goal('t1', 'Treino', 'Treino A', 'high')],
+    settings: { ...cheio.settings, theme: 'fitPulse' },
+    // `days` fora do fixture: a tela só lê o dia de HOJE, e uma lista com o dia
+    // de hoje repetido deixava o `find` pegar a cópia errada.
+    days: [
+      {
+        ...cheio.days[5],
+        date: key(0),
+        tasks: [{ goalId: 't1', done: true, note: '' }],
+        closedAt: undefined,
+        diary: {
+          ...cheio.days[11].diary,
+          waterCups: 3,
+          workout: {
+            date: key(0),
+            label: 'Treino A — push',
+            exercises: [{ name: 'Supino reto', sets: [{ reps: 10, weight: 60, done: true }, { reps: 8, weight: 70, done: true }], restSec: 90 }],
+            durationSec: 3480,
+          },
+        },
+      },
+    ],
+  };
+  const treinado = await renderTreino('treino-feito', fxTreinado);
+  // 10×60 + 8×70 = 1160 kg
+  const volText = visible(treinado);
+  log(/1160/.test(volText), 'volume de hoje = 10×60 + 8×70 = 1160 kg', volText.match(/\d+ kg[^·]{0,30}/)?.[0]);
+  log(/58min/.test(treinado), 'duração vem do cronômetro (3480s = 58min)');
+  log(/Hidrata├|3 copo|copo\(s\)/.test(treinado) || /3 copos/.test(treinado), 'hidratação mostra os copos reais do dia');
+  log(!/1\.8L/.test(treinado), 'hidratação não repete os 1,8L da referência');
+
+  // 5) Calorias e bpm só existem se foram digitados.
+  log(!/kcal/.test(zero), 'card sem kcal digitada não mostra kcal');
+
+  // 6) Macro: soma só o que foi escrito com gramas; sem gramas, "—".
+  const comMacro = await renderTreino('treino-macro', {
+    ...semTreino,
+    goals: [goal('t1', 'Treino', 'Treino A', 'high')],
+    days: [
+      {
+        date: key(0),
+        energy: { physical: 6, mental: 6, stress: 4 },
+        mode: 'normal',
+        tasks: [],
+        diary: {
+          ...diary(),
+          food: ['07:10|Café|ovos 120g proteína|1|', '12:30|Almoço|arroz 80g carbo|1|'].join('\n'),
+        },
+      },
+    ],
+  });
+  const macroText = visible(comMacro);
+  const idxP = macroText.indexOf('Proteína');
+  log(/Proteína[\s\S]{0,60}120g/.test(macroText), 'macro soma os gramas escritos (120g proteína)', macroText.slice(idxP, idxP + 80));
+  log(/Carbo[\s\S]{0,60}80g/.test(macroText), 'macro soma carbo (80g carbo)');
+}
+
 /* ───────── Home (Soft Light Glass): nada inventado e contraste do tema claro ───────── */
 {
   const renderHome = async (name, fixture, themeId) => {
@@ -922,6 +1029,79 @@ if (process.env.PREVIEW_HOME) {
     themeMod.applyTheme('emerald');
   } catch (e) {
     console.error('preview da home falhou:', e.message);
+  }
+}
+
+/* ─────── Preview opcional de Treino (HTML para conferência visual) ───────
+ * `PREVIEW_TREINO=1 npm run test:screens` grava `docs/design/treino-preview.html`.
+ * Aplica o tema `fitPulse` (preto + verde lima) antes de renderizar.
+ */
+if (process.env.PREVIEW_TREINO) {
+  try {
+    const themeMod = await import(pathToFileURL(path.join(outRoot, 'src/theme.js')).href);
+    themeMod.applyTheme('fitPulse');
+    const sessao = (date, label, sets, extra = {}) => ({
+      date,
+      label,
+      exercises: [
+        { name: 'Supino reto', sets: sets.map((w, i) => ({ reps: 10, weight: w, done: i < 3 })), restSec: 90 },
+        { name: 'Remada curvada', sets: sets.map((w) => ({ reps: 12, weight: w - 10, done: true })), restSec: 60 },
+      ],
+      durationSec: 3480,
+      ...extra,
+    });
+    const copy = await withStore('app/modulo/treino.js', 'preview', {
+      ...cheio,
+      user: { ...cheio.user, name: 'Kelvin' },
+      goals: [goal('t1', 'Treino', 'Treino A · push', 'high')],
+      settings: { ...cheio.settings, theme: 'fitPulse', heightCm: 178 },
+      days: [
+        ...Array.from({ length: 6 }).map((_, i) => ({
+          ...cheio.days[i],
+          date: key(-(i + 1)),
+          tasks: [{ goalId: 't1', done: true, note: '' }],
+          diary: {
+            ...cheio.days[i].diary,
+            workout: sessao(key(-(i + 1)), i % 2 ? 'Treino B — pull' : 'Treino A — push', [60, 65, 70], {
+              kcal: i % 2 ? 410 : undefined,
+              bpm: i % 2 ? 128 : undefined,
+            }),
+            waterCups: 5,
+            food: ['07:10|Café|ovos e tapioca 120g proteína|1|', '12:30|Almoço|arroz, feijão e frango 80g carb|1|', '16:00|Lanche|whey 40g proteína|1|'].join('\n'),
+            sleep: { hours: 7.5, quality: 8, blockers: [] },
+          },
+        })),
+        {
+          ...cheio.days[11],
+          date: key(0),
+          tasks: [{ goalId: 't1', done: false, note: '' }],
+          diary: { ...cheio.days[11].diary, waterCups: 3, food: '07:10|Café|pão e café|1|', sleep: { hours: 6.8, quality: 7, blockers: [] } },
+          closedAt: undefined,
+        },
+      ],
+      weight: [
+        { id: 'w1', date: key(-9), kg: 77.4 },
+        { id: 'w2', date: key(-2), kg: 77.9 },
+      ],
+    });
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const body = renderToStaticMarkup(React.createElement(Screen));
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MY PRIME · Treino (preview)</title>
+<style>
+  html,body{margin:0;background:#05060A;}
+  body{display:flex;justify-content:center;padding:24px 0;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;}
+  #app{width:412px;min-height:900px;background:#0D0E12;border-radius:36px;overflow:hidden;
+       border:1px solid rgba(255,255,255,.10);box-shadow:0 18px 60px rgba(163,230,53,.14);}
+  #app *{box-sizing:border-box;}
+</style></head><body><div id="app">${body}</div></body></html>`;
+    fs.mkdirSync(path.join(root, 'docs/design'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'docs/design/treino-preview.html'), html);
+    console.log('\npreview: docs/design/treino-preview.html');
+    themeMod.applyTheme('emerald');
+  } catch (e) {
+    console.error('preview de treino falhou:', e.message);
   }
 }
 

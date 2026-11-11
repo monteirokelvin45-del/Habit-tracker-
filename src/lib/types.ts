@@ -191,7 +191,7 @@ export interface WeightEntry {
   };
 }
 
-export type ThemeId = 'emerald' | 'golden' | 'cyberpunk' | 'ocean' | 'neonBlue' | 'softGlass';
+export type ThemeId = 'emerald' | 'golden' | 'cyberpunk' | 'ocean' | 'neonBlue' | 'softGlass' | 'fitPulse';
 
 export interface Settings {
   /** Tema visual ativo (Perfil → Aparência). */
@@ -212,6 +212,8 @@ export interface Settings {
   /** Meta de foco diária em minutos (dashboard "Foco"). */
   focusGoalMinutes?: number;
   weightGoalKg?: number;
+  /** Altura em cm — necessária para IMC. Sem ela, o IMC é "Sem dado". */
+  heightCm?: number;
   targetDailyScore: number;
   /**
    * 4 últimos dígitos de um cartão, se o usuário quiser identificar a conta no

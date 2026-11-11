@@ -252,6 +252,46 @@ export const THEMES: Record<ThemeId, { label: string; swatch: string; palette: P
       scale: ['#EDEEEF', '#D8DADC', '#B9BCBF', '#909498', '#5F6265', '#1C1C1F'],
     },
   },
+
+  /**
+   * "FITPULSE Dark Lime" — preto puro + cards grafite + verde lima.
+   *
+   * O acento é CLARO (#A3E635), então o texto sobre ele precisa ser escuro:
+   * branco sobre lima dá 1.6:1 e some no sol. `black`/`onNeon` ficam pretos aqui.
+   */
+  fitPulse: {
+    label: 'FITPULSE Dark Lime',
+    swatch: '#A3E635',
+    palette: {
+      bgPrimary: '#0D0E12',
+      bgCard: '#13151A',
+      bgElevated: '#191C22',
+      bgInput: '#0F1116',
+      bgSubtle: '#1B1F26',
+      green: '#A3E635',
+      greenNeon: '#BEF264',
+      red: '#F87171',
+      yellow: '#FBBF24',
+      purple: '#A78BFA',
+      orange: '#FB923C',
+      blue: '#60A5FA',
+      cyan: '#2DD4BF',
+      pink: '#F472B6',
+      textPrimary: '#F4F6F2',
+      textSecondary: '#A7AEB8',
+      textMuted: '#6F7683',
+      textFaint: '#3A404B',
+      border: 'rgba(255,255,255,0.10)',
+      borderAccent: 'rgba(163,230,53,0.35)',
+      interactive: '#A3E635',
+      track: '#22262E',
+      black: '#0D0E12',
+      neon: '#A3E635',
+      neonDeep: '#84CC16',
+      onNeon: '#0D0E12',
+      scale: ['#1B1F26', '#3F4A2E', '#5C6B33', '#7C8F33', '#A3E635', '#BEF264'],
+    },
+  },
 };
 
 /** Paleta ativa. Objeto mutável: ver comentário no topo do arquivo. */

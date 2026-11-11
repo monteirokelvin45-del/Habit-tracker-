@@ -348,6 +348,51 @@ O que ficou de fora da referência, e por quê: **Inbox/"25 Unread Messages"** (
 - Preview fiel em `docs/design/financas-preview.html` (`PREVIEW_FINANCES=1 npm run test:screens`):
   é o DOM do react-native-web com os estilos reais, para conferir a composição sem emulador.
 
+## Treino — "FITPULSE" (Bento, preto + verde lima)
+
+O módulo de Treino virou um dashboard de fitness na referência FITPULSE. Entrou o tema
+**`fitPulse`** ("FITPULSE Dark Lime", em Perfil → Aparência) com o verde lima `#A3E635`, e as
+peças ficam em `src/components/FitPulse.tsx`. Como a Home, este módulo **segue o tema ativo**.
+
+### Mapeamento referência → dado real
+
+| Referência | No app |
+|---|---|
+| Total Workouts 128 (+12%) | sessões registradas em 28 dias + minutos da última (`sessionMinutes`) |
+| Calories 12,450 kcal | **não existe**: o app não calcula gasto calórico. Calorias só aparecem se a pessoa digitar (relógio/esteira), e sempre marcadas "(informado)" |
+| Streak 18 dias (Best 24) | `trainingStreak` real: hoje sem treino não zera a sequência, e o recorde vem do histórico |
+| Active Minutes 845 min | soma do cronômetro das sessões (28 d), com "Sem dado" quando não há sessão |
+| Volume semanal (Strength × Cardio) | barras de carga × reps e minutos de cardio; **dia sem treino é coluna oca (`null`)** |
+| 78% Goal Reached | sessões da semana ÷ meta (3/4/5x, escolhida na hora) |
+| Start Workout | botão liga o cronômetro real; marcar a última série dispara o descanso prescrito do exercício (45–120 s) |
+| Today's Workout (Leg Day) | nome, séries, reps e carga **digitados por sessão** — o template antigo vinha com 30 kg fixos, que parecia dado do usuário |
+| Ilustração de músculos | `MuscleMap` acende só os grupos reconhecidos nos exercícios; grupo desconhecido apaga, não chuta |
+| Water 1.8L/3L | copos de 250 ml reais do diário (mesmo contador da Dieta) |
+| Nutrição (proteína/carbo/gordura) | soma dos gramas **escritos** nas refeições ("120g proteína"); sem gramas no texto, diz "—". Não há meta de macro cadastrada, então não há barra contra alvo inventado |
+| Body Stats (78kg/42%/16%/22.4) | peso e IMC reais; **gordura e massa muscular ficam "—"** porque o app não mede composição corporal. IMC exige altura cadastrada (novo campo em Settings) |
+| PRs (Squat +5kg…) | `personalRecords` sobre o histórico: primeira sessão é `delta: null` (sem "+5kg") |
+| Sono 7h32 + gráfico | horas e qualidade do diário de sono; sem registro, "—" |
+| Recent Workouts (com foto) | capas **desenhadas** (`WorkoutCover`): foto de banco de imagens não é registro do usuário |
+
+### Dois defeitos encontrados pelos testes nesta rodada
+
+1. **Reabrir a tela de Treino perdia as séries já marcadas** — só o cronômetro voltava, porque a
+   sessão salva era ignorada no estado inicial. Agora o `useState` hidrata da sessão do dia (e
+   `toSession` normaliza backup antigo: `sets` ausente não derruba a tela).
+2. **Cardio não contava como sessão** — `isRecorded` exigia série feita, o que apagava todo treino
+   de cardio. Agora conta série feita **ou** minutos de cardio.
+
+### Verificação
+
+- 21 checagens novas de treino: sequência (hoje sem treino não zera), PR sem delta na 1ª sessão,
+  volume reps×carga, dia sem treino `null`, cardio separado de força, minutos pelo cronômetro,
+  grupos musculares (e `null` quando não reconhece), IMC com e sem altura, macro somando gramas,
+  volume 1160 kg de 10×60+8×70, e nenhum número da vitrine (128, 12.450, 78%, 22,4).
+- Tema `fitPulse`: fundo `#0D0E12`, card `#13151A`, contraste medido — **branco sobre o lima dá
+  1.6:1**, por isso `onNeon` é escuro.
+- **130 telas** (21 × 4 cenários + 11 Estudos + 7 Finanças + 9 Home + 27 de Treino), 543 lógica,
+  62 store, 42 renders. Preview: `docs/design/treino-preview.html` (`PREVIEW_TREINO=1 npm run test:screens`).
+
 ## Home — "Soft Light Glass" (Management / Coders)
 
 A Tela Principal foi redesenhada na referência clara e translúcida. Diferente de Estudos
@@ -563,7 +608,7 @@ agora são reagendados 1× por dia, não a cada edição).
 - `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
-- `node scripts/render-screens-smoke.mjs` → **116/116** (21 telas × 3 cenários: com histórico, primeiro uso
+- `node scripts/render-screens-smoke.mjs` → **130/130** (21 telas × 3 cenários: com histórico, primeiro uso
   e **dados corrompidos** — `null`/`NaN`/texto de backup antigo)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200
 - `npx expo prebuild -p android` → `Prime.java` + `Constancia.java`,
