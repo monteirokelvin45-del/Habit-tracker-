@@ -27,6 +27,7 @@ import { buildChecklist, computeScore, taskKeyFor } from './score';
 import { evaluateBadges } from './badges';
 import { evaluateRewards } from './rewards';
 import { newId } from './id';
+import type { ImportSummary } from './importer';
 
 export type LoadState = 'idle' | 'loading' | 'ready';
 
@@ -92,6 +93,7 @@ export interface StoreState extends AppData {
   setRouteAdjustment: (monthKey: string, items: string[]) => void;
 
   importGoals: (goals: Goal[], areas: string[]) => void;
+  applyImport: (summary: ImportSummary) => Promise<void>;
   hardReset: () => Promise<void>;
 }
 
@@ -126,20 +128,37 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   async finishOnboarding({ user, areas, goals, settings }) {
-    const mergedSettings: Settings = { ...DEFAULT_SETTINGS, ...settings };
-    const mergedUser: User = { ...user, areas, createdAt: user.createdAt || new Date().toISOString() };
-    const ayanokoji = { startDate: todayKey(), scores: [], tasksDone: {} };
+    const current = get();
+    const mergedSettings: Settings = { ...DEFAULT_SETTINGS, ...current.settings, ...settings };
+    const mergedUser: User = {
+      ...user,
+      name: user.name || current.user.name,
+      identity: user.identity || current.user.identity,
+      noMore: user.noMore || current.user.noMore,
+      areas: Array.from(new Set([...(user.areas ?? []), ...areas, ...current.user.areas])),
+      createdAt: user.createdAt || current.user.createdAt || new Date().toISOString(),
+    };
+
+    // Metas vindas de um plano importado não podem ser perdidas no onboarding.
+    const key = (g: Goal) => `${g.area}|${g.name.toLowerCase().trim()}`;
+    const seen = new Set(goals.map(key));
+    const mergedGoals = [...goals, ...current.goals.filter((g) => !seen.has(key(g)))];
+
+    const ayanokoji = current.ayanokoji.startDate
+      ? current.ayanokoji
+      : { startDate: todayKey(), scores: [], tasksDone: {} };
+
     set({
       onboarded: true,
       user: mergedUser,
-      goals,
+      goals: mergedGoals,
       settings: mergedSettings,
       ayanokoji,
     });
     await persistMany([
       ['onboarded', true],
       ['user', mergedUser],
-      ['goals', goals],
+      ['goals', mergedGoals],
       ['settings', mergedSettings],
       ['ayanokoji', ayanokoji],
     ]);
@@ -517,6 +536,78 @@ export const useStore = create<StoreState>((set, get) => ({
     const routeAdjustments = { ...get().routeAdjustments, [monthKeyValue]: items };
     set({ routeAdjustments });
     void persist('routeAdjustments', routeAdjustments);
+  },
+
+  async applyImport(summary) {
+    const state = get();
+
+    // A) Backup completo do app: substitui tudo de forma atômica.
+    if (summary.full) {
+      const full = summary.full;
+      set({
+        onboarded: true,
+        user: full.user,
+        goals: full.goals,
+        days: full.days,
+        rules: full.rules,
+        rewards: full.rewards,
+        books: full.books,
+        finances: full.finances,
+        weight: full.weight,
+        settings: full.settings,
+        badges: full.badges,
+        ayanokoji: full.ayanokoji,
+        weeklyFocus: full.weeklyFocus,
+        routeAdjustments: full.routeAdjustments,
+      });
+      await persistMany([
+        ['onboarded', true],
+        ['user', full.user],
+        ['goals', full.goals],
+        ['days', full.days],
+        ['rules', full.rules],
+        ['rewards', full.rewards],
+        ['books', full.books],
+        ['finances', full.finances],
+        ['weight', full.weight],
+        ['settings', full.settings],
+        ['badges', full.badges],
+        ['ayanokoji', full.ayanokoji],
+        ['weeklyFocus', full.weeklyFocus],
+        ['routeAdjustments', full.routeAdjustments],
+      ]);
+      return;
+    }
+
+    // B) Plano: soma ao que existe, sem duplicar metas.
+    const goals = [...state.goals, ...summary.goals];
+    const rules = [...state.rules, ...summary.rules.filter((r) => !state.rules.some((x) => x.trigger === r.trigger && x.action === r.action))];
+    const rewards = [...state.rewards, ...summary.rewards.filter((r) => !state.rewards.some((x) => x.name === r.name))];
+    const books = [...state.books, ...summary.books.filter((b) => !state.books.some((x) => x.title.toLowerCase() === b.title.toLowerCase()))];
+    const finances = [...state.finances, ...summary.finances];
+    const weight = [...state.weight, ...summary.weight.filter((w) => !state.weight.some((x) => x.date === w.date))].sort((a, b) =>
+      a.date < b.date ? -1 : 1,
+    );
+    const settings = { ...state.settings, ...summary.settings };
+    const user: User = {
+      name: summary.user.name ?? state.user.name,
+      identity: summary.user.identity ?? state.user.identity,
+      noMore: summary.user.noMore ?? state.user.noMore,
+      areas: Array.from(new Set([...state.user.areas, ...summary.areas])),
+      createdAt: state.user.createdAt || new Date().toISOString(),
+    };
+
+    set({ goals, rules, rewards, books, finances, weight, settings, user });
+    await persistMany([
+      ['goals', goals],
+      ['rules', rules],
+      ['rewards', rewards],
+      ['books', books],
+      ['finances', finances],
+      ['weight', weight],
+      ['settings', settings],
+      ['user', user],
+    ]);
   },
 
   importGoals(newGoals, areas) {

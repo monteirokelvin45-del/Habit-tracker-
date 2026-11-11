@@ -70,6 +70,37 @@ function bar(pct: number, color: string): string {
     <div style="height:6px;width:${Math.max(0, Math.min(100, pct))}%;background:${color};border-radius:3px"></div></div>`;
 }
 
+/** Compartilha (ou baixa, no web) o modelo de plano em Markdown. */
+export async function sharePlanTemplate(): Promise<string | null> {
+  const { PLAN_TEMPLATE } = await import('./importer');
+  if (Platform.OS === 'web') {
+    try {
+      const blob = new Blob([PLAN_TEMPLATE], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'my-prime-plano-modelo.md';
+      a.click();
+      URL.revokeObjectURL(url);
+      return null;
+    } catch {
+      return PLAN_TEMPLATE;
+    }
+  }
+  try {
+    const file = new File(Paths.cache, 'my-prime-plano-modelo.md');
+    file.create({ overwrite: true });
+    file.write(PLAN_TEMPLATE);
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(file.uri, { mimeType: 'text/markdown', dialogTitle: 'Modelo de plano MY PRIME' });
+    }
+    return file.uri;
+  } catch (e) {
+    console.warn('[MY PRIME] template', e);
+    return null;
+  }
+}
+
 export function buildReportHtml(data: AppData, reference = todayKey()): string {
   const year = Number(reference.slice(0, 4));
   const month = Number(reference.slice(5, 7)) - 1;

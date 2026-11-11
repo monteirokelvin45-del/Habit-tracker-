@@ -17,6 +17,7 @@ const files = [
     .filter((f) => f.endsWith('.ts') && !f.endsWith('.tsx'))
     .map((f) => path.join(root, 'src/lib', f)),
   path.join(root, 'src/widget/data.ts'),
+  path.join(root, 'src/lib/importer.ts'),
 ];
 
 for (const file of files) {
@@ -45,6 +46,7 @@ const { evaluateRewards } = await import(path.join(outRoot, 'lib/rewards.mjs'));
 const { badgeState, BADGES } = await import(path.join(outRoot, 'lib/badges.mjs'));
 const dates = await import(path.join(outRoot, 'lib/date.mjs'));
 const widget = await import(path.join(outRoot, 'widget/data.mjs'));
+const importer = await import(path.join(outRoot, 'lib/importer.mjs'));
 
 let pass = 0;
 let fail = 0;
@@ -203,6 +205,103 @@ check('concluir não altera outros dias', completed.data.days.filter((d) => d.da
 const closedWidget = { ...wData, days: wData.days.map((d) => (d.date === today ? { ...d, closedAt: 'now' } : d)) };
 check('dia encerrado → widget não marca nada', widget.completeNextTask(closedWidget, today).skipped === true);
 check('sem dia registrado → skipped (não cria dado falso)', widget.completeNextTask(emptyData, today).skipped === true);
+
+console.log('\n── Importador de plano completo ──');
+const stateBase = {
+  ...fewDays,
+  user: { name: '', identity: '', noMore: '', areas: [], createdAt: '' },
+  goals: [],
+  days: [],
+  finances: [],
+  weight: [],
+  ayanokoji: { startDate: '', scores: [], tasksDone: {} },
+};
+
+const planMd = `# IDENTIDADE
+Nome: Kelvin
+Quem sou: quero ser alguém que treina mesmo sem vontade e termina o que começa
+Não aceito mais: não aceito mais prometer e não cumprir comigo mesmo
+
+# METAS
+## Treino
+- Treinar 5x por semana | mín 3x | ideal 5x | excelente 6x | prioridade
+- Alongar todos os dias
+
+## Estudo
+- Estudar 2h por dia | mín 30min | ideal 2h | excelente 4h
+
+## Leitura
+- Sapiens — Yuval Harari — 443 páginas — até página 120
+
+## Finanças
+- Guardar R$ 500 por mês
+
+# REGRAS SE-ENTÃO
+- SE eu chegar em casa cansado → ENTÃO faço 15min de treino mínimo PORQUE mato a resistência
+- SE eu pegar o celular na cama → ENTÃO leio 10 páginas antes
+
+# RECOMPENSAS
+- Delivery → 7 dias seguidos com score >= 7
+- Cinema → 85% de consistência em 14 dias
+
+# PROTOCOLO AYANOKOJI
+- 24 semanas
+
+# SONO
+- Lembrete matinal 07:00
+- Lembrete noturno 21:00
+- Meta de sono 7h30
+`;
+
+const imported = importer.readPlan(planMd, 'meu-plano.md', stateBase);
+check('detecta plano em texto', imported.source === 'plan-text');
+check('extrai 4 metas', imported.goals.length === 4, JSON.stringify(imported.goals.map((g) => g.name)));
+check('níveis inline respeitados', imported.goals[0]?.min === '3x' && imported.goals[0]?.excellent === '6x', JSON.stringify(imported.goals[0]));
+check('prioridade inline = high', imported.goals[0]?.priority === 'high');
+check('áreas detectadas', imported.areas.includes('Treino') && imported.areas.includes('Estudo'), JSON.stringify(imported.areas));
+check('identidade lida', imported.user.name === 'Kelvin' && (imported.user.identity ?? '').length > 20);
+check('noMore lido', (imported.user.noMore ?? '').length > 20);
+check('2 regras SE-ENTÃO', imported.rules.length === 2, JSON.stringify(imported.rules.map((r) => r.trigger)));
+check('regra traz PORQUE', imported.rules[0]?.reason.includes('resistência'));
+check('2 recompensas com alvo', imported.rewards.length === 2 && imported.rewards[0]?.target === 7, JSON.stringify(imported.rewards.map((r) => [r.name, r.target])));
+check('recompensa de consistência tipada', imported.rewards[1]?.criteriaType === 'consistency');
+check('livro com páginas e progresso', imported.books[0]?.title === 'Sapiens' && imported.books[0]?.totalPages === 443 && imported.books[0]?.currentPage === 120);
+check('meta de sono lida', imported.settings.sleepGoalHours === 7.5, String(imported.settings.sleepGoalHours));
+check('lembrete matinal lido', imported.settings.morningReminder === '07:00', String(imported.settings.morningReminder));
+check('ayanokoji 24 semanas', imported.ayanokoji.weeks === 24);
+
+console.log('\n── Pendências manuais: tintim por tintim ──');
+const kinds = imported.pending.map((p) => p.kind);
+check('lista pendências reais', imported.pending.length > 0);
+check('cobra diário de hoje', kinds.includes('dia'));
+check('cobra nota semanal do Ayanokoji', imported.pending.some((p) => p.title.includes('Ayanokoji')));
+check('cada pendência diz onde fazer', imported.pending.every((p) => p.where.length > 0));
+check('cada pendência explica o porquê', imported.pending.every((p) => p.why.length > 10));
+check('identidade completa não é cobrada', !imported.pending.some((p) => p.kind === 'identity'));
+
+// arquivo sem identidade -> cobra como essencial
+const barePlan = importer.readPlan('## Treino\n- Correr 3x por semana', 'x.md', stateBase);
+check('sem identidade → pendência essencial', barePlan.pending.some((p) => p.kind === 'identity' && p.severity === 'blocker'));
+check('sem regra → pede SE-ENTÃO', barePlan.pending.some((p) => p.kind === 'rule'));
+
+console.log('\n── Importação não duplica e não perde dados ──');
+const withExisting = { ...stateBase, goals: [{ ...goals[0], area: 'Treino', name: 'treinar 5x por semana' }] };
+const dup = importer.readPlan('## Treino\n- Treinar 5x por semana\n- Nadar 2x', 'x.md', withExisting);
+check('meta duplicada é ignorada', dup.goals.length === 1 && dup.skippedDuplicates.length === 1, JSON.stringify({ goals: dup.goals.map((g) => g.name), skipped: dup.skippedDuplicates }));
+check('meta nova entra', dup.goals[0]?.name === 'Nadar 2x');
+
+const backupJson = JSON.stringify({ app: 'MY PRIME', version: '1.0', user: { name: 'Ana', identity: 'x'.repeat(30), noMore: 'y'.repeat(30), areas: ['Treino'], createdAt: '' }, goals, days: manyDays.days, rules: [], rewards: [], books: [], finances: [], weight: [], settings: {}, badges: [], ayanokoji: { startDate: '', scores: [], tasksDone: {} }, weeklyFocus: {}, routeAdjustments: {} });
+const backup = importer.readPlan(backupJson, 'backup.json', stateBase);
+check('detecta backup completo', backup.source === 'backup' && !!backup.full);
+check('backup traz histórico', backup.counts.days === 8);
+check('backup mantém metas', backup.goals.length === 3);
+check('backup não cobra identidade (já escrita)', !backup.pending.some((p) => p.kind === 'identity'));
+
+const jsonPlan = importer.readPlan(JSON.stringify({ goals: [{ name: 'Correr 3x', area: 'Treino', priority: 'alta' }] }), 'plano.json', stateBase);
+check('JSON de plano importado', jsonPlan.goals.length === 1 && jsonPlan.goals[0]?.priority === 'high');
+
+check('texto vazio não gera meta', importer.readPlan('', 'x.txt', stateBase).goals.length === 0);
+check('template é importável', importer.readPlan(importer.PLAN_TEMPLATE, 'modelo.md', stateBase).goals.length >= 5, String(importer.readPlan(importer.PLAN_TEMPLATE, 'modelo.md', stateBase).goals.length));
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Animated, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Pressable } from 'react-native';
+import { colors as themeColors, spacing } from '../src/theme';
 import { colors } from '../src/theme';
 import { useStore } from '../src/lib/store';
 import { Txt } from '../src/components/ui';
@@ -32,10 +34,25 @@ export default function Splash() {
           Disciplina é sistema, não humor
         </Txt>
       </Animated.View>
-      <View style={{ position: 'absolute', bottom: 48 }}>
+      <View style={{ position: 'absolute', bottom: 48, alignItems: 'center', gap: spacing.md }}>
         <Txt variant="micro" color={colors.textMuted}>
           intenção → execução → registro → análise → correção → recompensa
         </Txt>
+        {status === 'ready' && !onboarded ? (
+          <Pressable
+            onPress={() => router.push('/importar')}
+            style={{
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 12,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+            }}
+            accessibilityRole="button"
+          >
+            <Txt variant="caption" color={themeColors.green}>Já tenho um plano — importar</Txt>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );

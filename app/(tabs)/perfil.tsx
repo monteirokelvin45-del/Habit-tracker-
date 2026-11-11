@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as DocumentPicker from 'expo-document-picker';
-import { File } from 'expo-file-system';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { areaColor, colors, spacing } from '../../src/theme';
 import {
@@ -25,7 +23,6 @@ import {
 import { useStore } from '../../src/lib/store';
 import { BADGES } from '../../src/lib/badges';
 import { exportJson, exportPdf } from '../../src/lib/export';
-import { parsePlans, toGoals } from '../../src/lib/parser';
 import { generalStreak } from '../../src/lib/score';
 import { closedDays } from '../../src/lib/insights';
 import { todayKey } from '../../src/lib/date';
@@ -40,9 +37,6 @@ export default function ProfileScreen() {
   const [identity, setIdentity] = useState(store.user.identity);
   const [noMore, setNoMore] = useState(store.user.noMore);
 
-  const [uploadSheet, setUploadSheet] = useState(false);
-  const [uploadText, setUploadText] = useState('');
-  const [uploadName, setUploadName] = useState('');
 
   const [resetStep, setResetStep] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
@@ -50,30 +44,7 @@ export default function ProfileScreen() {
   const closed = closedDays(store.days);
   const streak = generalStreak(store.days);
   const areas = Array.from(new Set([...store.user.areas, ...store.goals.map((g) => g.area)]));
-  const parsed = uploadText ? parsePlans(uploadText, uploadName) : null;
 
-  const pickDocument = async () => {
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: ['text/plain', 'application/json', 'application/pdf', 'text/*'],
-        copyToCacheDirectory: true,
-      });
-      if (res.canceled || !res.assets?.[0]) return;
-      const asset = res.assets[0];
-      setUploadName(asset.name ?? 'plano');
-      if ((asset.name ?? '').toLowerCase().endsWith('.pdf')) {
-        setUploadText('');
-        haptic('error');
-        return;
-      }
-      const content = new File(asset.uri).textSync();
-      setUploadText(content);
-      setUploadSheet(true);
-    } catch (e) {
-      console.warn('[MY PRIME] upload', e);
-      haptic('error');
-    }
-  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bgPrimary }} edges={['top']}>
@@ -158,8 +129,22 @@ export default function ProfileScreen() {
               haptic('success');
             }}
           />
-          <SecondaryButton color={colors.purple} label="Enviar meus planos" onPress={pickDocument} />
-          <Muted>Aceita .txt, .json e .md. PDF é aceito pelo seletor, mas o conteúdo precisa ser texto — o app avisa quando não consegue ler.</Muted>
+          <SecondaryButton color={colors.purple} label="Enviar meus planos e dados" onPress={() => router.push('/importar')} />
+          <Muted>
+            Organiza metas, regras SE-ENTÃO, recompensas, leitura, finanças e identidade — e lista o que ainda
+            falta você escrever. Também restaura backup do app (.json).
+          </Muted>
+          <SecondaryButton
+            color={colors.textSecondary}
+            label={busy === 'template' ? 'Preparando...' : 'Baixar modelo de arquivo'}
+            onPress={async () => {
+              setBusy('template');
+              const { sharePlanTemplate } = await import('../../src/lib/export');
+              await sharePlanTemplate();
+              setBusy(null);
+              haptic('success');
+            }}
+          />
           <SecondaryButton
             color={colors.red}
             label="Resetar tudo"
@@ -255,54 +240,6 @@ export default function ProfileScreen() {
             />
           ))}
         </View>
-      </Sheet>
-
-      {/* UPLOAD INTELIGENTE */}
-      <Sheet
-        visible={uploadSheet}
-        onClose={() => setUploadSheet(false)}
-        title="Encontrei metas no seu arquivo"
-        footer={
-          <PrimaryButton
-            label={parsed?.goals.length ? `Confirmar ${parsed.goals.length} meta(s)` : 'Nada para importar'}
-            disabled={!parsed?.goals.length}
-            onPress={() => {
-              if (!parsed) return;
-              store.importGoals(toGoals(parsed.goals), parsed.areas);
-              setUploadSheet(false);
-              setUploadText('');
-              haptic('success');
-            }}
-          />
-        }
-      >
-        {parsed && parsed.goals.length ? (
-          <>
-            <Txt variant="h3">
-              Encontrei {parsed.goals.length} metas em {parsed.areas.length} área(s). Confirmar?
-            </Txt>
-            <Muted>Arquivo: {uploadName} · {parsed.ignoredLines} linha(s) ignorada(s)</Muted>
-            {parsed.areas.map((area) => (
-              <View key={area} style={{ gap: 4 }}>
-                <Txt variant="caption" color={areaColor(area)}>{area}</Txt>
-                {parsed.goals.filter((g) => g.area === area).map((g) => (
-                  <Txt key={g.name} variant="micro" color={colors.textPrimary} style={{ textTransform: 'none', letterSpacing: 0 }}>
-                    • {g.name}
-                  </Txt>
-                ))}
-              </View>
-            ))}
-            <Muted>Nada é salvo antes da sua confirmação. Você poderá editar cada meta depois.</Muted>
-          </>
-        ) : (
-          <>
-            <Txt variant="h3">Não encontrei metas legíveis</Txt>
-            <Muted>
-              Tente um arquivo com listas por área, por exemplo:
-              {'\n\n'}## Treino{'\n'}- Treinar 5x por semana{'\n\n'}## Estudo{'\n'}- Estudar 2h por dia
-            </Muted>
-          </>
-        )}
       </Sheet>
 
       {/* RESET COM DUPLA CONFIRMAÇÃO */}

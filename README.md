@@ -156,6 +156,46 @@ Validado localmente: `npx expo prebuild -p android` gera
 `res/xml/widgetprovider_prime.xml` (250×110dp, 4×2 células, resize horizontal|vertical,
 updatePeriodMillis 10800000) e o `<receiver>` no `AndroidManifest.xml`.
 
+## Importar plano completo (metas, protocolo, dados)
+
+`Perfil → Enviar meus planos e dados` (ou o botão "Já tenho um plano" na splash) abre `app/importar.tsx`.
+
+**Aceita:** `.md` / `.txt` (plano em texto), `.json` (plano estruturado) e **backup do próprio app** (JSON).
+
+**O que ele organiza automaticamente**
+
+| No arquivo | Vira |
+|---|---|
+| `## Treino` + bullets | metas daquela área |
+| `Treinar 5x \| mín 3x \| ideal 5x \| excelente 6x \| prioridade` | meta com 3 níveis + prioridade alta |
+| `SE … → ENTÃO … PORQUE …` | regra SE-ENTÃO rastreada |
+| `Delivery → 7 dias seguidos com score ≥ 7` | recompensa com critério e alvo |
+| `Sapiens — Harari — 443 páginas — até página 120` | livro com progresso |
+| `Quem sou:` / `Não aceito mais:` / `Nome:` | identidade |
+| `Lembrete matinal 07:00`, `Meta de sono 7h30` | configurações |
+| seção `Finanças` / `Peso` | lançamentos / pesagens |
+| seção `Ayanokoji`, `24 semanas` | protocolo |
+| backup JSON | restaura tudo, inclusive histórico de dias |
+
+**O que ele devolve — e é o ponto principal:** uma lista **tintim por tintim** do que só a pessoa pode
+escrever, cada item com *porquê*, *onde fazer* e *exemplo*:
+
+- identidade (“Quem sou”, “Não aceito mais”) — não dá para inferir de um arquivo de metas
+- mín/ideal/excelente e prioridade de cada meta que veio sem isso
+- pelo menos 1 regra SE-ENTÃO
+- recompensa com critério verificável
+- livro atual + página
+- lançamentos reais de finanças, horas de sono, notas semanais do Ayanokoji
+- **check-in de hoje** (energia + modo) — o arquivo nunca sabe sua energia de agora
+- itens que já existiam e por isso **não** foram duplicados
+- seções do arquivo que não foram reconhecidas
+
+Arquivo-modelo pronto: `assets/my-prime-plano-modelo.md` (também baixável/compartilhável pelo app,
+e editável direto).
+
+**Segurança:** nada é salvo antes da confirmação; plano soma sem duplicar metas; backup substitui tudo
+(e a tela avisa em vermelho). Metas importadas **não se perdem** se o onboarding abrir depois.
+
 ## Limites honestos
 
 - O widget exige um **dev build/APK** (não roda no Expo Go, que não tem o módulo nativo).
@@ -165,5 +205,6 @@ updatePeriodMillis 10800000) e o `<receiver>` no `AndroidManifest.xml`.
 - PDF aceito no seletor de upload não é lido (é binário); o app avisa em vez de fingir importação.
 - Notificações exigem permissão do usuário e não funcionam na web (apenas no APK).
 - Relatórios anuais com menos de 6 meses mostram o aviso e o maior período disponível.
+- PDF no seletor de importação não é lido (é binário) — converta para .txt/.md.
 - Desmarcar uma tarefa sempre exige o registro de falha (tipo + legitimidade). Sem isso, não há dado para
   a análise — é uma escolha de produto, não uma limitação técnica.

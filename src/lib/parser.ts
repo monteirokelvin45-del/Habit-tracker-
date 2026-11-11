@@ -6,7 +6,7 @@ import { newId } from './id';
  * Pattern matching conservador: melhor importar menos e certo do que inventar.
  */
 
-const KNOWN_AREAS = [
+export const KNOWN_AREAS = [
   'Treino',
   'Estudo',
   'Finanças',
@@ -19,7 +19,7 @@ const KNOWN_AREAS = [
   'Saúde',
 ];
 
-const AREA_HINTS: Record<string, RegExp> = {
+export const AREA_HINTS: Record<string, RegExp> = {
   Treino: /trein|academia|muscula|correr|corrida|exercíc|exercic|cardio|yoga/i,
   Estudo: /estud|concurso|faculdade|curso|matéria|materia|prova/i,
   Finanças: /financ|dinheiro|poup|invest|orçament|orcament|economiz/i,
@@ -53,7 +53,7 @@ export interface ParseResult {
   ignoredLines: number;
 }
 
-function guessArea(line: string): string | null {
+export function guessArea(line: string): string | null {
   for (const [area, regex] of Object.entries(AREA_HINTS)) {
     if (regex.test(line)) return area;
   }
