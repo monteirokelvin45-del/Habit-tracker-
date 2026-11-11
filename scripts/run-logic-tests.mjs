@@ -19,6 +19,7 @@ const files = [
   path.join(root, 'src/widget/data.ts'),
   path.join(root, 'src/lib/importer.ts'),
   path.join(root, 'src/lib/heatmap.ts'),
+  path.join(root, 'src/lib/stats.ts'),
 ];
 
 for (const file of files) {
@@ -117,6 +118,7 @@ const dates = await import(path.join(outRoot, 'lib/date.mjs'));
 const widget = await import(path.join(outRoot, 'widget/data.mjs'));
 const importer = await import(path.join(outRoot, 'lib/importer.mjs'));
 const heat = await import(path.join(outRoot, 'lib/heatmap.mjs'));
+const stats = await import(path.join(outRoot, 'lib/stats.mjs'));
 const scoreLib = await import(path.join(outRoot, 'lib/score.mjs'));
 
 let pass = 0;
@@ -645,6 +647,131 @@ for (const [y, m, total] of [[2026, 1, 31], [2026, 2, 28], [2024, 2, 29], [2026,
   check(`grade de ${m}/${y} começa na segunda`, grid.every((w) => dates.weekdayIndex(w.cells[0].date) === 1));
   check(`grade de ${m}/${y} não inventa dia fora do mês`, inMonth.every((c) => c.date.startsWith(prefix)));
 }
+
+console.log('\n── Gráficos: métricas (stats.ts) ──');
+const chartDays = [
+  // 10 dias fechados: 7, 8, 9 (melhor série), 3, 6, 9, 5, 2, 8, 7 (série atual = 2)
+  ...[7, 8, 9, 3, 6, 9, 5, 2, 8, 7].map((total, i) =>
+    day(
+      dates.addDays(today, -(9 - i)),
+      i % 3 === 0
+        ? [{ goalId: 'gH', done: true, note: '', doneAt: '09:15' }]
+        : i % 2 === 0
+          ? [{ goalId: 'gH', done: false, note: '', failAt: '22:40', excuse: { type: 'Cansaço', legitimacy: 'legítima' } }]
+          : [{ goalId: 'gH', done: false, note: '', failAt: '22:40' }],
+      {
+      energy: { physical: 2 + (i % 8), mental: 3 + (i % 6), stress: 5 },
+      score: { regularity: total, continuity: 5, recovery: 5, honesty: 5, progress: total, total },
+        diary: { ...day(today, []).diary, mood: i % 2 === 0 ? '🙂' : '😐' },
+      },
+    ),
+  ),
+];
+const chartData = { ...wData, goals: [honestGoal], days: chartDays };
+
+check('calendário traz 6 semanas x 7 dias', stats.calendarMonth(chartDays, today).weeks.length === 6 && stats.calendarMonth(chartDays, today).weeks.every((w) => w.length === 7));
+check('calendário marca hoje', stats.calendarMonth(chartDays, today).weeks.flat().some((c) => c.isToday));
+check('calendário não inventa score em dia sem registro', stats.calendarMonth([], today).weeks.flat().every((c) => c.score === null && !c.recorded));
+
+const streak = stats.streakInfo(chartDays, { end: today });
+check('streak atual conta só os 2 últimos dias', streak.current === 2, String(streak.current));
+check('recorde guarda a série de 3 dias', streak.best === 3, String(streak.best));
+check('recorde aponta o início da melhor série', streak.bestStart === dates.addDays(today, -9), String(streak.bestStart));
+check('série de 30 dias para a barrinha', streak.series.length === 30);
+check('streak sem dados = 0 (não inventa)', stats.streakInfo([], { end: today }).current === 0 && stats.streakInfo([], { end: today }).best === 0);
+
+const weekly = stats.weeklyBuckets(chartDays, 8, today);
+check('8 buckets semanais', weekly.length === 8);
+check('bucket sem registro tem avgScore null (não 0)', weekly[0].avgScore === null);
+const monthly = stats.monthlyBuckets(chartDays, 6, today);
+check('6 buckets mensais com rótulo', monthly.length === 6 && monthly.every((b) => b.label.length > 0));
+check('mês corrente tem registro', monthly.at(-1).avgScore != null);
+
+const ring = stats.dailyProgress(chartDays.at(-1), [honestGoal]);
+check('anel diário conta 1 de 1', ring.done === 1 && ring.total === 1 && ring.ratio === 1);
+check('anel sem dia = total 0', stats.dailyProgress(undefined, [honestGoal]).total === 0);
+
+const wd = stats.weekdayGrid(chartDays, 56, today);
+check('grade semanal tem 7 linhas', wd.length === 7 && wd[0].label === 'Seg' && wd[6].label === 'Dom');
+check('dia da semana sem registro fica null', wd.some((d) => d.avgScore === null) || wd.every((d) => d.avgScore != null));
+
+const comp = stats.completionWithAverage(chartDays, { n: 30, window: 7, end: today });
+check('linha de conclusão tem 30 pontos', comp.length === 30);
+check('média móvel só aparece com 3+ observações', comp.filter((p) => p.average != null).length === comp.filter((p) => p.value != null).length - 2);
+check('dia sem tarefa fica null (não vira 0%)', comp.some((p) => p.value === null));
+
+const vs = stats.areaVsTarget(chartData, 14, today);
+check('barras com meta usam a meta diária x10', vs.every((v) => v.target === 70), JSON.stringify(vs.map((v) => v.target)));
+check('área com dado tem percentual', vs[0].value != null);
+
+const trend = stats.trendLine(chartDays, { n: 30, end: today });
+check('tendência marca 10 pontos', trend.points.length === 10);
+check('tendência confiável com 7+ dias', trend.reliable === true);
+check('tendência tem projeção do mesmo tamanho', trend.projection.length === trend.points.length);
+check('tendência com 2 dias não é confiável', stats.trendLine(chartDays.slice(0, 2), { n: 30, end: today }).reliable === false);
+check('tendência de série em queda é down', stats.trendLine(
+  [9, 8, 7, 6, 5, 4, 3].map((t, i) => day(dates.addDays(today, -(6 - i)), [], { score: { regularity: t, continuity: 5, recovery: 5, honesty: 5, progress: t, total: t } })),
+  { n: 30, end: today },
+).direction === 'down');
+
+const cum = stats.cumulativeDone(chartDays, { n: 30, end: today });
+const cumValues = cum.filter((p) => p.done != null).map((p) => p.done);
+check('cumulativo nunca cai', cumValues.every((v, i) => i === 0 || v >= cumValues[i - 1]));
+check('cumulativo só cresce onde há tarefa', cumValues.at(-1) >= cumValues[0]);
+
+const radar = stats.areaBalance(chartData, 14, today);
+check('radar tem 1 área e valor 0-10', radar.length === 1 && radar[0].value != null && radar[0].value <= 10);
+
+const ranking = stats.habitRanking(chartData, 30, today);
+check('ranking ordena por consistência', ranking.length === 1 && ranking[0].pct != null);
+
+const hours = stats.hourHeatmap(chartDays);
+check('heatmap de hora tem 24 células', hours.length === 24);
+check('hora 9 registra conclusões', hours[9].done > 0);
+check('hora 22 registra falhas', hours[22].failed > 0);
+check('hora sem registro fica zerada', hours[3].done === 0 && hours[3].failed === 0);
+
+const scatter = stats.scatterEnergy(chartDays, 'energy');
+check('dispersão tem pontos', scatter.points.length === 10);
+check('correlação só com 7+ pontos', scatter.correlation != null);
+check('dispersão com 3 pontos não mostra correlação', stats.scatterEnergy(chartDays.slice(0, 3), 'energy').correlation === null);
+check('humor emoji vira número', stats.moodToNumber('🙂') === 4 && stats.moodToNumber('😞') === 1 && stats.moodToNumber('') === null);
+
+const stacked = stats.stackedTasks(chartDays, 14, today);
+check('barras empilhadas têm 14 dias', stacked.length === 14);
+check(
+  'empilhado separa feito, pulado e falhou',
+  stacked.some((d) => d.done > 0) && stacked.some((d) => d.skipped > 0) && stacked.some((d) => d.failed > 0),
+  JSON.stringify(stacked.reduce((acc, d) => ({ done: acc.done + d.done, skipped: acc.skipped + d.skipped, failed: acc.failed + d.failed }), { done: 0, skipped: 0, failed: 0 })),
+);
+const noExcuseDay = day(today, [{ goalId: 'gH', done: false, note: '' }]);
+check('sem desculpa conta como pulado', stats.stackedTasks([noExcuseDay], 1, today)[0].skipped === 1);
+
+const tl = stats.timeline(chartDays, [honestGoal], 20);
+check('timeline lista eventos com horário', tl.length > 0 && tl.every((i) => /^\d{2}:\d{2}$/.test(i.at)));
+check('timeline vem do mais recente para o mais antigo', tl[0].date >= tl.at(-1).date);
+check('timeline respeita o limite', stats.timeline(chartDays, [honestGoal], 3).length === 3);
+
+const bubbles = stats.bubbleHabits(chartData, 30, today);
+check('bolha traz frequência e consistência', bubbles.length === 1 && bubbles[0].frequency > 0 && bubbles[0].consistency != null);
+
+const waffle = stats.waffle(chartDays, 100, today);
+check('waffle tem 100 quadradinhos', waffle.cells.length === 100);
+check('waffle conta dias cumpridos (score >= 6)', waffle.done === 7, String(waffle.done));
+check('waffle separa parcial', waffle.partial === 3, String(waffle.partial));
+
+const spark = stats.sparkline(chartData, 'gH', 14, today);
+check('sparkline tem 14 dias', spark.length === 14);
+check('sparkline usa null onde não há item', spark.some((p) => p.value === null));
+
+const gauge = stats.monthlyGauge(chartData, today);
+check('gauge tem alvo = dias do mês', gauge.target >= 28 && gauge.target <= 31);
+check('gauge limita ratio em 0..1+', gauge.ratio >= 0);
+check('gauge calcula dias restantes', gauge.daysLeft >= 0 && gauge.daysLeft < 31);
+
+const cats = stats.categoryDistribution(chartData, 30, today);
+check('distribuição por área soma as concluídas', cats.length === 1 && cats[0].value === 4, JSON.stringify(cats));
+check('sem tarefa feita = lista vazia', stats.categoryDistribution({ ...chartData, days: [] }, 30, today).length === 0);
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -25,7 +25,7 @@ npm start          # Expo dev server (QR code no Expo Go)
 npm run android    # emulador/dispositivo
 npm run web        # preview rápido no navegador
 npm run typecheck  # tsc --noEmit (strict)
-npm run test:logic # 177 testes de lógica pura (score, modos, insights, parser, importador, mural, widgets)
+npm run test:logic # 232 testes de lógica pura (score, modos, insights, parser, importador, mural, gráficos, widgets)
 ```
 
 ## Gerando o APK (Android)
@@ -138,6 +138,48 @@ Regras aplicadas em todos:
   tendência — só o mini mural de constância.
 - **Escala explícita.** Score sempre 0–10; horas de sono 0–12; peso usa `max(peso, meta) + 2` para a linha
   de meta não sair do quadro.
+
+### Central de gráficos (`/modulo/graficos`)
+
+Tela dedicada com **21 visões**, agrupadas em Constância / Padrões / Hábitos (filtro por chip) e alcançável
+por Revisões › Semanal e Perfil › Gamificação. As métricas ficam isoladas em `src/lib/stats.ts` (funções
+puras, testadas no runner) e o desenho em `src/components/StatsCharts.tsx` (só SVG + Views).
+
+| # | Gráfico | Métrica (`stats.ts`) | Componente |
+|---|---|---|---|
+| 1 | Heatmap de calendário | `calendarMonth` | `CalendarHeatmap` |
+| 2 | Sequência atual vs recorde | `streakInfo` | `StreakCompare` |
+| 3 | Barras semanais | `weeklyBuckets` | `PeriodBars` |
+| 4 | Barras mensais | `monthlyBuckets` | `PeriodBars` |
+| 5 | Anel de progresso diário | `dailyProgress` | `ProgressRing` |
+| 6 | Grade por dia da semana | `weekdayGrid` | `WeekdayGrid` |
+| 7 | Taxa de conclusão (média móvel) | `completionWithAverage` | `CompletionLine` |
+| 8 | Barras com linha de meta | `areaVsTarget` | `BarsWithTarget` |
+| 9 | Linha de tendência (regressão) | `trendLine` | `TrendChart` |
+| 10 | Concluídas acumuladas | `cumulativeDone` | `CumulativeChart` |
+| 11 | Radar de equilíbrio | `areaBalance` | `BalanceRadar` |
+| 12 | Ranking de hábitos | `habitRanking` | `HabitRankingBars` |
+| 13 | Heatmap por hora do dia | `hourHeatmap` | `HourHeatmap` |
+| 14 | Dispersão energia × execução | `scatterEnergy` + `pearson` | `EnergyScatter` |
+| 15 | Concluído × pulado × falhou | `stackedTasks` | `StackedBars` |
+| 16 | Timeline de conclusões | `timeline` | `TimelineList` |
+| 17 | Bolhas frequência × consistência | `bubbleHabits` | `BubbleChart` |
+| 18 | Waffle de 100 dias | `waffle` | `WaffleChart` |
+| 19 | Sparkline por hábito | `sparkline` | `Sparkline` |
+| 20 | Gauge da meta mensal | `monthlyGauge` | `MonthlyGauge` |
+| 21 | Distribuição por área | `categoryDistribution` | `CategoryDonut` |
+
+Regras que valem nessa tela (e estão testadas):
+
+- **Dia sem registro = `null`**, nunca 0: waffle distingue `missed` de `partial`, a linha de conclusão quebra o
+  traço, o calendário deixa a célula escura.
+- **Média móvel só com 3+ pontos reais** na janela e nunca puxa `null` para dentro da média.
+- **Regressão e correlação só com 7+ dias** (`trend.reliable`, `scatter.correlation`) — abaixo disso o texto
+  explica quantos dias faltam em vez de desenhar uma reta sobre 2 pontos.
+- **Pulado × falhou** é separado por `excuse`: tarefa não feita com motivo registrado conta como falha, sem
+  motivo conta como pulada.
+- **Score "conta" quando o dia foi fechado** (`score` presente); dias futuros do waffle ficam marcados como
+  `future` e não entram em nenhuma contagem.
 
 ## Assets
 

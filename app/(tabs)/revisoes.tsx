@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { areaColor, colors, scoreColor, spacing } from '../../src/theme';
 import {
@@ -184,6 +185,7 @@ function WeeklyReview({
   onEditFocus: () => void;
 }) {
   const store = useStore();
+  const router = useRouter();
   const weekDays = store.days.filter((d) => week.includes(d.date));
   const weekClosed = weekDays.filter((d) => d.score);
   const consistency = areaConsistency(store, week);
@@ -286,6 +288,16 @@ function WeeklyReview({
           </>
         )}
       </Card>
+
+      <Pressable onPress={() => router.push('/modulo/graficos')}>
+        <Card style={{ gap: 2, borderColor: colors.cyan + '55' }}>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Txt variant="h3">📈 Central de gráficos</Txt>
+            <Txt variant="caption" color={colors.cyan}>21 gráficos ›</Txt>
+          </Row>
+          <Muted>Calendário, streak, média móvel, tendência, hora do dia, radar e mais</Muted>
+        </Card>
+      </Pressable>
 
       <SectionTitle>Mural de constância (12 semanas)</SectionTitle>
       <ConstancyHeatmap days={store.days} goals={store.goals} weeks={12} cellSize={13} />

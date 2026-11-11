@@ -177,6 +177,12 @@ export default function ProfileScreen() {
               <Muted>Mural de dias cumpridos</Muted>
             </Card>
           </Pressable>
+          <Pressable style={{ flex: 1, minWidth: '45%' }} onPress={() => router.push('/modulo/graficos')}>
+            <Card style={{ gap: 2 }}>
+              <Txt variant="h3">📈 Gráficos</Txt>
+              <Muted>21 visões do seu histórico</Muted>
+            </Card>
+          </Pressable>
           <Pressable style={{ flex: 1, minWidth: '45%' }} onPress={() => router.push('/modulo/widget')}>
             <Card style={{ gap: 2 }}>
               <Txt variant="h3">📱 Widget</Txt>
