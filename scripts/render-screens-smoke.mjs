@@ -217,7 +217,11 @@ const nativeStubs = [
   stubModule('expo-calendar', "export const requestCalendarPermissionsAsync = async () => ({ status: 'granted' });\nexport const getCalendarsAsync = async () => [];\nexport const createCalendarAsync = async () => 'id';\nexport const createEventAsync = async () => 'id';\nexport const EntityTypes = { EVENT: 'event' };\nexport const CalendarAccessLevel = { OWNER: 'owner' };\nexport default {};\n"),
   stubModule('expo-intent-launcher', "export const startActivityAsync = async () => ({});\nexport default {};\n"),
   stubModule('expo-file-system', "export class File { constructor() {} create() {} write() {} get uri() { return ''; } }\nexport const Paths = { cache: '' };\nexport default {};\n"),
-  stubModule('expo-modules-core', "export const requireNativeModule = () => ({});\nexport default {};\n"),
+  // `expo-constants` toca vários símbolos do core; o smoke só precisa que montem.
+  stubModule(
+    'expo-modules-core',
+    "export const requireNativeModule = () => ({});\nexport const requireOptionalNativeModule = () => ({});\nexport const NativeModulesProxy = {};\nexport const EventEmitter = class {};\nexport class CodedError extends Error {};\nexport class UnavailabilityError extends Error {};\nexport const Platform = { OS: 'android', select: (o) => o.android ?? o.default };\nexport const uuid = { v4: () => '00000000-0000-4000-8000-000000000000' };\nexport default {};\n",
+  ),
   stubModule('expo-image-picker', "export const launchImageLibraryAsync = async () => ({ canceled: true });\nexport const launchCameraAsync = async () => ({ canceled: true });\nexport const requestMediaLibraryPermissionsAsync = async () => ({ status: 'granted' });\nexport const MediaTypeOptions = { Images: 'Images' };\nexport default {};\n"),
   stubModule('expo-document-picker', "export const getDocumentAsync = async () => ({ canceled: true });\nexport default {};\n"),
   stubModule('expo-notifications', "export const scheduleNotificationAsync = async () => 'id';\nexport const cancelAllScheduledNotificationsAsync = async () => {};\nexport const getPermissionsAsync = async () => ({ status: 'granted' });\nexport const requestPermissionsAsync = async () => ({ status: 'granted' });\nexport const setNotificationHandler = () => {};\nexport const AndroidNotificationPriority = { MAX: 'max' };\nexport const SchedulableTriggerInputTypes = { DAILY: 'daily' };\nexport default {};\n"),
@@ -585,6 +589,7 @@ for (const [label, file] of screens) {
     // `bgElevated`/`undefined->` aparecem em props opcionais legítimas; o alvo é
     // texto visível com NaN/Infinity ou a palavra "undefined" solta no conteúdo.
     else if (/NaN|Infinity/.test(html) || />[^<]*\bundefined\b[^<]*</.test(html)) log(false, `${label}: valor inválido no HTML`);
+    else if (label === 'Perfil' && !/MY PRIME v\d+\.\d+\.\d+/.test(html)) log(false, 'Perfil: versão não aparece (usuário não sabe qual build está instalada)');
     else log(true, `${label} (${html.length} chars)`);
   } catch (e) {
     log(false, `${label}: ${e.message}`);

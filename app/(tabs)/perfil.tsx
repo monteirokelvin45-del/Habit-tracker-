@@ -31,6 +31,10 @@ import { openAppLimits } from '../../src/lib/native';
 import { lastReminderSchedule, scheduleReminders } from '../../src/lib/notifications';
 import { haptic } from '../../src/lib/haptics';
 import { LIFE_AREAS } from '../../src/lib/types';
+import Constants from 'expo-constants';
+
+const APP_VERSION = (Constants.expoConfig?.version as string | undefined) ?? '1.1.0';
+const BUILD_NUMBER = (Constants.expoConfig?.android as { versionCode?: number } | undefined)?.versionCode;
 
 /** Nomes, em português, das listas que a sanitização pode descartar. */
 const SANITIZE_LABELS: Record<string, string> = {
@@ -411,7 +415,12 @@ export default function ProfileScreen() {
 
         <SectionTitle>Sobre</SectionTitle>
         <Card style={{ gap: 4 }}>
-          <Txt variant="h3" color={colors.green}>MY PRIME v1.0</Txt>
+          {/* Versão real do pacote instalado: duas builds com o mesmo rótulo já
+              causaram confusão sobre "qual APK é este". */}
+          <Txt variant="h3" color={colors.green}>MY PRIME v{APP_VERSION}</Txt>
+          {typeof BUILD_NUMBER === 'number' ? (
+            <Muted>build {BUILD_NUMBER}</Muted>
+          ) : null}
           <Muted>Sistema de Autorregulação Comportamental</Muted>
           <Muted>Loop: intenção → execução → registro → análise → correção → recompensa</Muted>
           <Muted style={{ marginTop: 6 }}>Dados 100% locais no dispositivo (AsyncStorage). Nada é enviado para servidores.</Muted>

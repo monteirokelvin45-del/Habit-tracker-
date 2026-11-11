@@ -1586,6 +1586,14 @@ console.log('\n── Configuração: app.json x app.config.ts ──');
   const tsWidgets = resolvedEntry?.[1]?.widgets ?? [];
   check('app.config.ts declara o plugin de widget', tsWidgets.length > 0, `${tsWidgets.length} widget(s)`);
 
+  // Versão instalável: sem versionCode crescente o Android recusa a atualização
+  // e as duas builds diferentes parecem o mesmo app (foi o que confundiu aqui).
+  check('app.json declara version', /^\d+\.\d+\.\d+$/.test(appJson.version ?? ''), String(appJson.version));
+  check('app.json versionCode é inteiro >= 2', Number.isInteger(appJson.android?.versionCode) && appJson.android.versionCode >= 2, String(appJson.android?.versionCode));
+  check('app.config.ts mantém o mesmo versionCode', resolved.android?.versionCode === appJson.android?.versionCode, `${resolved.android?.versionCode} x ${appJson.android?.versionCode}`);
+  check('app.config.ts mantém a mesma version', resolved.version === appJson.version, `${resolved.version} x ${appJson.version}`);
+  check('app.json tem package Android', typeof appJson.android?.package === 'string' && appJson.android.package.includes('.'), String(appJson.android?.package));
+
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   check('os dois arquivos descrevem o mesmo número de widgets', jsonWidgets.length === tsWidgets.length, `${jsonWidgets.length} x ${tsWidgets.length}`);
   for (const w of tsWidgets) {

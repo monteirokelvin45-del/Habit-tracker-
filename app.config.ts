@@ -42,6 +42,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...base,
     name: 'MY PRIME',
     slug: 'my-prime',
+    // `versionCode` precisa subir a cada build: sem isso o Android trata duas
+    // versões diferentes como a mesma e a atualização pode ser recusada.
+    version: '1.1.0',
+    android: { ...base.android, versionCode: 2 },
     plugins: [
       ...(base.plugins ?? []),
       ['react-native-android-widget', widgetConfig],

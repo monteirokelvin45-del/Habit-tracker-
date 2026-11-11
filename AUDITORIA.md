@@ -231,6 +231,17 @@ O APK sai do `app.json`, mas a config tipada prometia outra coisa: Constancia 11
 cabe em 4×3; 3h respeita o mínimo de 30min do Android). Um teste compara os dois arquivos de verdade —
 se divergirem de novo, o `npm test` falha.
 
+### Defeito 7 — dava para não saber qual build estava instalada
+
+`version` fixa em `1.0.0` e `versionCode: 1` em todas as gerações: o Android trata duas builds
+diferentes como **o mesmo app** (a atualização pode ser recusada), e o Perfil mostrava "MY PRIME v1.0"
+em qualquer versão. Além disso a release usa nome fixo (`my-prime-latest.apk`), então o arquivo baixado
+não diz a que commit pertence.
+
+Corrigido: `version: 1.1.0` + `versionCode: 2` nos dois arquivos de config, e o Perfil lê a versão real
+do pacote (`expo-constants`) e mostra `build N`. Teste compara `version`/`versionCode` entre `app.json` e
+`app.config.ts` e exige que a tela mostre a versão.
+
 ### Verificado e OK (não só "parece ok")
 
 Datas (`addDays`, `weekStart`, `daysInMonth(2028, 1) = 29`, `diffDays`), `generalStreak` com buraco e
@@ -373,7 +384,7 @@ agora são reagendados 1× por dia, não a cada edição).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **469/469** (modos, score, streaks, cobrança, gate de 7 dias,
+- `node scripts/run-logic-tests.mjs` → **474/474** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
 - `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,
