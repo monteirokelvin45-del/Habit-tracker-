@@ -111,6 +111,34 @@ src/
 | 14 | Zona de perigo automática | `score.ts › detectDanger` |
 | 15 | Regras SE-ENTÃO rastreadas | `store.ts › markRuleActivated` |
 
+## Gráficos
+
+Todos são desenhados em `react-native-svg` (`src/components/charts.tsx`) — sem `react-native-chart-kit`.
+O motivo está na auditoria: chart-kit não cobre heatmap, radar com sobreposição, linha multi-série com meta
+nem barras agrupadas com rótulo de valor; usar a lib só para parte dos gráficos deixaria dois estilos
+diferentes na mesma tela.
+
+| Componente | O que faz | Onde aparece |
+|---|---|---|
+| `Heatmap` | grade de dias com score (escala do mural) | Leitura (14 dias) |
+| `BarChart` | barras com valor no topo, cor por faixa | Revisões › score por dia · Sono (horas por noite) |
+| `LineChart` | 1+ séries, buracos reais (`null`) sem interpolar, linha de meta, eixo Y com escala e unidade | Revisões (mês, áreas), Inteligência (14 dias), Peso (kg + média móvel 7d) |
+| `RadarChart` | 4 eixos com sobreposição da semana anterior | Ayanokoji, Inteligência (equilíbrio entre áreas) |
+| `DonutChart` | composição com % por categoria e total | Finanças (despesas por categoria) |
+| `GroupedBars` | duas séries por mês (receita × despesa) | Finanças |
+| `ConstancyHeatmap` / `MiniHeatmap` | mural de constância (toque no dia abre o detalhe) | Constância, Hoje (6 semanas), Revisões (12 semanas) |
+
+Regras aplicadas em todos:
+
+- **Sem dado ≠ zero.** Ponto sem registro é `null`: a linha quebra, a barra fica em cinza e o texto diz
+  "Sem dado". Nada é interpolado.
+- **Gráfico a partir de 3 pontos.** Cada tela checa `>= 3` antes de desenhar e mostra "Gráficos a partir de
+  3 pontos de dado" quando não há base.
+- **Gráficos só em Revisões (semanal+), Inteligência e módulos.** O dashboard do dia não tem gráfico de
+  tendência — só o mini mural de constância.
+- **Escala explícita.** Score sempre 0–10; horas de sono 0–12; peso usa `max(peso, meta) + 2` para a linha
+  de meta não sair do quadro.
+
 ## Assets
 
 `assets/icon.png` (mipmap adaptativo) e `assets/splash.png` (splash nativa via `expo-splash-screen`)
