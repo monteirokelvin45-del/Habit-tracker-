@@ -363,3 +363,10 @@ produção nos secrets. Para distribuição interna, é o suficiente.
 
 O APK inclui os dois widgets nativos (`Prime` e `Constancia`), registrados pelo plugin
 `react-native-android-widget` no `app.json`. Widget não funciona no Expo Go: use este APK.
+
+**Arquitetura:** o APK é `arm64-v8a` (todo Android de 2016 para cá). O build compila só essa
+ABI porque compilar as três estourava a memória do runner — para gerar multi-ABI, troque
+`-PreactNativeArchitectures` no workflow.
+
+O passo *Verificar conteúdo do APK* confere dentro do arquivo que existem `AndroidManifest.xml`,
+`classes.dex` e as libs nativas `arm64-v8a` — ou seja, o CI não "passa" com um APK vazio.
