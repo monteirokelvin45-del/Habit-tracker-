@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write # publicar o APK no release "android-latest"
+  actions: write # apagar artifacts antigos do mesmo commit
 
 concurrency:
   group: android-apk-${{ github.ref }}
@@ -193,6 +194,29 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- [\`my-prime-latest.apk\`](${{ github.server_url }}/${{ github.repository }}/releases/download/android-latest/my-prime-latest.apk)" >> "$GITHUB_STEP_SUMMARY"
           echo "- build #${{ github.run_number }} · commit \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Um artifact por commit: builds repetidos do mesmo SHA deixariam 4 cópias
+      # de 37 MB cada e o histórico inutilizável.
+      - name: Limpar artifacts antigos deste commit
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            > /tmp/arts.json || true
+          node -e "
+            const fs = require('fs');
+            let arts = [];
+            try { arts = JSON.parse(fs.readFileSync('/tmp/arts.json','utf8')).artifacts ?? []; } catch { process.exit(0); }
+            const mine = arts.filter((a) => a.name === 'my-prime-apk' && a.workflow_run?.head_sha === '${{ github.sha }}' && a.workflow_run?.id !== ${{ github.run_id }});
+            for (const a of mine) console.log(a.id);
+          " > /tmp/old-arts.txt || true
+          while read -r id; do
+            [ -n "$id" ] && curl -s -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+              "${{ github.api_url }}/repos/${{ github.repository }}/actions/artifacts/$id" > /dev/null || true
+          done < /tmp/old-arts.txt
+          echo "artifacts removidos: $(wc -l < /tmp/old-arts.txt 2>/dev/null || echo 0)"
 
       - name: Publicar como artefato do workflow
         uses: actions/upload-artifact@v4
