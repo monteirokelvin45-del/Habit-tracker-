@@ -71,25 +71,28 @@ jobs:
           # Log do Gradle em arquivo: vira anotação (::error::) e artefato quando falha,
           # para não depender do visualizador de log do Actions.
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false
+        id: gradle
+        # Sem `pipefail` o código de saída do Gradle era o do `tail` (0) e o build
+        # "passava" sem APK. O status agora vem de PIPESTATUS, gravado no arquivo.
         run: |
-          set -o pipefail
+          set +e
           ./gradlew assembleRelease --no-daemon --stacktrace \
             -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee ../gradle-build.log | tail -n 40
-        continue-on-error: true
-        id: gradle
+          echo "GRADLE_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+          exit 0
 
-      - name: Resumir falha do Gradle
-        if: steps.gradle.outcome == 'failure'
+      - name: Conferir resultado do Gradle
+        if: env.GRADLE_EXIT != '0'
         run: |
-          echo "### Falha no Gradle" >> "$GITHUB_STEP_SUMMARY"
-          grep -nE "FAILURE:|What went wrong|Caused by:|error:|FAILED" -A 6 gradle-build.log | head -c 6000 >> "$GITHUB_STEP_SUMMARY" || true
+          echo "### Falha no Gradle (exit $GRADLE_EXIT)" >> "$GITHUB_STEP_SUMMARY"
+          grep -nE "FAILURE:|What went wrong|Caused by:|error:|e: " -A 6 gradle-build.log | head -c 6000 >> "$GITHUB_STEP_SUMMARY" || true
           while IFS= read -r line; do
             echo "::error title=Gradle::${line:0:400}"
-          done < <(grep -nE "e: |error:|What went wrong" gradle-build.log | head -n 8)
+          done < <(grep -nE "What went wrong|FAILURE:|e: file" gradle-build.log | head -n 8)
           exit 1
 
       - name: Log do Gradle (quando falha)
-        if: steps.gradle.outcome == 'failure'
+        if: env.GRADLE_EXIT != '0'
         uses: actions/upload-artifact@v4
         with:
           name: gradle-build-log
