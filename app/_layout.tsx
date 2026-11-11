@@ -34,6 +34,9 @@ export default function RootLayout() {
     lastScheduled.current = today;
     const streak = generalStreak(days);
     const area = goals.find((g) => g.priority === 'high' && g.active)?.area ?? 'sua rotina';
+    // `askPermission: false`: o diálogo só aparece a partir de um toque do usuário
+    // (onboarding ou Perfil). Aqui, se a permissão já existe, reagenda; se não,
+    // devolve `denied` e o Perfil mostra o aviso em vez de fingir que agenda.
     void scheduleReminders(settings, streak, area);
   }, [status, settings, days, goals]);
 

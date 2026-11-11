@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,6 +28,7 @@ import { closedDays } from '../../src/lib/insights';
 import { todayKey } from '../../src/lib/date';
 import { storageHealth } from '../../src/lib/storage';
 import { openAppLimits } from '../../src/lib/native';
+import { lastReminderSchedule, scheduleReminders } from '../../src/lib/notifications';
 import { haptic } from '../../src/lib/haptics';
 import { LIFE_AREAS } from '../../src/lib/types';
 
@@ -41,6 +42,20 @@ export default function ProfileScreen() {
   const [identity, setIdentity] = useState(store.user.identity);
   const [noMore, setNoMore] = useState(store.user.noMore);
 
+
+  const [reminders, setReminders] = useState<{ at: string; count: number } | null>(null);
+  const [reminderResult, setReminderResult] = useState<string | null>(null);
+
+  // Estado real do agendamento: ler do storage em vez de assumir que está valendo.
+  useEffect(() => {
+    let alive = true;
+    void lastReminderSchedule().then((r) => {
+      if (alive) setReminders(r);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const [resetStep, setResetStep] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
@@ -165,6 +180,35 @@ export default function ProfileScreen() {
         {/* CONFIGURAÇÕES */}
         <SectionTitle>Sistema &amp; dispositivo</SectionTitle>
         <Card style={{ gap: spacing.md }}>
+          {/* Prova de que os lembretes estão agendados — antes a tela só mostrava
+              horários, mesmo com permissão negada e zero notificações no sistema. */}
+          <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <Txt variant="body">Lembretes no aparelho</Txt>
+            <Badge
+              label={reminders ? `${reminders.count} agendado(s)` : 'não agendado'}
+              color={reminders ? colors.green : colors.orange}
+            />
+          </Row>
+          <Muted>
+            {reminders
+              ? `Último agendamento: ${formatReminderAt(reminders.at)}. Horários: ${store.settings.morningReminder} (matinal), ${store.settings.middayCheckin ? `${store.settings.middayTime} (meio do dia), ` : ''}${store.settings.nightReminder} (noturno)${store.settings.streakNotification ? ', streak' : ''} e revisão semanal (seg. 20:00).`
+              : 'Nenhum lembrete agendado ainda. Sem permissão de notificação nada toca — ative abaixo.'}
+          </Muted>
+          <SecondaryButton
+            color={colors.green}
+            label={reminderResult === null ? 'Ativar lembretes neste aparelho' : 'Reagendar lembretes agora'}
+            onPress={async () => {
+              const streak = generalStreak(store.days);
+              const area = store.goals.find((g) => g.priority === 'high' && g.active)?.area ?? 'sua rotina';
+              const result = await scheduleReminders(store.settings, streak, area, { askPermission: true });
+              setReminderResult(result.message);
+              haptic(result.status === 'scheduled' ? 'success' : 'warning');
+              setReminders(await lastReminderSchedule());
+            }}
+          />
+          {reminderResult ? (
+            <Muted style={{ color: reminderResult.includes('agendado') ? colors.green : colors.orange }}>{reminderResult}</Muted>
+          ) : null}
           <TimeField label="Lembrete matinal" value={store.settings.morningReminder} onChange={(v) => store.updateSettings({ morningReminder: v })} />
           <TimeField label="Lembrete noturno" value={store.settings.nightReminder} onChange={(v) => store.updateSettings({ nightReminder: v })} />
           <ToggleRow
@@ -413,3 +457,13 @@ export default function ProfileScreen() {
   );
 }
 
+/** Data/hora curta e legível do último agendamento de lembretes. */
+function formatReminderAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'agora há pouco';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm} ${hh}:${mi}`;
+}

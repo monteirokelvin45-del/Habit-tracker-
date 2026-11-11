@@ -365,5 +365,31 @@ console.log('\n── Diário de emoções: ações do store ──');
   useStore.setState({ emotions: [] });
 }
 
+console.log('\n── Conquistas: o store avisa quando desbloqueia ──');
+{
+  // 5 regras SE-ENTÃO desbloqueiam "Estrategista". Antes isso acontecia em silêncio.
+  seed({ goals: [goal('g1')], days: [] });
+  const rules = Array.from({ length: 5 }, (_, i) => ({
+    id: `r${i}`, trigger: `se acontecer ${i}`, action: 'então fazer', active: true, reason: 'teste', activations: [],
+  }));
+  for (const r of rules) useStore.getState().upsertRule(r);
+  const fila = useStore.getState().freshUnlocks;
+  check('desbloqueio entra na fila de anúncio', fila.some((u) => u.id === 'strategist'), JSON.stringify(fila.map((u) => u.id)));
+  check('fila não repete a mesma conquista', fila.filter((u) => u.id === 'strategist').length === 1);
+  check('o badge ficou gravado com data', !!useStore.getState().badges.find((b) => b.id === 'strategist')?.unlockedAt);
+
+  // dispensar limpa a fila sem apagar a conquista
+  useStore.getState().dismissUnlocks();
+  check('dispensar esvazia a fila', useStore.getState().freshUnlocks.length === 0);
+  check('dispensar não apaga a conquista', !!useStore.getState().badges.find((b) => b.id === 'strategist')?.unlockedAt);
+
+  // fechar o dia desbloqueando "Primeira Semana" também anuncia
+  seed({ goals: [goal('g1')], days: [] });
+  const dias = Array.from({ length: 7 }, (_, i) => closedDay(dates.addDays(today, i - 7), [{ goalId: 'g1', done: true, note: '' }], 8));
+  useStore.setState({ days: dias, badges: [] });
+  useStore.getState().closeDay(today, types.emptyDiary());
+  check('fechar o dia que completa 7 dias anuncia a conquista', useStore.getState().freshUnlocks.some((u) => u.id === 'first-week'), JSON.stringify(useStore.getState().freshUnlocks.map((u) => u.id)));
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

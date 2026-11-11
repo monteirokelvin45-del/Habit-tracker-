@@ -28,6 +28,7 @@ import { createNativeAlarm, openAppLimits, syncDayToCalendar } from '../../src/l
 import { haptic } from '../../src/lib/haptics';
 import { useWidgetSync } from '../../src/widget/sync';
 import { FadeInDown } from '../../src/components/FadeIn';
+import { UnlockBanner } from '../../src/components/UnlockBanner';
 import { MiniHeatmap } from '../../src/components/Heatmap';
 import { LIFE_AREAS, emptyDiary } from '../../src/lib/types';
 import type { Day, DayMode } from '../../src/lib/types';
@@ -297,6 +298,10 @@ export default function TodayScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bgPrimary }} edges={['top']}>
       <Confetti visible={confetti} onDone={() => setConfetti(false)} />
+      {/* Conquista recém-desbloqueada: antes o badge era gravado em silêncio. */}
+      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+        <UnlockBanner />
+      </View>
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140, gap: spacing.md }}
         refreshControl={

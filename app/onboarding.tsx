@@ -21,6 +21,7 @@ import { DEFAULT_SETTINGS } from '../src/lib/storage';
 import { areaColor } from '../src/theme';
 import { haptic } from '../src/lib/haptics';
 import { todayKey } from '../src/lib/date';
+import { scheduleReminders } from '../src/lib/notifications';
 
 interface DraftGoal {
   id: string;
@@ -103,6 +104,14 @@ export default function Onboarding() {
         createdAt: new Date().toISOString(),
       }));
 
+    const settingsToSave = {
+      ...DEFAULT_SETTINGS,
+      morningReminder: morning,
+      nightReminder: night,
+      middayCheckin: midday,
+      middayTime,
+      streakNotification: streakNotif,
+    };
     await finishOnboarding({
       user: {
         name: name.trim(),
@@ -113,14 +122,13 @@ export default function Onboarding() {
       },
       areas,
       goals: finalGoals,
-      settings: {
-        ...DEFAULT_SETTINGS,
-        morningReminder: morning,
-        nightReminder: night,
-        middayCheckin: midday,
-        middayTime,
-        streakNotification: streakNotif,
-      },
+      settings: settingsToSave,
+    });
+    // Único momento natural para o diálogo de permissão de notificação: o usuário
+    // acabou de escolher horários. Sem isto, a fase 4 inteira (lembretes) ficava
+    // configurada na tela e nunca agendada no sistema.
+    void scheduleReminders(settingsToSave, 0, finalGoals.find((g) => g.priority === 'high')?.area ?? 'sua rotina', {
+      askPermission: true,
     });
     router.replace('/(tabs)');
   };

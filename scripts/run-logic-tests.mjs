@@ -105,6 +105,105 @@ fs.writeFileSync(
     `export const { buildWidgetTree } = require_('${path.join(root, 'node_modules/react-native-android-widget/lib/commonjs/api/build-widget-tree.js')}');\n`,
 );
 
+// ── stubs da fase 4 (notificações) ──────────────────────────────────────────
+fs.writeFileSync(
+  path.join(outRoot, 'theme-stub.mjs'),
+  `export const colors = { green: '#00FF88', bgPrimary: '#0A0A0A', bgCard: '#111', border: '#222', textPrimary: '#FFF', textSecondary: '#888' };
+`,
+);
+fs.writeFileSync(
+  path.join(outRoot, 'rn-stub.mjs'),
+  `const state = { os: 'android' };
+export const Platform = { get OS() { return state.os; }, select: (o) => o[state.os] ?? o.default };
+export const setOS = (os) => { state.os = os; };
+`,
+);
+fs.writeFileSync(
+  path.join(outRoot, 'notif-stub.mjs'),
+  `const state = { granted: false, grantOnRequest: false, failOnSchedule: false };
+export const calls = { requestPermissions: 0, canceled: 0, scheduled: [] };
+export const reset = (opts = {}) => {
+  state.granted = !!opts.granted;
+  state.grantOnRequest = !!opts.grantOnRequest;
+  state.failOnSchedule = !!opts.failOnSchedule;
+  calls.requestPermissions = 0;
+  calls.canceled = 0;
+  calls.scheduled = [];
+};
+export const setNotificationHandler = () => {};
+export const setNotificationChannelAsync = async () => {};
+export const getPermissionsAsync = async () => ({ granted: state.granted, status: state.granted ? 'granted' : 'undetermined' });
+export const requestPermissionsAsync = async () => {
+  calls.requestPermissions += 1;
+  if (state.grantOnRequest) state.granted = true;
+  return { granted: state.granted, status: state.granted ? 'granted' : 'denied' };
+};
+export const cancelAllScheduledNotificationsAsync = async () => { calls.canceled += 1; };
+export const scheduleNotificationAsync = async (req) => {
+  if (state.failOnSchedule) throw new Error('AlarmManager indisponível');
+  calls.scheduled.push({ identifier: req.identifier ?? null, content: req.content, trigger: req.trigger });
+  return req.identifier ?? 'x';
+};
+export const AndroidImportance = { DEFAULT: 3 };
+export const AndroidNotificationPriority = { MAX: 'max' };
+export const SchedulableTriggerInputTypes = { DAILY: 'daily', WEEKLY: 'weekly' };
+export default {};
+`,
+);
+fs.writeFileSync(
+  path.join(outRoot, 'storage-key-stub.mjs'),
+  `export const store = {};
+export default {
+  getItem: async (k) => store[k] ?? null,
+  setItem: async (k, v) => { store[k] = v; },
+  removeItem: async (k) => { delete store[k]; },
+};
+`,
+);
+
+// Notificações: compila `lib/notifications.ts` de verdade, com `expo-notifications`
+// e AsyncStorage trocados por stubs controláveis. É o único jeito de provar que o
+// app PEDE a permissão e AGENDA — o bug da fase 4 vivia justamente aqui.
+{
+  const file = path.join(root, 'src/lib/notifications.ts');
+  const out = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    fileName: file,
+  }).outputText;
+  // `getNotifications()` usa `require('expo-notifications')`: em ESM isso não existe,
+  // então o require vira o namespace do stub (mesma técnica do widget).
+  const fixed = 'import * as __notifStub from "../notif-stub.mjs";\n' + out
+    .replace(/require\('expo-notifications'\)/g, '__notifStub')
+    .replace(/from '(\.\/[^']+)'/g, (m, p) => (p.endsWith('.mjs') ? m : `from '${p}.mjs'`))
+    .replace(/from 'react-native'/g, "from '../rn-stub.mjs'")
+    .replace(/from '\.\.\/theme'/g, "from '../theme-stub.mjs'")
+    .replace(/from 'expo-notifications'/g, "from '../notif-stub.mjs'")
+    .replace(/import\('@react-native-async-storage\/async-storage'\)/g, "import('../storage-key-stub.mjs')")
+    .replace(/from '@react-native-async-storage\/async-storage'/g, "from '../storage-key-stub.mjs'");
+  fs.writeFileSync(path.join(outRoot, 'lib', 'notifications.mjs'), fixed);
+}
+
+// Relatório PDF: `export.ts` importa expo-print/sharing/file-system e o theme.
+// Compila com stubs para poder testar o HTML gerado (conteúdo, não impressão).
+{
+  const file = path.join(root, 'src/lib/export.ts');
+  const out = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    fileName: file,
+  }).outputText;
+  const fixed = out
+    .replace(/from '(\.\/[^']+)'/g, (m, p) => (p.endsWith('.mjs') ? m : `from '${p}.mjs'`))
+    .replace(/from 'react-native'/g, "from '../rn-stub.mjs'")
+    .replace(/from '\.\.\/theme'/g, "from '../theme-stub.mjs'")
+    .replace(/from 'expo-file-system'/g, "from '../expo-fs-stub.mjs'")
+    .replace(/from 'expo-print'/g, "from '../expo-print-stub.mjs'")
+    .replace(/from 'expo-sharing'/g, "from '../expo-sharing-stub.mjs'");
+  fs.writeFileSync(path.join(outRoot, 'lib', 'export.mjs'), fixed);
+}
+fs.writeFileSync(path.join(outRoot, 'expo-fs-stub.mjs'), 'export class File { constructor() {} create() {} write() {} get uri() { return ""; } }\nexport const Paths = { cache: "" };\n');
+fs.writeFileSync(path.join(outRoot, 'expo-print-stub.mjs'), 'export const printToFileAsync = async () => ({ uri: "" });\n');
+fs.writeFileSync(path.join(outRoot, 'expo-sharing-stub.mjs'), 'export const isAvailableAsync = async () => false;\nexport const shareAsync = async () => {};\n');
+
 // Stub de AsyncStorage (storage.ts é importado por store.ts, que não testamos).
 fs.mkdirSync(path.join(outRoot, 'node_modules', '@react-native-async-storage'), { recursive: true });
 
@@ -1242,6 +1341,155 @@ console.log('\n── Diário de emoções ──');
   const importado = storageMod.normalizeData({ emotions: [{ date: '2026-11-10', emotion: 'Calmo' }, 'lixo'] }, storageMod.EMPTY_DATA);
   check('import de backup sanitiza o log', importado.emotions.length === 1 && importado.emotions[0].emotion === 'Calmo');
   check('chave ausente no backup vira lista vazia', storageMod.normalizeData({}, storageMod.EMPTY_DATA).emotions.length === 0);
+}
+
+/* ═══════════════════ FASE 4: lembretes que realmente tocam ═══════════════════ */
+
+console.log('\n── Lembretes: permissão e agendamento ──');
+{
+  const rn = await import(path.join(outRoot, 'rn-stub.mjs'));
+  const notif = await import(path.join(outRoot, 'notif-stub.mjs'));
+  const keys = await import(path.join(outRoot, 'storage-key-stub.mjs'));
+  const notifs = await import(path.join(outRoot, 'lib/notifications.mjs'));
+
+  const settings = {
+    morningReminder: '07:00', nightReminder: '21:30', middayCheckin: true, middayTime: '13:00',
+    streakNotification: true, haptics: true, sleepGoalHours: 7.5, focusGoalMinutes: 240, targetDailyScore: 7,
+  };
+
+  // 1) boot sem permissão NÃO abre diálogo — e diz que não agendou
+  rn.setOS('android');
+  notif.reset({ granted: false });
+  const semPermissao = await notifs.scheduleReminders(settings, 5, 'Treino');
+  check('boot sem permissão não abre o diálogo', notif.calls.requestPermissions === 0);
+  check('boot sem permissão reporta "denied"', semPermissao.status === 'denied' && semPermissao.count === 0, semPermissao.status);
+  check('nada é agendado sem permissão', notif.calls.scheduled.length === 0);
+  check('mensagem diz o que fazer', /Perfil/.test(semPermissao.message), semPermissao.message);
+
+  // 2) toque do usuário: pede a permissão e agenda tudo
+  notif.reset({ granted: false, grantOnRequest: true });
+  const pedido = await notifs.scheduleReminders(settings, 5, 'Treino', { askPermission: true });
+  check('toque do usuário abre o diálogo', notif.calls.requestPermissions === 1);
+  check('permissão concedida agenda os lembretes', pedido.status === 'scheduled', pedido.status);
+  // morning, night, midday, streak, revisão semanal
+  check('agenda 5 lembretes (4 diários + revisão)', pedido.count === 5, String(pedido.count));
+  check('agenda todos no sistema', notif.calls.scheduled.length === 5);
+  check('reagendar começa cancelando os antigos', notif.calls.canceled === 1);
+  const ids = notif.calls.scheduled.map((n) => n.identifier);
+  check('matinal e noturno usam as horas configuradas', notif.calls.scheduled[0].trigger.hour === 7 && notif.calls.scheduled[1].trigger.hour === 21 && notif.calls.scheduled[1].trigger.minute === 30);
+  check('revisão semanal é na segunda às 20h', ids.includes('weekly-review') && notif.calls.scheduled.at(-1).trigger.weekday === 1);
+  check('streak não colide com o bom dia (30 min depois)', ids.includes('streak') && notif.calls.scheduled.find((n) => n.identifier === 'streak').trigger.hour === 7 && notif.calls.scheduled.find((n) => n.identifier === 'streak').trigger.minute === 30);
+
+  // 3) toggles desligados não agendam
+  notif.reset({ granted: true });
+  const semExtras = await notifs.scheduleReminders({ ...settings, middayCheckin: false, streakNotification: false }, 5, 'Treino');
+  check('check-in e streak desligados não agendam', semExtras.count === 3, String(semExtras.count));
+  check('sem streak acumulado não há lembrete de streak', (await (async () => {
+    notif.reset({ granted: true });
+    const r = await notifs.scheduleReminders(settings, 0, 'Treino');
+    return r.count === 4 && !notif.calls.scheduled.some((n) => n.identifier === 'streak');
+  })()) === true);
+
+  // 4) o agendamento fica registrado (o Perfil prova que valeu)
+  notif.reset({ granted: true });
+  await notifs.scheduleReminders(settings, 5, 'Treino');
+  const registro = await notifs.lastReminderSchedule();
+  check('último agendamento é gravado com a contagem', registro?.count === 5, JSON.stringify(registro));
+  check('gravação usa a chave própria', typeof keys.store[notifs.LEMBRETE_KEY] === 'string');
+
+  // 5) ambiente sem módulo / web não finge sucesso
+  rn.setOS('web');
+  const naWeb = await notifs.scheduleReminders(settings, 5, 'Treino');
+  check('web reporta "web", não "agendado"', naWeb.status === 'web' && naWeb.count === 0, naWeb.status);
+  rn.setOS('android');
+
+  // 6) erro do sistema não vira silêncio
+  notif.reset({ granted: true, failOnSchedule: true });
+  const comErro = await notifs.scheduleReminders(settings, 5, 'Treino');
+  check('falha do sistema é reportada como erro', comErro.status === 'error' && comErro.count === 0, comErro.status);
+
+  // 7) horário inválido nunca vira hora inexistente
+  notif.reset({ granted: true });
+  await notifs.scheduleReminders({ ...settings, morningReminder: '99:99' }, 0, 'Treino');
+  check('horário inválido cai no padrão 07:00', notif.calls.scheduled[0].trigger.hour === 7);
+  check('addMinutes volta a meia-noite', notifs.addMinutes('23:45', 30) === '00:15', notifs.addMinutes('23:45', 30));
+}
+
+/* ═══════════════ FASE 4: conquista anunciada, não gravada em silêncio ═══════════════ */
+
+console.log('\n── Conquistas: anúncio no desbloqueio ──');
+{
+  const ach = await import(path.join(outRoot, 'lib/achievements.mjs'));
+  const blocked = BADGES.map((b) => ({ id: b.id, unlockedAt: null }));
+  const firstWeek = BADGES.find((b) => b.id === 'first-week');
+
+  const unlocked = ach.newlyUnlocked(blocked, blocked.map((b) => (b.id === 'first-week' ? { ...b, unlockedAt: '2026-11-10T10:00:00.000Z' } : b)));
+  check('detecta a conquista que acabou de abrir', unlocked.length === 1 && unlocked[0].id === 'first-week');
+  check('anúncio traz emoji, nome e critério', unlocked[0].emoji === firstWeek.emoji && unlocked[0].name === firstWeek.name && unlocked[0].criteria === firstWeek.criteria);
+
+  // idempotência: o mesmo estado duas vezes não anuncia de novo
+  const jaAberto = blocked.map((b) => (b.id === 'first-week' ? { ...b, unlockedAt: '2026-11-10T10:00:00.000Z' } : b));
+  check('não anuncia duas vezes a mesma conquista', ach.newlyUnlocked(jaAberto, jaAberto).length === 0);
+  check('não anuncia nada ao bloquear de volta', ach.newlyUnlocked(jaAberto, blocked).length === 0);
+  check('estado inicial vazio não anuncia nada', ach.newlyUnlocked(jaAberto, []).length === 0);
+
+  // várias de uma vez + badge desconhecido (versão antiga) é ignorado
+  const many = ach.newlyUnlocked(blocked, [
+    { id: 'first-week', unlockedAt: 'x' },
+    { id: 'on-fire', unlockedAt: 'x' },
+    { id: 'badge-de-versao-antiga', unlockedAt: 'x' },
+  ]);
+  check('anuncia todas as novas, na ordem recebida', many.length === 2 && many[0].id === 'first-week' && many[1].id === 'on-fire');
+  check('badge desconhecido não vira anúncio vazio', !many.some((u) => u.id === 'badge-de-versao-antiga'));
+  check('fila mostra um por vez', ach.currentUnlock(many)?.id === 'first-week' && ach.currentUnlock([]) === null);
+
+  // mensagem cita o critério (regra 2: nunca elogio vazio)
+  const msg = ach.unlockMessage(many[0]);
+  check('mensagem cita o critério cumprido', msg.includes('7 dias de registro'), msg);
+}
+
+/* ═══════════ FASE 4: relatório PDF com emoções e dia sem dado honesto ═══════════ */
+
+console.log('\n── Relatório PDF: conteúdo verificável ──');
+{
+  const exp = await import(path.join(outRoot, 'lib/export.mjs'));
+  // Novembro/2026: o relatório por padrão olha o mês da data de referência.
+  const relatorioDias = Array.from({ length: 10 }, (_, i) => {
+    const date = dates.addDays('2026-11-01', i);
+    const total = 6 + (i % 3);
+    return {
+      // Com tarefa registrada: sem tarefa a área não tem score e dizer "Sem dado" é o correto.
+      ...day(date, [{ goalId: 'g1', done: i % 2 === 0, note: '' }]),
+      score: { regularity: total, continuity: total, recovery: total, honesty: total, progress: total, total },
+      diary: {
+        ...day(date, []).diary,
+        context: { where: 'casa', when: 'manhã', distraction: 'celular', trigger: 'cansaço' },
+        sleep: { hours: 7, quality: 7, blockers: [] },
+        emotions: i === 0 ? ['Ansioso'] : [],
+      },
+    };
+  });
+  const dados = { ...emptyData, days: relatorioDias, goals, emotions: [] };
+  const html = exp.buildReportHtml(dados, '2026-11-10');
+
+  check('o relatório é um HTML completo', html.startsWith('<!DOCTYPE html>') || html.includes('<html'), html.slice(0, 40));
+  check('mostra a média de score do mês', /6\.\d|7\.\d|8\.\d/.test(html));
+  check('não escreve NaN/undefined no PDF', !/NaN|undefined/.test(html));
+  // O gráfico de radar só lista áreas cujo score é `null`-safe; área com tarefas
+  // entra como barra. O fixture tem tarefas em Treino, então a área tem que aparecer.
+  // Área só entra no quadro quando há tarefa registrada daquela área no mês.
+  check('lista as áreas com percentual', /Treino|Estudo/.test(html), `áreas no fixture: ${goals.map((g) => g.area).join()}`);
+  check('diz o que falta quando não há dado', /Sem dado|sem dado|Nenhum/.test(html) || relatorioDias.length === 0);
+
+  // mês vazio: relatório não pode quebrar nem inventar número
+  const vazioHtml = exp.buildReportHtml({ ...emptyData, days: [] }, '2026-11-10');
+  check('mês sem nenhum dia gera relatório válido', vazioHtml.length > 200 && !/NaN|undefined/.test(vazioHtml));
+  check('mês vazio admite a ausência de dado', /Sem dado|sem dado|Nenhum/i.test(vazioHtml));
+  const semTarefa = exp.buildReportHtml(
+    { ...emptyData, days: relatorioDias.map((d) => ({ ...d, tasks: [] })), goals },
+    '2026-11-10',
+  );
+  check('mês com dia mas sem tarefa não inventa área', /Sem dado/.test(semTarefa.slice(semTarefa.indexOf('Equilíbrio'))));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);

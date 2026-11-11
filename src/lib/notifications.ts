@@ -19,6 +19,21 @@ function getNotifications(): NotificationsModule | null {
 }
 
 const CHANNEL_ID = 'myprime-reminders';
+/**
+ * Fica gravado qual foi o último agendamento bem-sucedido. A tela de Perfil lê
+ * isto para mostrar se os lembretes estão REALMENTE agendados — antes ela mostrava
+ * os horários como se estivessem valendo, mesmo com permissão negada.
+ */
+export const LEMBRETE_KEY = '@myprime:remindersAt';
+export type ReminderStatus = 'web' | 'no-module' | 'denied' | 'scheduled' | 'error';
+
+export interface ReminderResult {
+  status: ReminderStatus;
+  /** Quantos lembretes ficaram agendados. */
+  count: number;
+  /** Texto pronto para a UI (regra 1: não fingir que funcionou). */
+  message: string;
+}
 
 export async function configureNotifications(): Promise<void> {
   const N = getNotifications();
@@ -69,14 +84,45 @@ function parseTime(hhmm: string): { hour: number; minute: number } {
   };
 }
 
-/** Reagenda todos os lembretes locais segundo as configurações. */
-export async function scheduleReminders(settings: Settings, streakDays: number, streakArea: string): Promise<void> {
+/**
+ * Reagenda todos os lembretes locais segundo as configurações.
+ *
+ * `askPermission` só é `true` quando a chamada vem de um toque do usuário
+ * (onboarding, Perfil). No boot fica `false` para não abrir diálogo do nada.
+ */
+export async function scheduleReminders(
+  settings: Settings,
+  streakDays: number,
+  streakArea: string,
+  options: { askPermission?: boolean } = {},
+): Promise<ReminderResult> {
   const N = getNotifications();
-  if (!N) return;
+  if (!N) {
+    return {
+      status: Platform.OS === 'web' ? 'web' : 'no-module',
+      count: 0,
+      message: Platform.OS === 'web' ? 'Lembretes existem no app instalado (Android/iOS).' : 'Módulo de notificações ausente neste build.',
+    };
+  }
   try {
-    // Reagendar (a cada boot/check-in) não deve abrir o diálogo de permissão de novo.
     const perm = await N.getPermissionsAsync();
-    if (!perm.granted) return;
+    // BUG histórico: daqui saía com `return` seco. Como NADA no app chamava
+    // `requestPermissionsAsync` nesse fluxo, a permissão nunca era pedida e o app
+    // passava a vida com zero lembretes agendados, mostrando os horários no Perfil.
+    let granted = perm.granted;
+    if (!granted && options.askPermission) {
+      const asked = await N.requestPermissionsAsync();
+      granted = asked.granted;
+    }
+    if (!granted) {
+      return {
+        status: 'denied',
+        count: 0,
+        message: options.askPermission
+          ? 'Permissão de notificação negada. Os lembretes não vão tocar até você liberar nos ajustes do sistema.'
+          : 'Permissão de notificação ainda não concedida: ative os lembretes no Perfil.',
+      };
+    }
     await N.cancelAllScheduledNotificationsAsync();
 
     const trigger = (type: 'DAILY' | 'WEEKLY', extra: Record<string, number>) => ({
@@ -85,6 +131,7 @@ export async function scheduleReminders(settings: Settings, streakDays: number, 
       ...extra,
     });
 
+    let count = 0;
     const daily = async (id: string, title: string, body: string, time: string) => {
       const { hour, minute } = parseTime(time);
       await N.scheduleNotificationAsync({
@@ -92,6 +139,7 @@ export async function scheduleReminders(settings: Settings, streakDays: number, 
         content: { title, body, sound: false },
         trigger: trigger('DAILY', { hour, minute }) as never,
       });
+      count += 1;
     };
 
     await daily('morning', 'Bom dia.', 'Qual sua energia hoje? Defina o modo do dia em 30 segundos.', settings.morningReminder);
@@ -116,8 +164,32 @@ export async function scheduleReminders(settings: Settings, streakDays: number, 
       content: { title: '📊 Sua revisão semanal está pronta.', body: 'Abra MY PRIME → Revisões para fechar a semana.', sound: false },
       trigger: trigger('WEEKLY', { weekday: 1, hour: 20, minute: 0 }) as never,
     });
+    count += 1;
+
+    try {
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.setItem(LEMBRETE_KEY, JSON.stringify({ at: new Date().toISOString(), count }));
+    } catch {
+      /* registro do agendamento é informativo: não pode derrubar o agendamento */
+    }
+    return { status: 'scheduled', count, message: `${count} lembrete(s) agendado(s) neste aparelho.` };
   } catch (e) {
     console.warn('[MY PRIME] scheduleReminders', e);
+    return { status: 'error', count: 0, message: `Falha ao agendar lembretes: ${String(e)}` };
+  }
+}
+
+/** Último agendamento bem-sucedido (o Perfil usa para provar que está valendo). */
+export async function lastReminderSchedule(): Promise<{ at: string; count: number } | null> {
+  try {
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    const raw = await AsyncStorage.getItem(LEMBRETE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at?: string; count?: number };
+    if (typeof parsed?.at !== 'string') return null;
+    return { at: parsed.at, count: typeof parsed.count === 'number' ? parsed.count : 0 };
+  } catch {
+    return null;
   }
 }
 

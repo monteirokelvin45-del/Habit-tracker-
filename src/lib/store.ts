@@ -26,6 +26,7 @@ import { addDays, nowHHmm, todayKey } from './date';
 import { buildChecklist, computeScore, taskKeyFor } from './score';
 import { isHHmm } from './schedule';
 import { evaluateBadges } from './badges';
+import { newlyUnlocked, type BadgeUnlock } from './achievements';
 import { evaluateRewards } from './rewards';
 import { newId } from './id';
 import {
@@ -39,6 +40,17 @@ import type { ImportSummary } from './importer';
 
 export type LoadState = 'idle' | 'loading' | 'ready';
 
+/**
+ * Enfileira conquistas recém-desbloqueadas para o anúncio na tela.
+ * Antes o `unlockedAt` era gravado em silêncio: o usuário nunca sabia que tinha
+ * conquistado nada (a recompensa não fechava o loop).
+ */
+function withUnlocks<T extends { badges: AppData['badges'] }>(previous: AppData['badges'], next: T): T {
+  const unlocks = newlyUnlocked(previous, next.badges);
+  if (!unlocks.length) return next;
+  return { ...next, freshUnlocks: [...unlocks, ...useStore.getState().freshUnlocks] };
+}
+
 export interface StoreState extends AppData {
   status: LoadState;
   /** true depois do splash de 2s. */
@@ -47,6 +59,10 @@ export interface StoreState extends AppData {
   setBooted: () => void;
   /** Existe snapshot automático com histórico enquanto o app abriu sem dias. */
   recovery: { at: string; days: number } | null;
+  /** Conquistas desbloqueadas nesta sessão, ainda não anunciadas ao usuário. */
+  freshUnlocks: BadgeUnlock[];
+  /** O usuário viu o anúncio (limpa a fila sem mexer no badge). */
+  dismissUnlocks: () => void;
   restoreFromSnapshot: () => Promise<boolean>;
   dismissRecovery: () => void;
 
@@ -187,6 +203,9 @@ export const useStore = create<StoreState>((set, get) => ({
   status: 'idle',
   booted: false,
   recovery: null,
+  freshUnlocks: [],
+
+  dismissUnlocks: () => set({ freshUnlocks: [] }),
 
   async load() {
     set({ status: 'loading' });
@@ -223,7 +242,7 @@ export const useStore = create<StoreState>((set, get) => ({
     // (senão as atuais mandam e o snapshot serve apenas de histórico).
     const goals = current.goals.length ? current.goals : restored.goals;
     const days = restored.days.map(sanitizeDay).sort((a, b) => (a.date < b.date ? -1 : 1));
-    set({ days, goals, recovery: null, badges: evaluateBadges({ ...current, days, goals }) });
+    set(withUnlocks(current.badges, { days, goals, recovery: null, badges: evaluateBadges({ ...current, days, goals }) }));
     const { persistMany } = await import('./storage');
     await persistMany([
       ['days', days],
@@ -449,7 +468,7 @@ export const useStore = create<StoreState>((set, get) => ({
       d.date === date ? { ...d, diary: { ...d.diary, ...patch } } : d,
     );
     const badges = evaluateBadges({ ...state, days });
-    set({ days, badges });
+    set(withUnlocks(state.badges, { days, badges }));
     void persistMany([
       ['days', days],
       ['badges', badges],
@@ -474,10 +493,12 @@ export const useStore = create<StoreState>((set, get) => ({
         ? { ...d, diary: { ...d.diary, emotions: diaryEmotionsFor(emotions, date) } }
         : d,
     );
-    set({ emotions, days });
+    const badges = evaluateBadges({ ...state, days });
+    set(withUnlocks(state.badges, { emotions, days, badges }));
     void persistMany([
       ['emotions', emotions],
       ['days', days],
+      ['badges', badges],
     ]);
     return { ok: true, entry: result.entry };
   },
@@ -493,10 +514,12 @@ export const useStore = create<StoreState>((set, get) => ({
         ? { ...d, diary: { ...d.diary, emotions: diaryEmotionsFor(emotions, entry.date) } }
         : d,
     );
-    set({ emotions, days });
+    const badges = evaluateBadges({ ...state, days });
+    set(withUnlocks(state.badges, { emotions, days, badges }));
     void persistMany([
       ['emotions', emotions],
       ['days', days],
+      ['badges', badges],
     ]);
   },
 
@@ -541,7 +564,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const withRewards = evaluateRewards({ ...state, days: nextDays });
     const badges = evaluateBadges({ ...state, days: nextDays, rewards: withRewards });
 
-    set({ days: nextDays, rewards: withRewards, badges });
+    set(withUnlocks(state.badges, { days: nextDays, rewards: withRewards, badges }));
     void persistMany([
       ['days', nextDays],
       ['rewards', withRewards],
@@ -687,7 +710,8 @@ export const useStore = create<StoreState>((set, get) => ({
       ? state.rules.map((r) => (r.id === rule.id ? rule : r))
       : [...state.rules, rule];
     const badges = evaluateBadges({ ...state, rules });
-    set({ rules, badges });
+    // Sem isto, criar a 5ª regra SE-ENTÃO desbloqueava "Estrategista" em silêncio.
+    set(withUnlocks(state.badges, { rules, badges }));
     void persistMany([
       ['rules', rules],
       ['badges', badges],
