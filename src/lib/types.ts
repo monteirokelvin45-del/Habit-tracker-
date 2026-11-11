@@ -213,6 +213,12 @@ export interface Settings {
   focusGoalMinutes?: number;
   weightGoalKg?: number;
   targetDailyScore: number;
+  /**
+   * 4 últimos dígitos de um cartão, se o usuário quiser identificar a conta no
+   * cartão de saldo. Fica só no aparelho (AsyncStorage) — o app não guarda
+   * número completo, validade nem CVV, e não envia nada para servidor.
+   */
+  cardLast4?: string;
 }
 
 export interface BadgeState {

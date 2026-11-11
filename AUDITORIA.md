@@ -318,9 +318,30 @@ tooltip ao toque), `IncomeBars` (12 barras finas com destaque), `ActivityRow`.
   sobre o azul → 5.41:1.
 - **Veredito do dia de pagamento** imprimia `R$ 1240` cru (sem milhar). Passou a usar `formatBRL`.
 
+### Segunda passada: fidelidade à referência enviada
+
+A primeira versão ficou "azul e escura", mas comparando lado a lado com a imagem de referência faltavam
+quatro coisas concretas — todas corrigidas:
+
+| Referência | Antes | Agora |
+|---|---|---|
+| Anéis finos e bem separados, com "rabo" de cometa e centro vazio | 3 anéis grossos, legenda embaixo | 3 anéis de 3.5px com halo (`opacity 0.13`), raio 17px entre eles, centro com `%` da renda e legenda ao lado |
+| Cartão de crédito: valor em cima (gradiente) e faixa escura embaixo com `•••• 1209` | um bloco só, número decorativo `0000` | metade gradiente + faixa escura com chip, máscara e botões |
+| Barras finas de alturas bem diferentes | barras de 10px | 7px, mês vazio vira traço de 2px no chão |
+| Busca no rodapé | busca no topo | rodapé, como na referência |
+
+E uma decisão de produto: o número do cartão virou **dado real opcional**. `Settings.cardLast4` guarda
+**só 4 dígitos**, no próprio aparelho; a tela tem sheet para informar/trocar/apagar e botão de
+compartilhar. Nada de número completo, validade ou CVV — nem no tipo, nem no storage (o sanitizador
+descarta qualquer coisa que não seja exatamente 4 dígitos: `'12'`, `'12ab'`, 16 dígitos e `1209` numérico
+são recusados, não truncados).
+
+O que ficou de fora da referência, e por quê: **Inbox/"25 Unread Messages"** (não existe inbox no app),
+**Followers/22°/John Doe/modo Dark** (não são finanças) e os **números de exemplo** (`$5,226.99`, `+22%`).
+
 ### Verificação
 
-- 495 lógica (tema, contraste, `formatBRL`, config), 62 store, 42 renders, **94 telas**
+- 503 lógica (tema, contraste, `formatBRL`, 4 dígitos do cartão, config), 62 store, 42 renders, **94 telas**
   (21 telas × 4 cenários: histórico, primeiro uso, tema neon e dado corrompido, + 7 checagens
   específicas de Finanças: vazio não inventa valor, Real formatado, sem receita → "sem renda
   registrada", valor ilegível avisado e não somado).
@@ -454,7 +475,7 @@ agora são reagendados 1× por dia, não a cada edição).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **495/495** (modos, score, streaks, cobrança, gate de 7 dias,
+- `node scripts/run-logic-tests.mjs` → **503/503** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
 - `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,

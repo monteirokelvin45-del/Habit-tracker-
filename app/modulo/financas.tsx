@@ -10,7 +10,7 @@
  *     o que quebra a linha e deixa a barra oca.
  */
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Share, TextInput, View } from 'react-native';
 import { accent, onAccent, radius, spacing, useTheme } from '../../src/theme';
 import {
   Chip,
@@ -19,6 +19,7 @@ import {
   NoData,
   PrimaryButton,
   Row,
+  SecondaryButton,
   Sheet,
   Txt,
   ToggleRow,
@@ -33,6 +34,7 @@ import {
   IncomeBars,
   IncomeOutcomeChart,
   type LineSeries,
+  RingsLegend,
   ThinBar,
   WeekStrip,
   type WeekDay,
@@ -87,6 +89,9 @@ export default function FinanceScreen() {
   const [pickedMonth, setPickedMonth] = useState<string | null>(null);
   const [tooltipIndex, setTooltipIndex] = useState<number | null>(null);
   const [query, setQuery] = useState('');
+  const [cardSheet, setCardSheet] = useState(false);
+  const [period, setPeriod] = useState<'mes' | 'ano'>('mes');
+  const [last4Draft, setLast4Draft] = useState(store.settings.cardLast4 ?? '');
 
   const monthK = todayKey().slice(0, 7);
   const monthEntries = store.finances.filter((f) => f.date.startsWith(monthK));
@@ -195,10 +200,12 @@ export default function FinanceScreen() {
 
   /* ───────────────────────────── lista de atividades ───────────────────────────── */
 
+  const periodPrefix = period === 'mes' ? monthK : todayKey().slice(0, 4);
   const recent = store.finances
     .slice()
     .sort((a, b) => (a.date < b.date ? 1 : -1))
     .filter((f) => {
+      if (!f.date.startsWith(periodPrefix)) return false;
       if (!query.trim()) return true;
       const q = query.trim().toLowerCase();
       return `${f.category} ${f.note ?? ''} ${f.date}`.toLowerCase().includes(q);
@@ -216,45 +223,6 @@ export default function FinanceScreen() {
         addLabel="+ Lançamento"
       />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60, gap: spacing.md }}>
-        {/* Busca estilo pílula */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: t.bgInput,
-            borderRadius: radius.pill,
-            borderWidth: 1,
-            borderColor: t.border,
-            paddingLeft: spacing.lg,
-            paddingRight: 4,
-            paddingVertical: 4,
-            gap: spacing.sm,
-          }}
-        >
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Buscar categoria, nota ou data…"
-            placeholderTextColor={t.textMuted}
-            style={{ flex: 1, color: t.textPrimary, fontSize: 13, paddingVertical: 8 }}
-            accessibilityLabel="Buscar lançamentos"
-          />
-          <View
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 17,
-              backgroundColor: accent(),
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Txt variant="caption" color={onAccent()} style={{ fontWeight: '700' }}>
-              ⌕
-            </Txt>
-          </View>
-        </View>
-
         {brokenCount > 0 ? (
           <Bento tone="danger">
             <Txt variant="caption" color={t.yellow}>
@@ -272,8 +240,27 @@ export default function FinanceScreen() {
           <BalanceCard
             balance={monthBalance}
             label={monthBalance == null ? 'Saldo do mês' : `Saldo de ${monthLabel(todayKey())}`}
-            mask="•••• •••• •••• 0000"
-            caption={monthBalance == null ? undefined : `${monthEntries.length} lançamento(s)`}
+            caption={monthBalance == null ? 'Nenhum lançamento no mês' : `${monthEntries.length} lançamento(s)`}
+            last4={store.settings.cardLast4 ?? null}
+            onEditNumber={() => {
+              haptic('light');
+              setLast4Draft(store.settings.cardLast4 ?? '');
+              setCardSheet(true);
+            }}
+            onCopy={
+              store.settings.cardLast4
+                ? async () => {
+                    // Sem dependência nova de clipboard: Share é nativo e serve
+                    // para mandar os 4 dígitos para onde o usuário quiser.
+                    try {
+                      await Share.share({ message: `Cartão terminando em ${store.settings.cardLast4}` });
+                      haptic('success');
+                    } catch {
+                      haptic('warning');
+                    }
+                  }
+                : undefined
+            }
           />
         </View>
 
@@ -321,15 +308,38 @@ export default function FinanceScreen() {
             {buckets.every((b) => b.target == null) ? (
               <NoData label="Sem renda registrada no mês — não há alvo para medir" />
             ) : (
-              <BalanceRings
-                rings={buckets.map((b) => ({
+              (() => {
+                const rings = buckets.map((b) => ({
                   key: b.key,
-                  label: `${b.label} (${b.percent}%)`,
+                  label: b.label,
                   ratio: b.ratio,
-                  valueText:
-                    b.target == null ? 'Sem dado' : `${formatBRL(b.used)} / ${formatBRL(b.target)}`,
-                }))}
-              />
+                  valueText: b.target == null ? 'Sem dado' : `${formatBRL(b.used)} / ${formatBRL(b.target)}`,
+                }));
+                return (
+                  <View style={{ alignItems: 'center', gap: spacing.md }}>
+                    {/* Centro livre, com o rótulo dentro: é o que dá o "respiro" da referência. */}
+                    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                      <BalanceRings rings={rings} size={196} />
+                      <View style={{ position: 'absolute', alignItems: 'center', width: 96 }}>
+                        <Txt variant="micro" color={t.textMuted} style={{ fontSize: 9 }}>
+                          usado
+                        </Txt>
+                        <Txt variant="h3" color={t.textPrimary}>
+                          {monthExpense > 0 && monthIncome > 0
+                            ? `${Math.round((monthExpense / monthIncome) * 100)}%`
+                            : 'Sem dado'}
+                        </Txt>
+                        <Txt variant="micro" color={t.textMuted} upper={false} style={{ fontSize: 9, textAlign: 'center' }}>
+                          da renda
+                        </Txt>
+                      </View>
+                    </View>
+                    <View style={{ alignSelf: 'stretch' }}>
+                      <RingsLegend rings={rings} />
+                    </View>
+                  </View>
+                );
+              })()
             )}
           </View>
         </Bento>
@@ -538,9 +548,22 @@ export default function FinanceScreen() {
         <Bento>
           <Row style={{ justifyContent: 'space-between', marginBottom: spacing.sm }}>
             <Txt variant="h3">Atividade recente</Txt>
-            <Txt variant="micro" color={t.textMuted}>
-              {query.trim() ? `${recent.length} de ${store.finances.length}` : `${store.finances.length} no total`}
-            </Txt>
+            <Row gap={6}>
+              {(['mes', 'ano'] as const).map((p) => (
+                <Txt
+                  key={p}
+                  variant="micro"
+                  color={period === p ? accent() : t.textMuted}
+                  onPress={() => {
+                    haptic('light');
+                    setPeriod(p);
+                  }}
+                  style={{ paddingHorizontal: 6, paddingVertical: 2 }}
+                >
+                  {p === 'mes' ? 'mês' : 'ano'}
+                </Txt>
+              ))}
+            </Row>
           </Row>
           {store.finances.length === 0 ? <NoData label="Nenhum lançamento" /> : null}
           {store.finances.length > 0 && recent.length === 0 ? <NoData label="Nada encontrado na busca" /> : null}
@@ -579,7 +602,86 @@ export default function FinanceScreen() {
             ))}
           </View>
         </Bento>
+        {/* Busca no rodapé, como na referência: filtra a lista de atividade. */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: t.bgInput,
+            borderRadius: radius.pill,
+            borderWidth: 1,
+            borderColor: t.border,
+            paddingLeft: spacing.lg,
+            paddingRight: 4,
+            paddingVertical: 4,
+            gap: spacing.sm,
+          }}
+        >
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Buscar categoria, nota ou data…"
+            placeholderTextColor={t.textMuted}
+            style={{ flex: 1, color: t.textPrimary, fontSize: 13, paddingVertical: 8 }}
+            accessibilityLabel="Buscar lançamentos"
+          />
+          <View
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 17,
+              backgroundColor: accent(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Txt variant="caption" color={onAccent()} style={{ fontWeight: '700' }}>
+              ⌕
+            </Txt>
+          </View>
+        </View>
       </ScrollView>
+
+      <Sheet
+        visible={cardSheet}
+        onClose={() => setCardSheet(false)}
+        title="Cartão do saldo"
+        footer={
+          <PrimaryButton
+            label="Salvar"
+            onPress={() => {
+              const digits = last4Draft.replace(/\D/g, '').slice(0, 4);
+              // Só 4 dígitos entram. Vazio = apagar (volta para a máscara neutra).
+              store.updateSettings({ cardLast4: digits.length === 4 ? digits : undefined });
+              setCardSheet(false);
+              haptic('success');
+            }}
+          />
+        }
+      >
+        <Muted>
+          Só os 4 últimos dígitos ficam gravados, no próprio aparelho. O app não guarda o número completo,
+          validade nem CVV — e nada disso sai do celular.
+        </Muted>
+        <Field
+          label="4 últimos dígitos"
+          value={last4Draft}
+          onChangeText={(v) => setLast4Draft(v.replace(/\D/g, '').slice(0, 4))}
+          keyboardType="number-pad"
+          placeholder="0000"
+          maxLength={4}
+        />
+        {store.settings.cardLast4 ? (
+          <SecondaryButton
+            label="Apagar número"
+            onPress={() => {
+              store.updateSettings({ cardLast4: undefined });
+              setLast4Draft('');
+              setCardSheet(false);
+            }}
+          />
+        ) : null}
+      </Sheet>
 
       <Sheet
         visible={sheet}

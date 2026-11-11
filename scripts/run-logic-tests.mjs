@@ -1726,5 +1726,35 @@ console.log('\n── formatBRL ──');
   check('veredito do pagamento usa R$ formatado', /R\$ [\d.]+,\d{2}|R\$ [\d.]+/.test(pay.verdict) && !/R\$ \d{4,}/.test(pay.verdict), pay.verdict);
 }
 
+/* ═══════════════ Cartão: 4 dígitos são dado do usuário, não decoração ═══════════════ */
+
+console.log('\n── Cartão de saldo: só 4 dígitos entram ──');
+{
+  const storageMod = await import(path.join(outRoot, 'lib/storage.mjs'));
+  const base = storageMod.EMPTY_DATA;
+  const withCard = (cardLast4) => storageMod.normalizeData({ settings: { ...base.settings, cardLast4 } }, base).settings.cardLast4;
+
+  check('4 dígitos válidos passam', withCard('1209') === '1209', String(withCard('1209')));
+  check('menos de 4 dígitos é descartado', withCard('12') === undefined, String(withCard('12')));
+  check('mais de 4 dígitos é descartado (não trunca)', withCard('1234567890123456') === undefined, String(withCard('1234567890123456')));
+  check('texto com letras é descartado', withCard('12ab') === undefined, String(withCard('12ab')));
+  check('número (não string) é descartado', withCard(1209) === undefined, String(withCard(1209)));
+  check('null vira ausente', withCard(null) === undefined);
+  check('sem cartão o campo é undefined (não string vazia)', withCard(undefined) === undefined);
+
+  // Nunca guardamos nada além dos 4 dígitos: nada de cvv/validade no tipo.
+  const typesFile = fs.readFileSync(path.join(root, 'src/lib/types.ts'), 'utf8');
+  const settingsBlock = typesFile.slice(typesFile.indexOf('export interface Settings'), typesFile.indexOf('export interface BadgeState'));
+  // O comentário do tipo cita "CVV" para dizer que NÃO é guardado: checar só as
+  // declarações de campo, não o texto.
+  // O bloco pega o comentário do campo, então `cardLast4?:` pode vir indentado
+  // junto com `*`; filtra pela linha que realmente DECLARA o campo.
+  const fields = settingsBlock
+    .split('\n')
+    .filter((line) => /^\s{2}[a-zA-Z][a-zA-Z0-9]*\??:/.test(line))
+    .join('\n');
+  check('Settings declara só cardLast4 entre os campos de cartão', /cardLast4\?:/.test(fields) && !/cvv|validade|expiry|cardNumber/i.test(fields));
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

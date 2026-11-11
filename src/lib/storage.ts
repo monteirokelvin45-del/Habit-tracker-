@@ -191,6 +191,12 @@ export function sanitizeGoal(input: Partial<Goal>): Goal {
  * Sem isso, uma chave faltando no JSON vira `undefined` no meio do app e
  * quebra em qualquer `.filter`/`.length`.
  */
+/** Só aceita exatamente 4 dígitos. Qualquer outra coisa é descartada, não corrigida. */
+function sanitizeLast4(value: unknown): string | undefined {
+  const raw = typeof value === 'string' ? value.replace(/\D/g, '') : '';
+  return raw.length === 4 ? raw : undefined;
+}
+
 export function normalizeData(input: Partial<AppData> | null | undefined, base: AppData): AppData {
   const raw = input ?? {};
   const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -226,7 +232,11 @@ export function normalizeData(input: Partial<AppData> | null | undefined, base: 
     books: clean.books,
     finances: clean.finances,
     weight: clean.weight,
-    settings: { ...DEFAULT_SETTINGS, ...base.settings, ...(raw.settings ?? {}) },
+    settings: (() => {
+      const merged = { ...DEFAULT_SETTINGS, ...base.settings, ...(raw.settings ?? {}) };
+      const last4 = sanitizeLast4((raw.settings as Settings | undefined)?.cardLast4);
+      return last4 ? { ...merged, cardLast4: last4 } : { ...merged, cardLast4: undefined };
+    })(),
     badges: arr<BadgeState>(raw.badges),
     ayanokoji: raw.ayanokoji ?? base.ayanokoji,
     weeklyFocus: raw.weeklyFocus ?? {},
@@ -326,6 +336,10 @@ export async function loadAll(): Promise<AppData> {
   lastSanitize.dropped = report.dropped;
   lastSanitize.total = report.total;
 
+  // Últimos 4 dígitos do cartão: o storage é editável e importável, então passa
+  // pelo mesmo crivo do import (senão "12ab" ou 20 dígitos entrariam no cartão).
+  const safeLast4 = sanitizeLast4((settings as Settings | undefined)?.cardLast4);
+
   return {
     onboarded,
     user,
@@ -336,7 +350,7 @@ export async function loadAll(): Promise<AppData> {
     books: clean.books,
     finances: clean.finances,
     weight: clean.weight,
-    settings: { ...DEFAULT_SETTINGS, ...settings },
+    settings: { ...DEFAULT_SETTINGS, ...settings, cardLast4: safeLast4 },
     badges,
     ayanokoji: ayanokoji ?? { startDate: '', scores: [], tasksDone: {} },
     weeklyFocus: weeklyFocus ?? {},

@@ -12,7 +12,7 @@
 import React from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { formatBRL } from '../lib/date';
-import { accent, accentDeep, colors, onAccent, radius, spacing, useTheme } from '../theme';
+import { accent, accentDeep, onAccent, radius, spacing, useTheme } from '../theme';
 import { Row, Txt } from './ui';
 
 /* ─────────────────────────────── superfícies ─────────────────────────────── */
@@ -102,79 +102,163 @@ export function ThinBar({ ratio, color, height = 6 }: { ratio: number | null; co
 /* ───────────────────────────── cartão de saldo ───────────────────────────── */
 
 /**
- * Cartão com gradiente neon. O "número do cartão" é decorativo e mascarado de
- * propósito — o app não guarda dado de cartão. Se o usuário quiser, a tela
- * passa o rótulo que quiser; nunca vem de dado financeiro real.
+ * Cartão de crédito (visual da referência) — com um dado REAL opcional.
+ *
+ * O app não guarda número de cartão: `last4` vai para o armazenamento local do
+ * próprio aparelho (AsyncStorage) e só os 4 últimos dígitos existem. Sem `last4`,
+ * a máscara é neutra e o cartão vira só "saldo do mês" — nunca número inventado.
  */
 export function BalanceCard({
   balance,
-  mask = '•••• •••• ••••',
   label = 'Saldo do mês',
   caption,
+  last4,
+  onEditNumber,
+  onCopy,
 }: {
   /** `null` = sem lançamento no mês. Não vira 0. */
   balance: number | null;
-  mask?: string;
   label?: string;
   caption?: string;
+  /** 4 últimos dígitos (opcional, dado local do usuário). */
+  last4?: string | null;
+  onEditNumber?: () => void;
+  onCopy?: () => void;
 }) {
   const t = useTheme();
   const Svg = require('react-native-svg').default as React.ComponentType<Record<string, unknown>>;
   const { Defs, LinearGradient, Rect, Stop } = require('react-native-svg') as Record<string, React.ComponentType<Record<string, unknown>>>;
+  const masked = last4 ? `•••• •••• •••• ${last4}` : '•••• •••• •••• ••••';
+
   return (
     <View
       style={{
-        borderRadius: 24,
+        borderRadius: 26,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: accent() + '44',
+        borderColor: accent() + '3D',
+        backgroundColor: t.bgCard,
         shadowColor: accent(),
-        shadowOpacity: 0.5,
-        shadowRadius: 16,
-        shadowOffset: { width: 0, height: 0 },
-        elevation: 6,
+        shadowOpacity: 0.45,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 8,
       }}
     >
-      <Svg width="100%" height="100%" style={{ position: 'absolute' }} preserveAspectRatio="none" viewBox="0 0 100 100">
-        <Defs>
-          <LinearGradient id="bentoBalance" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor={accentDeep()} stopOpacity={0.85} />
-            <Stop offset="0.55" stopColor={accent()} stopOpacity={0.55} />
-            <Stop offset="1" stopColor={t.bgCard} stopOpacity={0.95} />
-          </LinearGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100" height="100" fill="url(#bentoBalance)" />
-      </Svg>
-      <View style={{ padding: spacing.lg, gap: spacing.lg }}>
-        <Txt variant="micro" color={t.textPrimary} style={{ opacity: 0.85, letterSpacing: 1.4 }}>
-          {label.toUpperCase()}
-        </Txt>
-        <Txt variant="h1" color={onAccent()} style={{ fontSize: 30 }}>
-          {balance == null ? 'Sem dado' : formatBRL(balance)}
-        </Txt>
-        <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <Row gap={spacing.sm} style={{ alignItems: 'center' }}>
-            {/* Chip do cartão: puramente decorativo. */}
-            <View
-              style={{
-                width: 30,
-                height: 16,
-                borderRadius: 4,
-                backgroundColor: onAccent() + '33',
-                borderWidth: 1,
-                borderColor: onAccent() + '55',
-              }}
-            />
-            <Txt variant="micro" color={onAccent()} style={{ opacity: 0.9, letterSpacing: 1 }}>
-              {mask}
+      {/* Metade de cima: gradiente. Metade de baixo: barra escura com o número. */}
+      <View style={{ height: 132 }}>
+        <Svg width="100%" height="100%" style={{ position: 'absolute' }} preserveAspectRatio="none" viewBox="0 0 100 100">
+          <Defs>
+            <LinearGradient id="bentoBalance" x1="0" y1="1" x2="1" y2="0">
+              <Stop offset="0" stopColor={t.bgCard} stopOpacity={1} />
+              <Stop offset="0.45" stopColor={accentDeep()} stopOpacity={0.55} />
+              <Stop offset="1" stopColor={accent()} stopOpacity={0.9} />
+            </LinearGradient>
+            <LinearGradient id="bentoFade" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={t.bgCard} stopOpacity={0} />
+              <Stop offset="1" stopColor={t.bgCard} stopOpacity={0.85} />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100" height="100" fill="url(#bentoBalance)" />
+          <Rect x="0" y="55" width="100" height="45" fill="url(#bentoFade)" />
+        </Svg>
+        <View style={{ padding: spacing.lg, gap: 6 }}>
+          <Txt variant="micro" color={t.textPrimary} style={{ opacity: 0.75, letterSpacing: 0.8 }}>
+            {label}
+          </Txt>
+          <Txt variant="h1" color="#FFFFFF" style={{ fontSize: 34, letterSpacing: -1 }}>
+            {balance == null ? 'Sem dado' : formatBRL(balance)}
+          </Txt>
+        </View>
+      </View>
+
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          backgroundColor: t.bgSubtle,
+          borderTopWidth: 1,
+          borderTopColor: t.border,
+          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.md,
+          gap: spacing.sm,
+        }}
+      >
+        <Row gap={spacing.sm} style={{ alignItems: 'center', flex: 1 }}>
+          {/* Chip dourado-ish do cartão (decorativo). */}
+          <View
+            style={{
+              width: 30,
+              height: 20,
+              borderRadius: 5,
+              borderWidth: 1,
+              borderColor: accent() + '66',
+              backgroundColor: accent() + '1F',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <View style={{ width: 12, height: 1, backgroundColor: accent() + 'AA' }} />
+            <View style={{ width: 12, height: 1, backgroundColor: accent() + 'AA', marginTop: 3 }} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Txt variant="micro" color={t.textSecondary} upper={false} style={{ letterSpacing: 2, fontSize: 11 }}>
+              {masked}
             </Txt>
-          </Row>
-          {caption ? (
-            <Txt variant="micro" color={onAccent()} style={{ opacity: 0.75 }}>
-              {caption}
-            </Txt>
-          ) : null}
+            {caption ? (
+              <Txt variant="micro" color={t.textMuted} upper={false} style={{ fontSize: 9 }}>
+                {caption}
+              </Txt>
+            ) : null}
+          </View>
         </Row>
+        {onCopy || onEditNumber ? (
+          <Row gap={6}>
+            {onCopy ? (
+              <View
+                accessibilityRole="button"
+                accessibilityLabel="Copiar os 4 últimos dígitos"
+                onStartShouldSetResponder={() => true}
+                onResponderRelease={onCopy}
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 10,
+                  backgroundColor: accent() + '26',
+                  borderWidth: 1,
+                  borderColor: accent() + '55',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Txt variant="caption" color={accent()}>
+                  ⧉
+                </Txt>
+              </View>
+            ) : null}
+            {onEditNumber ? (
+              <View
+                accessibilityRole="button"
+                accessibilityLabel="Informar os 4 últimos dígitos do cartão"
+                onStartShouldSetResponder={() => true}
+                onResponderRelease={onEditNumber}
+                style={{
+                  height: 30,
+                  paddingHorizontal: 10,
+                  borderRadius: 10,
+                  backgroundColor: accent(),
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Txt variant="micro" color={onAccent()} style={{ fontSize: 9 }}>
+                  {last4 ? 'trocar' : 'informar'}
+                </Txt>
+              </View>
+            ) : null}
+          </Row>
+        ) : null}
       </View>
     </View>
   );
@@ -198,60 +282,85 @@ export interface RingDatum {
  * gráfico mentiroso em que um anel maior parece "mais importante". A cor
  * escurece do anel externo para o interno (a mesma ideia da referência).
  */
-export function BalanceRings({ rings, size = 190 }: { rings: RingDatum[]; size?: number }) {
+export function BalanceRings({ rings, size = 210 }: { rings: RingDatum[]; size?: number }) {
   const t = useTheme();
   const Svg = require('react-native-svg').default as React.ComponentType<Record<string, unknown>>;
   const { Circle, G } = require('react-native-svg') as Record<string, React.ComponentType<Record<string, unknown>>>;
-  const stroke = 7;
   const c = size / 2;
   const ringsToDraw = rings.slice(0, 4);
-  const tones = [accentDeep(), accent(), colors.cyan, t.purple];
+  const tones = [accentDeep(), accent(), '#7FB0FF', '#BFD5FF'];
 
   return (
-    <View style={{ alignItems: 'center', gap: spacing.md }}>
-      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <G>
-          {ringsToDraw.map((r, i) => {
-            const radiusPx = c - stroke - i * (stroke + 6);
-            const circumference = 2 * Math.PI * radiusPx;
-            const filled = r.ratio == null || !Number.isFinite(r.ratio) ? 0 : Math.max(0, Math.min(1, r.ratio));
-            return (
-              <G key={r.key}>
-                <Circle cx={c} cy={c} r={radiusPx} stroke={t.track} strokeWidth={stroke} fill="transparent" />
-                {filled > 0 ? (
+    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <G>
+        {ringsToDraw.map((r, i) => {
+          // Anéis bem separados e finos, como na referência; o "rabo" sai porque
+          // o arco começa no topo (rotate -90) e termina com ponta arredondada.
+          const radiusPx = c - 10 - i * 17;
+          const circumference = 2 * Math.PI * radiusPx;
+          const filled = r.ratio == null || !Number.isFinite(r.ratio) ? 0 : Math.max(0, Math.min(1, r.ratio));
+          // Sem dado: anel fica só o trilho (não inventa fração).
+          return (
+            <G key={r.key}>
+              <Circle cx={c} cy={c} r={radiusPx} stroke={t.track} strokeWidth={3} fill="transparent" />
+              {filled > 0 ? (
+                <>
                   <Circle
                     cx={c}
                     cy={c}
                     r={radiusPx}
                     stroke={tones[i] ?? accent()}
-                    strokeWidth={stroke}
+                    strokeWidth={3.5}
                     fill="transparent"
                     strokeDasharray={`${circumference}`}
                     strokeDashoffset={circumference * (1 - filled)}
                     strokeLinecap="round"
                     transform={`rotate(-90 ${c} ${c})`}
+                    opacity={0.95}
                   />
-                ) : null}
-              </G>
-            );
-          })}
-        </G>
-      </Svg>
-      <View style={{ gap: 6, alignSelf: 'stretch' }}>
-        {ringsToDraw.map((r, i) => (
-          <Row key={`leg-${r.key}`} style={{ justifyContent: 'space-between' }}>
-            <Row gap={6} style={{ alignItems: 'center' }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tones[i] ?? accent() }} />
-              <Txt variant="micro" color={t.textSecondary} upper={false}>
-                {r.label}
-              </Txt>
-            </Row>
-            <Txt variant="micro" color={t.textPrimary}>
-              {r.valueText}
+                  {/* Halo do arco: mesma geometria, mais largo e transparente. */}
+                  <Circle
+                    cx={c}
+                    cy={c}
+                    r={radiusPx}
+                    stroke={tones[i] ?? accent()}
+                    strokeWidth={9}
+                    fill="transparent"
+                    strokeDasharray={`${circumference}`}
+                    strokeDashoffset={circumference * (1 - filled)}
+                    strokeLinecap="round"
+                    transform={`rotate(-90 ${c} ${c})`}
+                    opacity={0.13}
+                  />
+                </>
+              ) : null}
+            </G>
+          );
+        })}
+      </G>
+    </Svg>
+  );
+}
+
+/** Legenda dos anéis, em lista compacta (vai ao lado/embaixo do círculo). */
+export function RingsLegend({ rings }: { rings: RingDatum[] }) {
+  const t = useTheme();
+  const tones = [accentDeep(), accent(), '#7FB0FF', '#BFD5FF'];
+  return (
+    <View style={{ gap: 5 }}>
+      {rings.slice(0, 4).map((r, i) => (
+        <Row key={`leg-${r.key}`} style={{ justifyContent: 'space-between', alignItems: 'center' }} gap={6}>
+          <Row gap={5} style={{ alignItems: 'center', flex: 1 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: tones[i] ?? accent() }} />
+            <Txt variant="micro" color={t.textSecondary} upper={false} numberOfLines={1} style={{ fontSize: 9 }}>
+              {r.label}
             </Txt>
           </Row>
-        ))}
-      </View>
+          <Txt variant="micro" color={t.textPrimary} style={{ fontSize: 9 }}>
+            {r.valueText}
+          </Txt>
+        </Row>
+      ))}
     </View>
   );
 }
@@ -537,28 +646,33 @@ export function IncomeBars({
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', height, gap: 4 }}>
       {data.map((d) => {
         const isOn = highlighted === d.month;
-        const h = d.value == null || max <= 0 ? 3 : Math.max(5, (d.value / max) * height);
+        // Barra ESTRITA: só meses com lançamento desenham barra. Mês vazio fica
+        // como traço no chão — nada de barra mínima que pareça "quase zero".
+        const h = d.value == null || max <= 0 ? 2 : Math.max(6, (d.value / max) * height);
         return (
           <View key={d.month} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
             <View
               accessibilityRole={onSelect ? 'button' : undefined}
-              accessibilityLabel={`${d.month}: ${d.value == null ? 'sem dado' : `R$ ${d.value.toFixed(0)}`}`}
+              accessibilityLabel={`${d.month}: ${d.value == null ? 'sem lançamento' : formatBRL(d.value)}`}
               onStartShouldSetResponder={onSelect ? () => true : undefined}
               onResponderRelease={onSelect ? () => onSelect(d.month) : undefined}
-              style={{
-                width: '100%',
-                maxWidth: 10,
-                height: h,
-                borderRadius: 6,
-                backgroundColor: d.value == null ? t.track : isOn ? accent() : accentDeep() + '99',
-                shadowColor: isOn ? accent() : 'transparent',
-                shadowOpacity: isOn ? 0.8 : 0,
-                shadowRadius: 8,
-                shadowOffset: { width: 0, height: 0 },
-                elevation: isOn ? 4 : 0,
-              }}
-            />
-            <Txt variant="micro" color={isOn ? accent() : t.textMuted} upper={false} style={{ marginTop: 4, fontSize: 8 }}>
+              style={{ width: '100%', alignItems: 'center', justifyContent: 'flex-end' }}
+            >
+              <View
+                style={{
+                  width: 7,
+                  height: h,
+                  borderRadius: 4,
+                  backgroundColor: d.value == null ? t.track : isOn ? accent() : accentDeep(),
+                  shadowColor: isOn ? accent() : 'transparent',
+                  shadowOpacity: isOn ? 0.9 : 0,
+                  shadowRadius: 9,
+                  shadowOffset: { width: 0, height: 0 },
+                  elevation: isOn ? 5 : 0,
+                }}
+              />
+            </View>
+            <Txt variant="micro" color={isOn ? accent() : t.textMuted} upper={false} style={{ marginTop: 4, fontSize: 7 }}>
               {d.month}
             </Txt>
           </View>
