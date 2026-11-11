@@ -67,10 +67,13 @@ function recoveryFast(days: Day[]): boolean {
 }
 
 function honestyTotal(data: AppData): boolean {
-  const days = lastNDays(7);
-  const closed = closedDays(data.days).filter((d) => days.includes(d.date));
-  if (closed.length < 7) return false;
-  return closed.every(
+  const closed = closedDays(data.days);
+  const anchor = closed.length ? closed[closed.length - 1]!.date : todayKey();
+  const days = lastNDays(7, anchor);
+  const inWindow = closed.filter((d) => days.includes(d.date));
+  // Antes contava "7 dias fechados em algum momento", não 7 dias seguidos.
+  if (inWindow.length < 7) return false;
+  return inWindow.every(
     (d) =>
       d.diary.context.where.trim().length > 0 &&
       (d.diary.context.trigger.trim().length > 0 || d.diary.context.distraction.trim().length > 0),
@@ -82,7 +85,10 @@ function areaStreak(data: AppData, areaName: string, target: number): boolean {
   if (!goals.length) return false;
   const ids = new Set(goals.map((g) => g.id));
   let streak = 0;
-  let cursor = todayKey();
+  // Começa no último dia registrado: abrir o app antes de marcar a tarefa de hoje
+  // zerava o streak da área e a conquista nunca aparecia.
+  const closed = closedDays(data.days);
+  let cursor = closed.length ? closed[closed.length - 1]!.date : todayKey();
   const map = new Map(data.days.map((d) => [d.date, d]));
   for (let i = 0; i < 400; i++) {
     const day = map.get(cursor);

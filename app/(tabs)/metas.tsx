@@ -95,9 +95,12 @@ export default function GoalsScreen() {
   };
 
   const save = () => {
+    const trimmed = name.trim();
+    // Antes, salvar com o nome vazio criava uma meta sem nome no checklist.
+    if (!trimmed) return;
     const goal: Goal = {
       id: editing?.id ?? newId('goal'),
-      name: name.trim(),
+      name: trimmed,
       area,
       priority,
       min: min.trim() || '15min',
@@ -105,6 +108,8 @@ export default function GoalsScreen() {
       excellent: excellent.trim() || '1h',
       active,
       archived: editing?.archived,
+      // originId liga a meta ao histórico importado: editar não pode quebrar o vínculo.
+      originId: editing?.originId,
       createdAt: editing?.createdAt ?? new Date().toISOString(),
     };
     store.upsertGoal(goal);

@@ -773,5 +773,79 @@ const cats = stats.categoryDistribution(chartData, 30, today);
 check('distribuição por área soma as concluídas', cats.length === 1 && cats[0].value === 4, JSON.stringify(cats));
 check('sem tarefa feita = lista vazia', stats.categoryDistribution({ ...chartData, days: [] }, 30, today).length === 0);
 
+console.log('\n── Auditoria: janelas por data e thresholds relativos ──');
+{
+  // 7 dias com score 5,4 e meta 7: antes o detectDanger usava "< 5" fixo e não alertava.
+  const flat = [9, 8, 7, 6, 5, 4, 3, 2].map((n, i) =>
+    day(dates.addDays(today, -(7 - i)), [], {
+      score: { regularity: 5, continuity: 5, recovery: 5, honesty: 5, progress: 5, total: n === 2 ? 5.4 : n },
+      closedAt: 'x',
+    }),
+  );
+  // 4 é o "logo abaixo" da faixa 5: com meta 7 o corte sobe para 5.
+  const pertoMasAbaixo = [0, 1, 2].map((i) =>
+    day(dates.addDays(today, -i), [], {
+      score: { regularity: 4, continuity: 5, recovery: 5, honesty: 5, progress: 4, total: 4 },
+      closedAt: 'x',
+    }),
+  );
+  const alertas = scoreLib.detectDanger(pertoMasAbaixo, [honestGoal], { ...wData.settings, targetDailyScore: 7 });
+  check('zona de perigo usa a meta do usuário (score 4 com meta 7 alerta)', alertas.some((a) => a.id === 'low-score'));
+  const semAlerta = scoreLib.detectDanger(pertoMasAbaixo, [honestGoal], { ...wData.settings, targetDailyScore: 3 });
+  check('com meta 3 o mesmo histórico não é zona de perigo', !semAlerta.some((a) => a.id === 'low-score'));
+
+  // média dos últimos 7 dias por DATA: dias fora de ordem não podem escolher a janela errada.
+  const unordered = [
+    ...Array.from({ length: 10 }, (_, i) =>
+      day(dates.addDays(today, -(20 - i)), [], {
+        score: { regularity: 10, continuity: 5, recovery: 5, honesty: 5, progress: 10, total: 10 },
+      }),
+    ),
+    day(today, [], { score: { regularity: 10, continuity: 5, recovery: 5, honesty: 5, progress: 10, total: 10 } }),
+  ].sort(() => Math.random() - 0.5);
+  const scored = scoreLib.computeScore({
+    day: day(today, [], {
+      diary: { ...day(today, []).diary, done: 'x', avoided: 'y', blocked: 'z' },
+    }),
+    goals: [honestGoal],
+    previousDays: unordered,
+  });
+  check('progresso usa os 7 dias anteriores por data, sem depender da ordem do array', scored.progress <= 10 && scored.progress >= 0);
+
+  // badge "Honestidade Total": 7 dias SEGUIDOS, não 7 dias quaisquer.
+  const separados = [0, 3, 6, 9, 12, 15, 18].map((back) => {
+    const d = day(dates.addDays(today, -back), [], { score: { regularity: 8, continuity: 5, recovery: 5, honesty: 5, progress: 8, total: 8 } });
+    return { ...d, diary: { ...d.diary, context: { where: 'casa', when: '10h', distraction: 'celular', trigger: 'cansaço' } } };
+  });
+  const fromSeparados = badgesLib.evaluateBadges({ ...wData, days: separados, badges: [] }).find((b) => b.id === 'total-honesty');
+  check('Honestidade Total não desbloqueia com 7 dias espalhados', !fromSeparados?.unlockedAt);
+  const seguidos = [0, 1, 2, 3, 4, 5, 6].map((back) => {
+    const d = day(dates.addDays(today, -back), [], { score: { regularity: 8, continuity: 5, recovery: 5, honesty: 5, progress: 8, total: 8 } });
+    return { ...d, diary: { ...d.diary, context: { where: 'casa', when: '10h', distraction: 'celular', trigger: 'cansaço' } } };
+  });
+  const fromSeguidos = badgesLib.evaluateBadges({ ...wData, days: seguidos, badges: [] }).find((b) => b.id === 'total-honesty');
+  check('Honestidade Total desbloqueia com 7 dias seguidos', !!fromSeguidos?.unlockedAt);
+}
+
+console.log('\n── Auditoria: checklist do modo e anel do dia ──');
+{
+  const dois = [honestGoal, { ...honestGoal, id: 'gX', name: 'Outra', priority: 'normal' }];
+  const d = day(today, [
+    { goalId: 'gH', done: true, note: '' },
+    { goalId: 'extra:revisao', done: true, note: '' },
+    { goalId: 'gX', done: false, note: '' },
+  ]);
+  const ring = stats.dailyProgress({ ...d, mode: 'minimal' }, dois);
+  check('anel não conta tarefa de outro modo', ring.done <= ring.total && ring.total === 2, `${ring.done}/${ring.total}`);
+  check('anel do dia não passa de 100%', ring.ratio <= 1, String(ring.ratio));
+}
+
+console.log('\n── Auditoria: gauge do mês ──');
+{
+  const vazio = stats.monthlyGauge({ ...wData, days: [] }, today);
+  check('gauge de mês sem registro projeta 0 (não esconde o vazio)', vazio.projection === 0 && vazio.current === 0);
+  check('gauge nunca projeta acima do alvo', vazio.projection <= vazio.target);
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -25,12 +25,13 @@ npm start          # Expo dev server (QR code no Expo Go)
 npm run android    # emulador/dispositivo
 npm run web        # preview rápido no navegador
 npm run typecheck  # tsc --noEmit (strict)
-npm run test:logic  # 232 testes de lógica pura (score, modos, insights, parser, importador, mural, gráficos, widgets)
+npm run test:logic  # 241 testes de lógica pura (score, modos, insights, parser, importador, mural, gráficos, widgets)
+npm run test:store  # 25 testes de AÇÃO do store (dia fechado, reabrir, pomodoro, metas, fechar o dia)
 npm run test:render # 42 renders dos 21 gráficos + tela, com e sem dado (react-dom/server, sem emulador)
-npm test            # os dois
+npm test            # os três
 ```
 
-Verificação usada antes de cada commit: `npm run typecheck && npm test` (tipos strict + lógica + render).
+Verificação usada antes de cada commit: `npm run typecheck && npm test` (tipos strict + lógica + ações do store + render).
 
 ## Gerando o APK (Android)
 
@@ -84,7 +85,8 @@ src/
     stats.ts             Métricas puras dos 21 gráficos (sem dado = null)
   components/            ui.tsx (design system), charts.tsx + StatsCharts.tsx (svg), sheets, cartões
 scripts/
-  run-logic-tests.mjs    testes das funções puras (232 asserções)
+  run-logic-tests.mjs    testes das funções puras (241 asserções)
+  audited-store.mjs      testes das ações do Zustand com stub de persistência (25 asserções)
   render-charts-smoke.mjs  render dos gráficos com e sem dado (42 montagens)
 ```
 

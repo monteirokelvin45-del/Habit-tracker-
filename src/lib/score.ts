@@ -258,8 +258,12 @@ export function computeScore({ day, goals, previousDays }: ScoreInput): ScoreBre
   honesty = Math.max(0, Math.min(10, honesty - unresolvedFlags * 2));
 
   // 5. Progresso real (20%): hoje vs média dos últimos 7 dias.
+  // `slice(-7)` pegava os 7 registros mais antigos do array quando os dias vinham
+  // fora de ordem (import de backup) — a janela agora é por data.
+  const windowStart = addDays(day.date, -7);
   const recent = previousDays
-    .filter((d) => d.date < day.date && d.score)
+    .filter((d) => d.score && d.date < day.date && d.date >= windowStart)
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
     .slice(-7)
     .map((d) => d.score?.total ?? 0);
   const avg7 = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : null;
@@ -368,9 +372,17 @@ export interface DangerAlert {
 export function detectDanger(days: Day[], goals: Goal[], settings: Settings): DangerAlert[] {
   const alerts: DangerAlert[] = [];
   const closed = days.filter((d) => d.score).sort((a, b) => (a.date < b.date ? -1 : 1));
-  const last = closed.slice(-3);
+  // Regra 14: os thresholds são relativos à meta do usuário, não a um 5 fixo.
+  // Com meta 7, três dias de 5,5 são queda real e antes passavam sem alerta.
+  const floor = settings?.targetDailyScore ?? 7;
+  const lowMark = Math.min(5, floor - 1);
+  const anchor = closed.length ? closed[closed.length - 1]!.date : todayKey();
 
-  const low = last.filter((d) => (d.score?.total ?? 10) < 5);
+  const inWindow = (from: number, to: number) =>
+    closed.filter((d) => d.date >= addDays(anchor, from) && d.date <= addDays(anchor, to));
+  const last = inWindow(-2, 0);
+
+  const low = last.filter((d) => (d.score?.total ?? 10) < lowMark);
   if (low.length >= 2) {
     const worst = low[0];
     const areaTask = worst
@@ -380,7 +392,7 @@ export function detectDanger(days: Day[], goals: Goal[], settings: Settings): Da
       id: 'low-score',
       level: 'yellow',
       title: `Zona de Perigo: ${areaTask?.area ?? 'rotina'}`,
-      detail: `${low.length} dos últimos 3 dias com score abaixo de 5.`,
+      detail: `${low.length} dos últimos 3 dias com score abaixo de ${round1(lowMark)} (sua meta é ${round1(floor)}).`,
       action: `Faça só o mínimo de ${areaTask?.name ?? 'uma meta prioritária'} — ${areaTask?.min ?? '10min'} — antes das 12h.`,
     });
   }
@@ -405,8 +417,10 @@ export function detectDanger(days: Day[], goals: Goal[], settings: Settings): Da
   }
 
   // Tendência: queda de 30%+ na consistência vs semana anterior.
-  const thisWeek = closed.slice(-7).map((d) => d.score?.total ?? 0);
-  const prevWeek = closed.slice(-14, -7).map((d) => d.score?.total ?? 0);
+  // Semana = 7 dias de calendário antes de hoje; antes eram "os 7 últimos registros",
+  // o que comparava semanas diferentes quando havia buracos.
+  const thisWeek = inWindow(-6, 0).map((d) => d.score?.total ?? 0);
+  const prevWeek = inWindow(-13, -7).map((d) => d.score?.total ?? 0);
   const a = avg(thisWeek);
   const b = avg(prevWeek);
   if (a != null && b != null && b > 0 && (a - b) / b <= -0.3 && prevWeek.length >= 3) {
@@ -421,7 +435,7 @@ export function detectDanger(days: Day[], goals: Goal[], settings: Settings): Da
 
   // Padrão: mesma desculpa 3+ vezes nos últimos 7 dias.
   const excuseCount = new Map<string, number>();
-  for (const d of closed.slice(-7)) {
+  for (const d of inWindow(-6, 0)) {
     for (const t of d.tasks) {
       if (t.excuse?.type) excuseCount.set(t.excuse.type, (excuseCount.get(t.excuse.type) ?? 0) + 1);
     }
@@ -439,6 +453,5 @@ export function detectDanger(days: Day[], goals: Goal[], settings: Settings): Da
     }
   }
 
-  void settings;
   return alerts;
 }

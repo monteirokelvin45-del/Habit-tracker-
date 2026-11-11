@@ -183,8 +183,11 @@ function bucketFor(days: Day[], keys: string[], key: string, label: string): Buc
 export function dailyProgress(day: Day | undefined, goals: Goal[]): { done: number; total: number; ratio: number } {
   if (!day) return { done: 0, total: 0, ratio: 0 };
   const checklist = buildChecklist(goals, day.mode);
-  const total = Math.max(checklist.length, day.tasks.length);
-  const done = day.tasks.filter((t) => t.done).length;
+  // O anel mede o checklist do modo atual. Item de outro modo que ficou no histórico
+  // inflava o numerador (3 feitas em 2 tarefas).
+  const keys = new Set(checklist.map((i) => i.extraKey ?? i.goal.id));
+  const total = checklist.length;
+  const done = day.tasks.filter((t) => t.done && keys.has(t.goalId)).length;
   return { done, total, ratio: total ? done / total : 0 };
 }
 
@@ -727,6 +730,8 @@ export function monthlyGauge(data: AppData, end = todayKey()): GaugeInfo {
     label: `${current}/${target} dias na meta`,
     onTrack: ratio >= expectedByNow - 0.05,
     daysLeft,
+    // Projeção = ritmo atual × dias do mês, limitada ao alvo. Mês sem nenhum dia
+    // cumprido projeta 0 (antes o texto caía em "sem projeção").
     projection: dayOfMonth ? Math.min(target, Math.round((current / dayOfMonth) * daysInMonth)) : 0,
   };
 }

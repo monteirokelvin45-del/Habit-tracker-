@@ -105,6 +105,16 @@ export default function TodayScreen() {
       setSheetNote('Dia encerrado: reabra o dia para mudar o checklist. Registro fechado não muda sozinho.');
       return;
     }
+    const wasDone = !!day.tasks.find((t) => t.goalId === goalId)?.done;
+    if (wasDone) {
+      // Já estava feito e o usuário está desmarcando: foi toque errado. Volta atrás
+      // sem exigir o formulário de falha (a falha real se registra marcando e
+      // desmarcando de novo no mesmo fluxo, ou pelo menu de falha do item).
+      store.toggleTask(today, goalId, false);
+      haptic('light');
+      setSheetNote('Tarefa desmarcada. Desmarque de novo para registrar uma falha com motivo.');
+      return;
+    }
     if (!done) {
       // Desmarcar = registrar falha (motivo + custo + plano). Só desmarca ao salvar.
       setFailFor(goalId);
@@ -279,7 +289,13 @@ export default function TodayScreen() {
               <View style={{ flex: 1 }}>
                 <Txt variant="micro" color={colors.textSecondary}>Meio do dia · {day.middayCheckin.at}</Txt>
                 <Txt variant="caption" color={colors.textPrimary} style={{ marginTop: 2 }}>
-                  Prioridade: {day.middayCheckin.priorityDone ? 'feita' : 'não feita'} · energia {day.middayCheckin.energy}/10
+                  Prioridade:{" "}
+                  {day.middayCheckin.priorityDone
+                    ? 'feita'
+                    : day.middayCheckin.partial
+                      ? 'parcial'
+                      : 'não feita'}{' '}
+                  · energia {day.middayCheckin.energy}/10
                 </Txt>
                 {day.middayCheckin.note ? <Muted>{day.middayCheckin.note}</Muted> : null}
               </View>
@@ -346,7 +362,9 @@ export default function TodayScreen() {
           <Card>
             <Txt variant="micro" color={colors.textSecondary}>Ponto de virada</Txt>
             <Txt variant="caption" color={colors.textPrimary} style={{ marginTop: 4 }}>
-              {day.middayCheckin.at} · prioridade {day.middayCheckin.priorityDone ? 'feita' : 'não feita'} · energia {day.middayCheckin.energy}/10
+              {day.middayCheckin.at} · prioridade{' '}
+              {day.middayCheckin.priorityDone ? 'feita' : day.middayCheckin.partial ? 'parcial' : 'não feita'} · energia{' '}
+              {day.middayCheckin.energy}/10
             </Txt>
           </Card>
         ) : null}
@@ -441,7 +459,12 @@ export default function TodayScreen() {
         onClose={() => setMiddayOpen(false)}
         onSave={(payload: MiddayPayload) => {
           ensureDayExists();
-          store.setMidday(today, { priorityDone: payload.priorityDone, energy: payload.energy, note: payload.note });
+          store.setMidday(today, {
+            priorityDone: payload.priorityDone,
+            partial: payload.partial ?? false,
+            energy: payload.energy,
+            note: payload.note,
+          });
           setMiddayOpen(false);
         }}
       />

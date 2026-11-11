@@ -23,9 +23,17 @@ export default function PomodoroScreen() {
   const today = todayKey();
   const day = store.days.find((d) => d.date === today);
   const items = useMemo(() => buildChecklist(store.goals, day?.mode ?? 'normal'), [store.goals, day?.mode]);
+  // O checklist pode ter extras do modo ("extra:revisao"): a chave da tarefa é o
+  // extraKey, senão o pomodoro era gravado num goalId que não existe no dia.
+  const taskKey = (i: (typeof items)[number]) => i.extraKey ?? i.goal.id;
 
   const [preset, setPreset] = useState<Preset>(PRESETS[0]!);
-  const [goalId, setGoalId] = useState<string>(items[0]?.goal.id ?? '');
+  const [goalId, setGoalId] = useState<string>(items[0] ? taskKey(items[0]) : '');
+  // A lista de tarefas muda depois (nova meta, outro modo): mantém a seleção válida.
+  useEffect(() => {
+    if (!items.length) return;
+    if (!items.some((i) => taskKey(i) === goalId)) setGoalId(taskKey(items[0]!));
+  }, [items, goalId]);
   const [phase, setPhase] = useState<'focus' | 'rest'>('focus');
   const [remaining, setRemaining] = useState(preset.focus * 60);
   const remainingRef = useRef(preset.focus * 60);
@@ -122,7 +130,12 @@ export default function PomodoroScreen() {
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {items.length === 0 ? <NoData label="Nenhuma tarefa no checklist de hoje" /> : null}
           {items.map((i) => (
-            <Chip key={i.goal.id} label={i.goal.name} selected={goalId === i.goal.id} onPress={() => setGoalId(i.goal.id)} />
+            <Chip
+              key={taskKey(i)}
+              label={i.goal.name}
+              selected={goalId === taskKey(i)}
+              onPress={() => setGoalId(taskKey(i))}
+            />
           ))}
         </View>
 

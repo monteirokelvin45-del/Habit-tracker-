@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { emptyDiary } from './types';
 import type {
   AppData,
   BadgeState,
@@ -77,10 +78,23 @@ async function read<T>(key: string, fallback: T): Promise<T> {
   }
 }
 
+export interface StorageHealth {
+  /** Última chave que falhou ao gravar (null = tudo gravou). */
+  lastFailedKey: string | null;
+  failedWrites: number;
+}
+
+export const storageHealth: StorageHealth = { lastFailedKey: null, failedWrites: 0 };
+
 async function write(key: string, value: unknown): Promise<void> {
   try {
     await AsyncStorage.setItem(key, JSON.stringify(value));
+    storageHealth.lastFailedKey = null;
   } catch (e) {
+    // Antes era só um warn no console: o app seguia mostrando o dado como salvo.
+    // Agora a falha fica registrada e o Perfil consegue avisar o usuário.
+    storageHealth.lastFailedKey = key;
+    storageHealth.failedWrites += 1;
     console.warn('[MY PRIME] falha ao salvar', key, e);
   }
 }
@@ -93,11 +107,21 @@ async function write(key: string, value: unknown): Promise<void> {
 export function normalizeData(input: Partial<AppData> | null | undefined, base: AppData): AppData {
   const raw = input ?? {};
   const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  // Dia sem diário/energia quebrava o fechamento e o histórico (crash em computeScore).
+  const days = arr<Partial<Day>>(raw.days)
+    .filter((d) => !!d && typeof d === 'object' && typeof d.date === 'string')
+    .map((d) => ({
+      ...d,
+      energy: d.energy ?? { physical: 5, mental: 5, stress: 5 },
+      mode: d.mode ?? 'normal',
+      tasks: Array.isArray(d.tasks) ? d.tasks : [],
+      diary: { ...emptyDiary(), ...(d.diary ?? {}) },
+    })) as Day[];
   return {
     onboarded: raw.onboarded ?? base.onboarded,
     user: { ...base.user, ...(raw.user ?? {}), areas: arr<string>((raw.user as User | undefined)?.areas) },
     goals: arr<Goal>(raw.goals),
-    days: arr<Day>(raw.days),
+    days,
     rules: arr<Rule>(raw.rules),
     rewards: arr<Reward>(raw.rewards),
     books: arr<Book>(raw.books),

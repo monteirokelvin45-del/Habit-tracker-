@@ -52,8 +52,10 @@ export function widgetData(data: AppData, date = todayKey()): WidgetData {
   const checklist = buildChecklist(data.goals, mode);
 
   const tasks = day?.tasks ?? [];
-  const done = tasks.filter((t) => t.done).length;
-  const total = Math.max(checklist.length, tasks.length);
+  // Mesma regra do checklist na tela: só conta o que pertence ao modo do dia.
+  const keys = new Set(checklist.map((i) => i.extraKey ?? i.goal.id));
+  const done = tasks.filter((t) => t.done && keys.has(t.goalId)).length;
+  const total = checklist.length || tasks.length;
 
   const nextItem = checklist.find((item) => {
     const key = item.extraKey ?? item.goal.id;

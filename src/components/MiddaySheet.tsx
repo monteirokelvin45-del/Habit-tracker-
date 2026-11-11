@@ -8,6 +8,7 @@ export interface MiddayPayload {
   priorityDone: boolean;
   energy: number;
   note: string;
+  /** Resposta "parcial": registrada como tal, sem virar "não feita". */
   partial?: boolean;
 }
 
@@ -37,6 +38,8 @@ export function MiddaySheet({
           onPress={() => {
             haptic('medium');
             onSave({
+              // Antes só "parcial" ficava sem registro: "sim" virava `true` e "não"
+              // virava `false` (mesmo efeito), e o parcial era lido como "não feita".
               priorityDone: answer === 'yes',
               partial: answer === 'partial',
               energy,

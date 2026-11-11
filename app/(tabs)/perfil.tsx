@@ -23,9 +23,10 @@ import {
 import { useStore } from '../../src/lib/store';
 import { BADGES } from '../../src/lib/badges';
 import { exportJson, exportPdf } from '../../src/lib/export';
-import { generalStreak } from '../../src/lib/score';
+import { generalStreak, goalStreak } from '../../src/lib/score';
 import { closedDays } from '../../src/lib/insights';
 import { todayKey } from '../../src/lib/date';
+import { storageHealth } from '../../src/lib/storage';
 import { haptic } from '../../src/lib/haptics';
 import { LIFE_AREAS } from '../../src/lib/types';
 
@@ -50,6 +51,15 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bgPrimary }} edges={['top']}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}>
+        {storageHealth.failedWrites > 0 ? (
+          <Card accent={colors.red + '55'}>
+            <Txt variant="caption" color={colors.red}>
+              ⚠️ A última gravação falhou ({storageHealth.failedWrites}x). Parte dos dados pode não ter sido
+              salva no dispositivo — exporte o JSON antes de fechar o app.
+            </Txt>
+            <Muted style={{ marginTop: 4 }}>Chave com problema: {storageHealth.lastFailedKey ?? 'desconhecida'}</Muted>
+          </Card>
+        ) : null}
         {/* HEADER */}
         <Row style={{ justifyContent: 'space-between' }}>
           <View>
@@ -212,7 +222,7 @@ export default function ProfileScreen() {
               .map((g) => (
                 <Row key={g.id} style={{ justifyContent: 'space-between' }}>
                   <Txt variant="caption" color={colors.textSecondary}>{g.name}</Txt>
-                  <Badge label={`🔥 ${store.days.length ? goalStreakLabel(store.days, g.id) : 0}d`} color={colors.orange} />
+                  <Badge label={`🔥 ${goalStreak(store.days, g.id, todayKey())}d`} color={colors.orange} />
                 </Row>
               ))
           )}
@@ -300,19 +310,3 @@ export default function ProfileScreen() {
   );
 }
 
-function goalStreakLabel(days: ReturnType<typeof closedDays>, goalId: string): number {
-  let streak = 0;
-  const map = new Map(days.map((d) => [d.date, d]));
-  let cursor: string | null = todayKey();
-  for (let i = 0; i < 400 && cursor; i++) {
-    const day = map.get(cursor);
-    const task = day?.tasks.find((t) => t.goalId === goalId);
-    if (!day || !task) break;
-    if (!task.done) break;
-    streak += 1;
-    const d: Date = new Date(cursor);
-    d.setDate(d.getDate() - 1);
-    cursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  return streak;
-}

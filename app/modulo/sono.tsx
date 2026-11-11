@@ -21,7 +21,6 @@ import { lastNDays, todayKey, weekdayShort } from '../../src/lib/date';
 import { sleepCorrelation } from '../../src/lib/insights';
 import { SLEEP_BLOCKERS } from '../../src/lib/types';
 import { haptic } from '../../src/lib/haptics';
-import { evaluateBadges } from '../../src/lib/badges';
 
 function hoursBetween(bed: string, wake: string): number {
   const [bh, bm] = bed.split(':').map(Number);
@@ -53,13 +52,13 @@ export default function SleepScreen() {
 
   const avgHours = nights.length ? nights.reduce((a, b) => a + b.hours, 0) / nights.length : null;
   const corr = sleepCorrelation(store);
+  const computed = hoursBetween(bed, wake);
+  const sameTime = bed === wake;
   const blockerCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const d of store.days) for (const b of d.diary.sleep.blockers) map.set(b, (map.get(b) ?? 0) + 1);
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [store.days]);
-
-  const computed = hoursBetween(bed, wake);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
@@ -142,34 +141,20 @@ export default function SleepScreen() {
         title="Registro de sono"
         footer={
           <PrimaryButton
-            label={`Salvar (${computed}h)`}
+            label={sameTime ? 'Ajuste os horários' : `Salvar (${computed}h)`}
+            disabled={sameTime || computed <= 0}
             onPress={() => {
-              store.ensureDay(today);
-              const current = store.days.find((d) => d.date === today);
-              if (current) {
-                const days = store.days.map((d) =>
-                  d.date === today
-                    ? {
-                        ...d,
-                        diary: {
-                          ...d.diary,
-                          sleep: {
-                            hours: computed,
-                            quality: Math.min(10, Math.max(0, Number(quality) || 0)),
-                            blockers,
-                            bedTime: bed,
-                            wakeTime: wake,
-                          },
-                        },
-                      }
-                    : d,
-                );
-                useStore.setState({
-                  days,
-                  badges: evaluateBadges({ ...useStore.getState(), days }),
-                });
-                void import('../../src/lib/storage').then((m) => m.persist('days', days));
-              }
+              // Antes esta tela montava o dia inteiro por fora (setState manual):
+              // atualização de badges duplicada e caminho diferente do resto do app.
+              store.patchDiary(today, {
+                sleep: {
+                  hours: computed,
+                  quality: Math.min(10, Math.max(0, Number(quality) || 0)),
+                  blockers,
+                  bedTime: bed,
+                  wakeTime: wake,
+                },
+              });
               setSheet(false);
               haptic('success');
             }}
@@ -184,7 +169,10 @@ export default function SleepScreen() {
             <TimeField label="Acordou" value={wake} onChange={setWake} />
           </View>
         </Row>
-        <Muted>Horas calculadas: {computed}h</Muted>
+        <Muted>
+          Horas calculadas: {computed}h
+          {sameTime ? ' — deitou e acordou no mesmo horário: confira os horários.' : ''}
+        </Muted>
         <Field label="Qualidade percebida (1-10)" value={quality} onChangeText={setQuality} keyboardType="number-pad" />
         <Txt variant="caption" color={colors.textSecondary}>O que atrapalhou</Txt>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>

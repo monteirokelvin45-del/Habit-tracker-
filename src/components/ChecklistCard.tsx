@@ -25,8 +25,11 @@ export function ChecklistCard({
   const items = useMemo(() => buildChecklist(goals, day.mode), [goals, day.mode]);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const doneCount = day.tasks.filter((t) => t.done).length;
-  const total = Math.max(items.length, day.tasks.length);
+  // Conta só itens do checklist do modo atual: tarefas de outros modos (ataque,
+  // recuperação) ficam no histórico e faziam o contador mostrar "3/2 feitas".
+  const currentKeys = new Set(items.map(keyOf));
+  const doneCount = day.tasks.filter((t) => t.done && currentKeys.has(t.goalId)).length;
+  const total = items.length;
   const allDone = items.length > 0 && items.every((i) => day.tasks.find((t) => t.goalId === keyOf(i))?.done);
 
   if (!goals.filter((g) => g.active && !g.archived).length) {
@@ -120,6 +123,21 @@ export function ChecklistCard({
                   <Txt color={colors.textMuted}>{isOpen ? '▴' : '▾'}</Txt>
                 </Pressable>
               </Row>
+
+              {!done && !readOnly ? (
+                <Pressable
+                  onPress={() => {
+                    haptic('warning');
+                    onLongFail(key);
+                  }}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                >
+                  <Txt variant="micro" color={colors.red} style={{ letterSpacing: 0 }}>
+                    registrar falha (motivo obrigatório)
+                  </Txt>
+                </Pressable>
+              ) : null}
 
               {isOpen ? (
                 <View style={{ gap: 6, marginTop: 4 }}>

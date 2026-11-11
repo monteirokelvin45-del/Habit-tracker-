@@ -90,6 +90,8 @@ export interface ScoreBreakdown {
 
 export interface MiddayCheckin {
   priorityDone: boolean;
+  /** Resposta "parcial": não é sim nem não, e não pode virar "não feita". */
+  partial?: boolean;
   energy: number;
   note: string;
   at: string;
@@ -287,6 +289,51 @@ export const AREA_EMOJI: Record<string, string> = {
   Saúde: '🏥',
   Ayanokoji: '🎭',
 };
+
+/**
+ * Diário completo a partir de qualquer coisa (dia antigo, backup editado, JSON de
+ * outra versão). Sem isso, um `day.diary` ausente derrubava `computeScore`
+ * ("Cannot read properties of undefined (reading 'context')") e abrir um dia
+ * antigo no histórico fechava a tela.
+ */
+export function normalizeDiary(input: unknown): Diary {
+  const base = emptyDiary();
+  if (!input || typeof input !== 'object') return base;
+  const d = input as Partial<Diary>;
+  const ctx = (d.context ?? {}) as Partial<DiaryContext>;
+  const sleep = (d.sleep ?? {}) as Partial<SleepLog>;
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return {
+    promised: str(d.promised),
+    done: str(d.done),
+    avoided: str(d.avoided),
+    blocked: str(d.blocked),
+    context: {
+      where: str(ctx.where),
+      when: str(ctx.when),
+      distraction: str(ctx.distraction),
+      trigger: str(ctx.trigger),
+    },
+    correction: str(d.correction),
+    mood: str(d.mood),
+    sleep: {
+      hours: num(sleep.hours),
+      quality: num(sleep.quality),
+      blockers: Array.isArray(sleep.blockers) ? sleep.blockers.filter((b): b is string => typeof b === 'string') : [],
+      bedTime: typeof sleep.bedTime === 'string' ? sleep.bedTime : undefined,
+      wakeTime: typeof sleep.wakeTime === 'string' ? sleep.wakeTime : undefined,
+    },
+    food: str(d.food),
+    focus: num(d.focus),
+    temptation: str(d.temptation),
+    relapse: str(d.relapse),
+    smallWin: str(d.smallWin),
+    impulseCost: num(d.impulseCost),
+    emotions: Array.isArray(d.emotions) ? d.emotions.filter((e): e is string => typeof e === 'string') : [],
+    photo: typeof d.photo === 'string' ? d.photo : undefined,
+  };
+}
 
 export function emptyDiary(): Diary {
   return {

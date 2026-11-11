@@ -137,6 +137,46 @@ Todas implementadas e cobertas por teste ✅ (ver tabela no README).
 
 ---
 
+## Auditoria de erros (varredura completa)
+
+Varredura feita em `src/lib`, `src/components` e `app/**`: cada defeito abaixo foi **reproduzido**
+(script ou teste falhando) antes da correção e agora tem teste de regressão no `npm test`.
+
+| # | Defeito encontrado | Efeito real | Correção |
+|---|---|---|---|
+| 1 | `computeScore` lia `day.diary.context` sem garantia | dia antigo/backup sem diário **derrubava** o fechamento e o histórico (TypeError) | `normalizeDiary()` + `sanitizeDay()`; boot e import normalizam os dias |
+| 2 | `toggleTask` liberava alteração no dia fechado **de hoje** | marcava/desmarcava tarefa de um dia já encerrado, com score calculado | dia fechado recusa a alteração (só `reopenDay` muda o passado) |
+| 3 | `setEnergy`/`setMode`/`setTaskNote`/`setTaskExcuse`/`setMidday`/`addPomodoro` ignoravam o dia fechado | reescreviam energia, modo e tarefas de dias encerrados | todos barram dia fechado |
+| 4 | `reopenDay` mantinha `score` | dia reaberto contava como cumprido em streaks, insights, waffle e gráficos | reabrir descarta o score |
+| 5 | `addPomodoro` sem `ensureDay` | ciclo concluído era descartado se o dia ainda não existia (perda de tempo de foco) | cria o dia antes de gravar |
+| 6 | `patchDiary` não existia | tela de Sono montava o dia inteiro por `useStore.setState` (fora do padrão, badges duplicados) | ação `patchDiary` no store, usada por Sono |
+| 7 | `deleteGoal` apagava tarefa de **dias passados abertos** | histórico reescrito (o comentário dizia o contrário) | só o dia de hoje perde a tarefa |
+| 8 | `archiveGoal`/`upsertGoal` deixavam tarefa desativada no checklist | meta desativada continuava no checklist de hoje; desarquivar reativava meta que estava desligada | checklist segue o estado da meta; `active` anterior é preservado |
+| 9 | Contador do checklist somava tarefas de outros modos | mostrava "3/2 feitas" e anel > 100% | conta só as chaves do checklist do modo (tela, anel e widget) |
+| 10 | Pomodoro usava `goal.id` em vez da chave da tarefa | extra do modo (`extra:revisao`) gravava tempo num id inexistente; trocar de meta não atualizava a seleção | usa `extraKey ?? id` e mantém a seleção válida |
+| 11 | Meio do dia perdia a resposta "parcial" | "parcial" virava "não feita" na tela | `partial` persistido e exibido |
+| 12 | Desmarcar um "feito" por engano exigia registro de falha | toque errado obrigava a inventar uma falha | primeiro toque desfaz; falha tem botão próprio no item |
+| 13 | Gesto longo era a **única** forma de registrar falha | inacessível no web/teclado/leitor de tela | botão "registrar falha" em cada item em aberto |
+| 14 | `detectDanger` ignorava `settings.targetDailyScore` | com meta 7, dias de 4–5 não geravam zona de perigo | threshold relativo à meta (`min(5, meta-1)`) |
+| 15 | Janelas "últimos 7/14 dias" por posição no array | histórico com buracos comparava períodos errados (progresso do score, tendência, desculpa, honestidade) | janelas por data em `score.ts`, `insights.ts`, `badges.ts` |
+| 16 | Badge "Honestidade Total" contava 7 dias quaisquer | desbloqueava com dias espalhados no ano | exige 7 dias seguidos |
+| 17 | Streak por área começava em "hoje" mesmo sem registro | abrir o app antes de marcar zerava a conquista | começa no último dia registrado |
+| 18 | Perfil tinha cópia própria do cálculo de streak | podia divergir do resto do app | usa `goalStreak` da lib |
+| 19 | `normalizeData` não normalizava `days` | backup editado à mão entrava cru e quebrava telas | dias normalizados no import |
+| 20 | Falha de `AsyncStorage.setItem` era só `console.warn` | app mostrava "salvo" sem ter salvo | `storageHealth` + aviso no Perfil |
+| 21 | Salvar meta com nome vazio criava meta fantasma | item em branco no checklist | `save` recusa nome vazio |
+| 22 | Editar meta descartava `originId` | vínculo com histórico importado se perdia | `originId` preservado |
+| 23 | Fechar o dia 2× recriava o dia seguinte | perdia o que já tinha sido preenchido em "amanhã" | dia seguinte nunca é recriado se já existe |
+| 24 | Meta sem nome / dia sem tarefas no gauge e no anel | projeção confusa e numerador inflado | projeção mínima 0 e anel limitado ao checklist do modo |
+
+Testes que guardam essas correções:
+
+- `npm run test:store` — **25 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
+  dado antigo). Compila o store real com stub de persistência; é o teste que pega estado errado.
+- `npm run test:logic` — **241 asserções** (inclui as novas de janela por data, threshold por meta,
+  badge de honestidade e anel do dia).
+- `npm run test:render` — **42 montagens** dos gráficos com e sem dado.
+
 ## Desvios e limites — declarados honestamente
 
 1. **chart-kit** não é usado (só `react-native-svg`). O briefing pedia a lib; ela não cobre heatmap/radar
@@ -152,9 +192,12 @@ Todas implementadas e cobertas por teste ✅ (ver tabela no README).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **132/132** (modos, score, streaks, cobrança, gate de 7 dias,
-  zona de perigo, recompensas, badges, parser, importador, mural de constância, widget principal e
-  widget do mural — incluindo render estrutural dos dois widgets)
+- `node scripts/run-logic-tests.mjs` → **241/241** (modos, score, streaks, cobrança, gate de 7 dias,
+  zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
+  principal e widget do mural — incluindo render estrutural dos dois widgets)
+- `node scripts/audited-store.mjs` → **25/25** (ações do store: dia fechado, reabrir, pomodoro, metas,
+  fechar o dia, dia vindo de backup antigo)
+- `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200
 - `npx expo prebuild -p android` → `Prime.java` + `Constancia.java`,
   `widgetprovider_prime.xml` + `widgetprovider_constancia.xml`, dois `<receiver>` no manifest

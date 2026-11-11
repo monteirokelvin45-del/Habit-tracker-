@@ -7,3 +7,4 @@ android/
 ios/
 .logic-build/
 .render-build/
+.store-build/

@@ -21,7 +21,7 @@ import type {
   User,
   WeightEntry,
 } from './types';
-import { emptyDiary } from './types';
+import { emptyDiary, normalizeDiary } from './types';
 import { addDays, nowHHmm, todayKey } from './date';
 import { buildChecklist, computeScore, taskKeyFor } from './score';
 import { evaluateBadges } from './badges';
@@ -56,7 +56,9 @@ export interface StoreState extends AppData {
     data: { type: string; legitimacy: string; cost: string; recoveryPlan: string },
   ) => void;
   addPomodoro: (date: string, goalId: string, minutes: number) => void;
-  setMidday: (date: string, data: { priorityDone: boolean; energy: number; note: string }) => void;
+  setMidday: (date: string, data: { priorityDone: boolean; energy: number; note: string; partial?: boolean }) => void;
+  /** Atualiza campos do diário fora do fechamento (sono, humor, foco...). */
+  patchDiary: (date: string, patch: Partial<Diary>) => void;
   closeDay: (date: string, diary: Diary) => Day;
   resolveHonestyFlag: (date: string, goalId: string, resolution: 'confirmed' | 'adjusted') => void;
   reopenDay: (date: string) => void;
@@ -105,6 +107,11 @@ function toIsoCreatedAt(value: string | undefined): string | null {
   return Number.isFinite(time) ? new Date(time).toISOString() : null;
 }
 
+/** Dia encerrado é registro fechado: só `reopenDay` muda o passado. */
+function isClosed(day: Day | undefined): boolean {
+  return !!day?.closedAt;
+}
+
 function makeDay(date: string, goals: Goal[], mode: DayMode = 'normal'): Day {
   return {
     date,
@@ -119,6 +126,31 @@ function makeDay(date: string, goals: Goal[], mode: DayMode = 'normal'): Day {
   };
 }
 
+/**
+ * Dia vindo de storage/backup: garante o formato mínimo que o app inteiro assume
+ * (energia, tarefas, diário). Função pura — usada no boot e no import de backup.
+ */
+export function sanitizeDay(input: Day): Day {
+  const d = input as Partial<Day>;
+  const energy = d.energy ?? { physical: 5, mental: 5, stress: 5 };
+  return {
+    ...d,
+    date: String(d.date ?? todayKey()),
+    energy: {
+      physical: Number.isFinite(energy.physical) ? energy.physical : 5,
+      mental: Number.isFinite(energy.mental) ? energy.mental : 5,
+      stress: Number.isFinite(energy.stress) ? energy.stress : 5,
+    },
+    mode: d.mode ?? 'normal',
+    tasks: Array.isArray(d.tasks)
+      ? d.tasks
+          .filter((t): t is Day['tasks'][number] => !!t && typeof t.goalId === 'string')
+          .map((t) => ({ ...t, done: !!t.done, note: typeof t.note === 'string' ? t.note : '' }))
+      : [],
+    diary: normalizeDiary(d.diary),
+  };
+}
+
 export const useStore = create<StoreState>((set, get) => ({
   ...EMPTY_DATA,
   status: 'idle',
@@ -128,7 +160,9 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ status: 'loading' });
     const { loadAll } = await import('./storage');
     const data = await loadAll();
-    set({ ...data, status: 'ready' });
+    // Dado gravado por versão antiga pode ter dia sem diário/energia: normaliza no
+    // boot para nenhuma tela quebrar no meio do uso.
+    set({ ...data, days: data.days.map(sanitizeDay), status: 'ready' });
   },
 
   setBooted() {
@@ -185,6 +219,8 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setEnergy(date, energy) {
+    const target = get().days.find((d) => d.date === date);
+    if (isClosed(target)) return;
     const days = get().days.map((d) => (d.date === date ? { ...d, energy } : d));
     set({ days });
     void persist('days', days);
@@ -193,6 +229,8 @@ export const useStore = create<StoreState>((set, get) => ({
   setMode(date, mode) {
     const state = get();
     const base = state.days.find((d) => d.date === date) ?? makeDay(date, state.goals, mode);
+    // Dia fechado não muda de modo: o checklist que gerou o score fica congelado.
+    if (isClosed(base)) return;
     const restored: Day['tasks'] = buildChecklist(state.goals, mode).map((item) => {
       const key = taskKeyFor(item);
       const previous = base.tasks.find((t) => t.goalId === key);
@@ -216,9 +254,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
   toggleTask(date, goalId, done) {
     const state = get();
-    // Dia já encerrado é registro fechado: alterar tarefa depois mudaria o passado.
+    // Dia já encerrado é registro fechado — inclusive o de hoje: alterar tarefa
+    // depois do fechamento mudaria um score já calculado.
     const closed = state.days.find((d) => d.date === date)?.closedAt;
-    if (closed && date !== todayKey()) return;
+    if (closed) return;
     let day = state.days.find((d) => d.date === date);
     if (!day) day = makeDay(date, state.goals);
     const exists = day.tasks.some((t) => t.goalId === goalId);
@@ -260,6 +299,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setTaskNote(date, goalId, note) {
+    if (isClosed(get().days.find((d) => d.date === date))) return;
     const days = get().days.map((d) =>
       d.date === date ? { ...d, tasks: d.tasks.map((t) => (t.goalId === goalId ? { ...t, note } : t)) } : d,
     );
@@ -269,6 +309,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setTaskExcuse(date, goalId, data) {
     const state = get();
+    if (isClosed(state.days.find((d) => d.date === date))) return;
     const next = state.days.map((d) =>
       d.date === date
         ? {
@@ -307,6 +348,10 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   addPomodoro(date, goalId, minutes) {
+    const state = get();
+    if (isClosed(state.days.find((d) => d.date === date))) return;
+    // Sem o dia criado antes, o pomodoro era calculado e descartado (nenhum dia recebia).
+    if (!state.days.some((d) => d.date === date)) state.ensureDay(date);
     const days = get().days.map((d) =>
       d.date === date
         ? { ...d, pomodoros: [...(d.pomodoros ?? []), { goalId, minutes, at: nowHHmm() }] }
@@ -317,11 +362,27 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setMidday(date, data) {
+    if (isClosed(get().days.find((d) => d.date === date))) return;
     const days = get().days.map((d) =>
       d.date === date ? { ...d, middayCheckin: { ...data, at: nowHHmm() } } : d,
     );
     set({ days });
     void persist('days', days);
+  },
+
+  patchDiary(date, patch) {
+    const state = get();
+    if (isClosed(state.days.find((d) => d.date === date))) return;
+    if (!state.days.some((d) => d.date === date)) state.ensureDay(date);
+    const days = get().days.map((d) =>
+      d.date === date ? { ...d, diary: { ...d.diary, ...patch } } : d,
+    );
+    const badges = evaluateBadges({ ...state, days });
+    set({ days, badges });
+    void persistMany([
+      ['days', days],
+      ['badges', badges],
+    ]);
   },
 
   closeDay(date, diary) {
@@ -337,6 +398,8 @@ export const useStore = create<StoreState>((set, get) => ({
 
     const nextDays = [...days];
     // Abre o dia seguinte já com o modo sugerido (recuperação ou normal).
+    // Se o dia seguinte já existe, ele NÃO é recriado: reabrir e fechar de novo não
+    // pode apagar o que já tinha sido preenchido lá.
     const tomorrow = addDays(date, 1);
     if (!nextDays.some((d) => d.date === tomorrow)) {
       nextDays.push(makeDay(tomorrow, state.goals, score.total < 4 ? 'recovery' : 'normal'));
@@ -380,8 +443,10 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   reopenDay(date) {
+    // Score é resultado de um dia fechado: deixá-lo aqui faria streaks, insights
+    // e todos os gráficos contarem um dia reaberto como cumprido.
     const days = get().days.map((d) =>
-      d.date === date ? { ...d, closedAt: undefined } : d,
+      d.date === date ? { ...d, closedAt: undefined, score: undefined } : d,
     );
     set({ days });
     void persist('days', days);
@@ -392,11 +457,15 @@ export const useStore = create<StoreState>((set, get) => ({
     const goals = state.goals.some((g) => g.id === goal.id)
       ? state.goals.map((g) => (g.id === goal.id ? goal : g))
       : [...state.goals, goal];
-    // Adiciona a nova tarefa ao checklist de hoje se a meta estiver ativa.
+    // O checklist de hoje segue o estado da meta: ativa entra, desativada/arquivada sai.
     const today = todayKey();
     const days = state.days.map((d) => {
-      if (d.date !== today || !goal.active || goal.archived) return d;
-      if (d.tasks.some((t) => t.goalId === goal.id)) return d;
+      if (d.date !== today || d.closedAt) return d;
+      const has = d.tasks.some((t) => t.goalId === goal.id);
+      if (!goal.active || goal.archived) {
+        return has ? { ...d, tasks: d.tasks.filter((t) => t.goalId !== goal.id) } : d;
+      }
+      if (has) return d;
       return { ...d, tasks: [...d.tasks, { goalId: goal.id, done: false, note: '' }] };
     });
     set({ goals, days });
@@ -410,10 +479,15 @@ export const useStore = create<StoreState>((set, get) => ({
     const state = get();
     const target = state.goals.find((g) => g.id === id);
     const archived = !target?.archived;
-    const goals = state.goals.map((g) => (g.id === id ? { ...g, archived, active: archived ? false : true } : g));
+    // Desarquivar devolve a meta ao estado que ela tinha antes (uma meta que já
+    // estava desativada não pode voltar ativa só por sair do arquivo).
+    const previousActive = target?.active ?? true;
+    const goals = state.goals.map((g) =>
+      g.id === id ? { ...g, archived, active: archived ? false : previousActive } : g,
+    );
     const today = todayKey();
     const days = state.days.map((d) => {
-      if (d.date !== today) return d;
+      if (d.date !== today || d.closedAt) return d;
       if (archived) return { ...d, tasks: d.tasks.filter((t) => t.goalId !== id) };
       if (d.tasks.some((t) => t.goalId === id)) return d;
       return { ...d, tasks: [...d.tasks, { goalId: id, done: false, note: '' }] };
@@ -431,12 +505,12 @@ export const useStore = create<StoreState>((set, get) => ({
     const goals = state.goals.filter((g) => g.id !== id);
     // Tarefa de meta excluída vira órfã: some do checklist (a meta não existe mais).
     // O histórico do dia é preservado como está — não reescrevemos o passado.
+    // Só o dia de hoje perde a tarefa. Qualquer dia passado (fechado ou não) é
+    // histórico: apagar ali reescreveria o que aconteceu.
     const today = todayKey();
     const days = target
       ? state.days.map((d) =>
-          d.date === today || !d.closedAt
-            ? { ...d, tasks: d.tasks.filter((t) => t.goalId !== id) }
-            : d,
+          d.date === today ? { ...d, tasks: d.tasks.filter((t) => t.goalId !== id) } : d,
         )
       : state.days;
     set({ goals, days });
@@ -601,7 +675,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (summary.full) {
       // Backup pode estar incompleto/editado à mão: normaliza antes de gravar.
       const { normalizeData } = await import('./storage');
-      const full = normalizeData(summary.full, { ...EMPTY_DATA, settings: state.settings });
+      const raw = normalizeData(summary.full, { ...EMPTY_DATA, settings: state.settings });
+      const full: typeof raw = { ...raw, days: raw.days.map(sanitizeDay) };
       set({
         onboarded: true,
         user: full.user,

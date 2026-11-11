@@ -289,7 +289,11 @@ export function honestyChecks(data: AppData): HonestyFlag[] {
     }
   }
 
-  const recent = closed.slice(-14);
+  // "Últimos 14 dias" por calendário, não por posição: com buracos no histórico o
+  // slice(-14) trazia meses de distância e misturava períodos diferentes.
+  const anchorDate = closed.length ? closed[closed.length - 1]!.date : todayKey();
+  const from14 = addDays(anchorDate, -13);
+  const recent = closed.filter((d) => d.date >= from14 && d.date <= anchorDate);
   for (const day of recent) {
     for (const t of day.tasks) {
       if (!t.done) continue;
