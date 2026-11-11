@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import * as SvgModule from 'react-native-svg';
 
@@ -58,44 +58,26 @@ export function ScoreRing({
   color: string;
   animated?: boolean;
 }) {
-  const [progress, setProgress] = React.useState(0);
   const anim = useRef(new Animated.Value(animated ? 0 : score / 10)).current;
-  const [label, setLabel] = React.useState(animated ? 0 : score);
+  const [pct, setPct] = useState(animated ? 0 : score / 10);
 
   useEffect(() => {
-    if (!animated) return;
+    if (!animated) {
+      setPct(score / 10);
+      return;
+    }
     anim.setValue(0);
-    const sub = anim.addListener(({ value }) => setProgress(value));
-    const id = anim.addListener(() => {});
+    const listener = anim.addListener(({ value }) => setPct(value));
     Animated.timing(anim, {
       toValue: score / 10,
       duration: 800,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
-    }).start(({ finished }) => {
-      if (finished) setLabel(score);
-    });
-    // contador sincronizado
-    const count = setInterval(() => {
-      setProgress((p) => {
-        const next = p + 0.02;
-        return next >= score / 10 ? score / 10 : next;
-      });
-    }, 16);
-    const clear = setTimeout(() => clearInterval(count), 820);
-    return () => {
-      anim.removeListener(sub);
-      anim.removeListener(id);
-      clearInterval(count);
-      clearTimeout(clear);
-    };
+    }).start();
+    return () => anim.removeListener(listener);
   }, [score, animated, anim]);
 
-  useEffect(() => {
-    setLabel(Math.round(progress * 100) / 10);
-  }, [progress]);
-
-  const pct = animated ? progress : score / 10;
+  const label = Math.round(pct * 100) / 10;
   const stroke = 12;
   const r = (size - stroke) / 2;
   const circumference = 2 * Math.PI * r;
