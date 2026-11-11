@@ -67,7 +67,34 @@ jobs:
 
       - name: Build do APK (release)
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx4g
+        env:
+          # Log do Gradle em arquivo: vira anotação (::error::) e artefato quando falha,
+          # para não depender do visualizador de log do Actions.
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease --no-daemon --stacktrace \
+            -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee ../gradle-build.log | tail -n 40
+        continue-on-error: true
+        id: gradle
+
+      - name: Resumir falha do Gradle
+        if: steps.gradle.outcome == 'failure'
+        run: |
+          echo "### Falha no Gradle" >> "$GITHUB_STEP_SUMMARY"
+          grep -nE "FAILURE:|What went wrong|Caused by:|error:|FAILED" -A 6 gradle-build.log | head -c 6000 >> "$GITHUB_STEP_SUMMARY" || true
+          while IFS= read -r line; do
+            echo "::error title=Gradle::${line:0:400}"
+          done < <(grep -nE "e: |error:|What went wrong" gradle-build.log | head -n 8)
+          exit 1
+
+      - name: Log do Gradle (quando falha)
+        if: steps.gradle.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: gradle-build.log
+          retention-days: 14
 
       - name: Renomear APK
         run: |
