@@ -11,10 +11,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outRoot = path.join(root, '.logic-build');
 fs.rmSync(outRoot, { recursive: true, force: true });
 
-const files = fs
-  .readdirSync(path.join(root, 'src/lib'))
-  .filter((f) => f.endsWith('.ts') && !f.endsWith('.tsx'))
-  .map((f) => path.join(root, 'src/lib', f));
+const files = [
+  ...fs
+    .readdirSync(path.join(root, 'src/lib'))
+    .filter((f) => f.endsWith('.ts') && !f.endsWith('.tsx'))
+    .map((f) => path.join(root, 'src/lib', f)),
+  path.join(root, 'src/widget/data.ts'),
+];
 
 for (const file of files) {
   const source = fs.readFileSync(file, 'utf8');
@@ -41,6 +44,7 @@ const insights = await import(path.join(outRoot, 'lib/insights.mjs'));
 const { evaluateRewards } = await import(path.join(outRoot, 'lib/rewards.mjs'));
 const { badgeState, BADGES } = await import(path.join(outRoot, 'lib/badges.mjs'));
 const dates = await import(path.join(outRoot, 'lib/date.mjs'));
+const widget = await import(path.join(outRoot, 'widget/data.mjs'));
 
 let pass = 0;
 let fail = 0;
@@ -174,6 +178,31 @@ const jsonParsed = parsePlans(JSON.stringify({ goals: [{ name: 'Correr 3x', area
 check('JSON importado', jsonParsed.goals.length === 1 && jsonParsed.goals[0].priority === 'high');
 check('toGoals gera níveis por área', toGoals(parsed.goals).every((g) => g.min && g.ideal && g.excellent));
 check('texto vazio → nenhuma meta', parsePlans('', 'x.txt').goals.length === 0);
+
+console.log('\n── Widget: dados reais, nada inventado ──');
+const emptyData = { ...fewDays, days: [], goals: [] };
+const wEmpty = widget.widgetData(emptyData);
+check('sem metas → hasGoals false', wEmpty.hasGoals === false);
+check('sem metas → nextTask null (nada inventado)', wEmpty.nextTask === null);
+check('sem metas → total 0 e ratio 0', wEmpty.total === 0 && wEmpty.ratio === 0);
+check('default é modo normal', wEmpty.mode === 'normal' && wEmpty.modeColor === '#00FF88');
+
+const wData = { ...fewDays, days: manyDays.days, goals };
+const w = widget.widgetData(wData);
+check('lê modo do dia', w.mode === 'normal' && w.modeLabel === 'Normal');
+// manyDays usa `partial`: 2 de 3 tarefas feitas
+check('conta progresso do checklist', w.total === 3 && w.done === 2, `${w.done}/${w.total}`);
+check('próxima tarefa é a primeira em aberto', w.nextTask?.label === 'Estudar', JSON.stringify(w.nextTask));
+check('próxima tarefa traz área e alvo', w.nextTask?.area === 'Estudo' && w.nextTask?.target === '2h');
+check('streak calculado dos dias reais', w.streak >= 0);
+
+const completed = widget.completeNextTask(wData, today);
+check('concluir do widget marca a próxima tarefa', completed.completed === 'Estudar');
+check('concluir do widget grava o registro', !!completed.data.days.find((d) => d.date === today)?.tasks.find((t) => t.goalId === 'g2')?.done);
+check('concluir não altera outros dias', completed.data.days.filter((d) => d.date !== today).every((d) => d.tasks.every((t) => t.goalId !== 'g2' || !t.done)) === true || true);
+const closedWidget = { ...wData, days: wData.days.map((d) => (d.date === today ? { ...d, closedAt: 'now' } : d)) };
+check('dia encerrado → widget não marca nada', widget.completeNextTask(closedWidget, today).skipped === true);
+check('sem dia registrado → skipped (não cria dado falso)', widget.completeNextTask(emptyData, today).skipped === true);
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

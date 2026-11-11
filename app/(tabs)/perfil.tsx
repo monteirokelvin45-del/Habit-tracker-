@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { areaColor, colors, spacing } from '../../src/theme';
 import {
@@ -66,7 +66,7 @@ export default function ProfileScreen() {
         haptic('error');
         return;
       }
-      const content = await FileSystem.readAsStringAsync(asset.uri);
+      const content = new File(asset.uri).textSync();
       setUploadText(content);
       setUploadSheet(true);
     } catch (e) {
@@ -172,14 +172,20 @@ export default function ProfileScreen() {
 
         {/* RECOMPENSAS / CONQUISTAS */}
         <SectionTitle>Gamificação</SectionTitle>
-        <Row gap={spacing.sm}>
-          <Pressable style={{ flex: 1 }} onPress={() => router.push('/modulo/recompensas')}>
+        <Row gap={spacing.sm} style={{ flexWrap: 'wrap' }}>
+          <Pressable style={{ flex: 1, minWidth: '45%' }} onPress={() => router.push('/modulo/widget')}>
+            <Card style={{ gap: 2 }}>
+              <Txt variant="h3">📱 Widget</Txt>
+              <Muted>Tela inicial do Android</Muted>
+            </Card>
+          </Pressable>
+          <Pressable style={{ flex: 1, minWidth: '45%' }} onPress={() => router.push('/modulo/recompensas')}>
             <Card style={{ gap: 2 }}>
               <Txt variant="h3">🎁 Recompensas</Txt>
               <Muted>{store.rewards.filter((r) => !r.unlocked).length} pendente(s)</Muted>
             </Card>
           </Pressable>
-          <Pressable style={{ flex: 1 }} onPress={() => router.push('/modulo/conquistas')}>
+          <Pressable style={{ flex: 1, minWidth: '45%' }} onPress={() => router.push('/modulo/conquistas')}>
             <Card style={{ gap: 2 }}>
               <Txt variant="h3">🏅 Conquistas</Txt>
               <Muted>{store.badges.filter((b) => b.unlockedAt).length}/{BADGES.length}</Muted>

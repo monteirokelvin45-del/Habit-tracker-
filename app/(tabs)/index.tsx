@@ -16,11 +16,13 @@ import { addDays, greeting, longDate, nowHHmm, todayKey } from '../../src/lib/da
 import { buildChecklist, detectDanger, generalStreak, goalStreak, priorityTasksUndone, scoreOf } from '../../src/lib/score';
 import { nextReward } from '../../src/lib/insights';
 import { haptic } from '../../src/lib/haptics';
+import { useWidgetSync } from '../../src/widget/sync';
 import type { Day, DayMode, Goal } from '../../src/lib/types';
 
 export default function TodayScreen() {
   const router = useRouter();
   const store = useStore();
+  useWidgetSync();
   const today = todayKey();
 
   // Garante que o dia exista ao abrir o app (sem efeito colateral em render duplicado).

@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import type { AppData } from './types';
@@ -35,8 +35,11 @@ export async function exportJson(data: AppData): Promise<string | null> {
   }
 
   try {
-    const uri = `${FileSystem.cacheDirectory}myprime-backup-${todayKey()}.json`;
-    await FileSystem.writeAsStringAsync(uri, json, { encoding: FileSystem.EncodingType.UTF8 });
+    // SDK 54: API nova de arquivos (File/Paths) no lugar do antigo cacheDirectory.
+    const file = new File(Paths.cache, `myprime-backup-${todayKey()}.json`);
+    file.create({ overwrite: true });
+    file.write(json);
+    const uri = file.uri;
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Exportar dados MY PRIME' });
     }

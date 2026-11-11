@@ -1,0 +1,38 @@
+import type { ConfigContext, ExpoConfig } from 'expo/config';
+import type { WithAndroidWidgetsParams } from 'react-native-android-widget';
+
+/**
+ * Config dinâmica: precisamos do config plugin do react-native-android-widget,
+ * que exige tipagem (app.json não aceita o objeto tipado com previewImage etc.
+ * de forma segura).
+ */
+const widgetConfig: WithAndroidWidgetsParams = {
+  widgets: [
+    {
+      name: 'Prime',
+      label: 'MY PRIME',
+      description: 'Streak, modo do dia, progresso e próxima tarefa',
+      minWidth: '250dp',
+      minHeight: '110dp',
+      targetCellWidth: 4,
+      targetCellHeight: 2,
+      resizeMode: 'horizontal|vertical',
+      // Atualização automática do launcher: 3h (mínimo permitido é 30 min).
+      updatePeriodMillis: 3 * 60 * 60 * 1000,
+      previewImage: './assets/widget-preview/prime.png',
+    },
+  ],
+};
+
+export default ({ config }: ConfigContext): ExpoConfig => {
+  const base = config as ExpoConfig;
+  return {
+    ...base,
+    name: 'MY PRIME',
+    slug: 'my-prime',
+    plugins: [
+      ...(base.plugins ?? []),
+      ['react-native-android-widget', widgetConfig],
+    ],
+  };
+};
