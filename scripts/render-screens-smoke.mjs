@@ -87,7 +87,7 @@ stub('stub-empty.mjs', `export default () => null;\nexport const FlexWidget = ()
 // Nomes usados por src/components/Icon.tsx — o ESM exige export nomeado real.
 const LUCIDE_NAMES = [
   'Activity', 'ArrowRight', 'BedDouble', 'Bell', 'BookOpen', 'Brain', 'BrainCircuit',
-  'CalendarDays', 'ChartColumn', 'ChevronDown', 'ChevronRight', 'CircleCheck', 'Clock',
+  'CalendarDays', 'ChartColumn', 'ChevronDown', 'ChevronLeft', 'ChevronRight', 'CircleCheck', 'Clock',
   'Download', 'Droplet', 'Dumbbell', 'Flag', 'Flame', 'Gauge', 'House', 'Layers', 'Link2',
   'Lock', 'Moon', 'Palette', 'Pause', 'Play', 'Plus', 'RotateCcw', 'Scale', 'Settings',
   'ShieldAlert', 'Sparkles', 'Sun', 'Target', 'Timer', 'TrendingUp', 'TriangleAlert',

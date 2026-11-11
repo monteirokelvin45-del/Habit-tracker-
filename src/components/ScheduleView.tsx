@@ -88,7 +88,7 @@ export function ScheduleView({ goals, days, date: initialDate, now }: Props) {
             hitSlop={8}
             style={{ padding: 4 }}
           >
-            <Icon name="chevronBaixo" size={16} color={t.textSecondary} />
+            <Icon name="chevronEsquerda" size={16} color={t.textSecondary} />
           </Pressable>
           <Pressable
             onPress={() => shift(7)}
@@ -105,7 +105,7 @@ export function ScheduleView({ goals, days, date: initialDate, now }: Props) {
       {/* Faixa dos 7 dias */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
         <Pressable onPress={() => shift(-1)} accessibilityRole="button" accessibilityLabel="Dia anterior" hitSlop={8} style={{ padding: 2 }}>
-          <Icon name="chevronDireita" size={16} color={t.textMuted} />
+          <Icon name="chevronEsquerda" size={16} color={t.textMuted} />
         </Pressable>
         <View style={{ flex: 1, flexDirection: 'row', gap: 4 }}>
           {week.map((d) => {
