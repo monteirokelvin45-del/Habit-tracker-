@@ -77,7 +77,7 @@ jobs:
         run: |
           set +e
           ./gradlew assembleRelease --no-daemon --stacktrace \
-            -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee ../gradle-build.log | tail -n 40
+            -PreactNativeArchitectures=arm64-v8a 2>&1 | tee ../gradle-build.log | tail -n 40
           echo "GRADLE_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
           exit 0
 
@@ -92,9 +92,6 @@ jobs:
           } > gradle-reason.txt
           # Uma linha só: aparece legível na anotação do commit.
           tr '\n' ' ' < gradle-reason.txt | cut -c1-900 | sed 's/^/::error title=Gradle::/'
-          echo "REASON<<EOF" >> "$GITHUB_ENV"
-          head -c 3000 gradle-reason.txt >> "$GITHUB_ENV"
-          echo "EOF" >> "$GITHUB_ENV"
 
       # Artefato ANTES do passo que falha (se falhar primeiro, nada é publicado).
       - name: Log do Gradle (quando falha)
