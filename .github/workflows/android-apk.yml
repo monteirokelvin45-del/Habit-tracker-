@@ -29,12 +29,18 @@ jobs:
           node-version: 20
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      # O runner ubuntu-latest já vem com Android SDK + build-tools; a action
+      # android-actions/setup-android falhou no primeiro run, então só conferimos.
+      - name: Conferir Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" | tail -3
+          ls "$ANDROID_HOME/build-tools" | tail -3
 
       # Gradle e cache de build ficam fora do projeto para não sujar o diff do .gitignore.
       - name: Cache do Gradle
