@@ -20,6 +20,11 @@ import { shortDate, todayKey } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 import { newId } from '../../src/lib/store';
 
+/** Peso utilizável: número finito dentro de uma faixa humana (20–400 kg). */
+function plausibleKg(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 20 && value <= 400;
+}
+
 export default function WeightScreen() {
   const store = useStore();
   const [sheet, setSheet] = useState(false);
@@ -31,7 +36,13 @@ export default function WeightScreen() {
   const [thigh, setThigh] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
 
-  const entries = store.weight.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+  // Só entra na série o que é número finito e plausível: um `null` gravado por
+  // um backup antigo (JSON.stringify(NaN)) derrubava a tela inteira.
+  const unreadable = store.weight.filter((w) => !plausibleKg(w.kg)).length;
+  const entries = store.weight
+    .filter((w) => plausibleKg(w.kg))
+    .slice()
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
   const last = entries[entries.length - 1];
   const first = entries[0];
   const delta = last && first ? last.kg - first.kg : null;
@@ -62,13 +73,13 @@ export default function WeightScreen() {
         <Row gap={spacing.sm}>
           <Card style={{ flex: 1 }}>
             <Txt variant="micro" color={colors.textSecondary}>Peso atual</Txt>
-            <Txt variant="h2">{last ? `${last.kg.toFixed(1)}` : '—'}<Txt variant="caption" color={colors.textSecondary}> kg</Txt></Txt>
+            <Txt variant="h2">{last ? `${last.kg.toFixed(1)}` : 'Sem dado'}{last ? <Txt variant="caption" color={colors.textSecondary}> kg</Txt> : null}</Txt>
             <Muted>{last ? shortDate(last.date) : 'Sem dado'}</Muted>
           </Card>
           <Card style={{ flex: 1 }}>
             <Txt variant="micro" color={colors.textSecondary}>Variação total</Txt>
             <Txt variant="h2" color={delta == null ? colors.textMuted : delta <= 0 ? colors.green : colors.red}>
-              {delta == null ? '—' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`}
+              {delta == null ? 'Sem dado' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`}
             </Txt>
             <Muted>{goal ? `Meta: ${goal} kg` : 'Sem meta definida'}</Muted>
           </Card>
@@ -136,6 +147,16 @@ export default function WeightScreen() {
         </Card>
 
         <Txt variant="h3">Histórico</Txt>
+        {unreadable > 0 ? (
+          <Card accent={colors.yellow + '33'}>
+            <Txt variant="caption" color={colors.yellow}>
+              {unreadable === 1
+                ? '1 registro com peso ilegível foi ignorado no gráfico e nas médias.'
+                : `${unreadable} registros com peso ilegível foram ignorados no gráfico e nas médias.`}
+            </Txt>
+            <Muted>Exclua e registre de novo para voltar a acompanhar.</Muted>
+          </Card>
+        ) : null}
         {entries.length === 0 ? <NoData label="Nenhum registro" /> : null}
         {entries
           .slice()

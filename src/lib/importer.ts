@@ -113,9 +113,10 @@ const SECTION_KEYWORDS: { key: string; regex: RegExp }[] = [
   { key: 'treino', regex: /treino|academia|exerc[ií]cio|muscula|corrida/i },
 ];
 
-function splitSections(text: string): Section[] {
+function splitSections(text: string): { sections: Section[]; ignored: string[] } {
   const lines = text.split(/\r?\n/);
   const sections: Section[] = [];
+  const ignored: string[] = [];
   let current: Section | null = null;
 
   for (const raw of lines) {
@@ -133,6 +134,9 @@ function splitSections(text: string): Section[] {
       const title = line.replace(/^#{1,4}\s+/, '').replace(/^=+|=+$/g, '').replace(/\*\*/g, '').replace(/:$/, '').trim();
       const match = SECTION_KEYWORDS.find((s) => s.regex.test(title));
       const key = match?.key ?? findAreaKey(title) ?? 'outro';
+      // Seção desconhecida: as linhas dela não viram meta. Antes elas sumiam em
+      // silêncio e o resumo dizia "0 seções não reconhecidas".
+      if (key === 'outro' && title !== 'Início') ignored.push(title);
       current = { key, title, lines: [] };
       sections.push(current);
       continue;
@@ -145,7 +149,7 @@ function splitSections(text: string): Section[] {
     current.lines.push(line);
   }
 
-  return sections;
+  return { sections, ignored };
 }
 
 function findAreaKey(title: string): string | null {
@@ -159,6 +163,11 @@ function bullets(lines: string[]): string[] {
   return lines
     .map((l) => l.replace(/^([-*•·–—]|\d+[.)])\s+/, '').trim())
     .filter((l) => l.length >= 3);
+}
+
+/** Quantas linhas de uma seção `bullets()` descartou (curtas demais para virar meta). */
+function droppedByBullets(lines: string[]): number {
+  return lines.filter((l) => l.replace(/^([-*•·–—]|\d+[.)])\s+/, '').trim().length < 3).length;
 }
 
 /* ────────────────────────── regras / recompensas / livros ────────────────────────── */
@@ -596,8 +605,9 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
 
   // C) Plano em texto livre
   void today;
-  const sections = splitSections(text);
-  const unknownSections: string[] = [];
+  const { sections, ignored } = splitSections(text);
+  // Seção fora do vocabulário conhecido entra na lista de "não reconhecidas".
+  const unknownSections: string[] = [...ignored];
   const rules: Rule[] = [];
   const rewards: Reward[] = [];
   const books: Book[] = [];
@@ -608,13 +618,24 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
   let weight: WeightEntry[] = [];
 
   const goalCandidates: (GoalLine & { area: string })[] = [];
+  // Linhas que o parser leu e NÃO aproveitou (nome curto demais, linha de
+  // configuração, ruído). Antes o resumo sempre dizia 0 e o usuário não sabia
+  // que metade do arquivo tinha sido ignorada.
+  let ignoredCount = 0;
+  const ignore = () => {
+    ignoredCount += 1;
+  };
 
   for (const section of sections) {
     if (section.key.startsWith('área:')) {
       const area = section.key.slice('área:'.length);
+      ignoredCount += droppedByBullets(section.lines);
       for (const line of bullets(section.lines)) {
         const parsedLine = parseGoalLine(line);
-        if (!parsedLine.name) continue;
+        if (!parsedLine.name) {
+          ignore();
+          continue;
+        }
         goalCandidates.push({
           name: parsedLine.name,
           area,
@@ -640,6 +661,7 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
       case 'peso': {
         const areaFromKey =
           section.key === 'metas' ? null : (Object.keys(AREA_HINTS).find((a) => AREA_HINTS[a]!.test(section.title)) ?? null);
+        ignoredCount += droppedByBullets(section.lines);
         for (const line of bullets(section.lines)) {
           if (section.key === 'leitura' && /—|–|->/.test(line)) {
             books.push(...parseBooks([line]));
@@ -653,16 +675,25 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
             if (kg?.[1]) weight = [...weight, { date: today, kg: Number(kg[1].replace(',', '.')) }];
             continue;
           }
-          if (section.key === 'ayanokoji') continue;
+          if (section.key === 'ayanokoji') {
+            ignore();
+            continue;
+          }
           // Linhas que são configuração/registro não viram meta.
           const isSettingLine =
             (section.key === 'sono' && /lembrete|meta de sono|\d{1,2}[:h]\d{2}/i.test(line)) ||
             (section.key === 'financas' && /r\$\s*\d+[.,]\d{2}/i.test(line));
-          if (isSettingLine) continue;
+          if (isSettingLine) {
+            ignore();
+            continue;
+          }
 
           const area = areaFromKey ?? guessArea(line) ?? 'Projeto Pessoal';
           const parsedLine = parseGoalLine(line);
-          if (!parsedLine.name || parsedLine.name.length < 3) continue;
+          if (!parsedLine.name || parsedLine.name.length < 3) {
+            ignore();
+            continue;
+          }
           goalCandidates.push({
             name: parsedLine.name,
             area,
@@ -683,7 +714,11 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
         rewards.push(...parseRewards(section.lines));
         break;
       default:
-        if (section.title !== 'Início') unknownSections.push(section.title);
+        // Seção desconhecida já foi contabilizada em splitSections. O bloco
+        // "Início" (texto antes de qualquer cabeçalho) não tem título: cada
+        // linha ali foi lida e descartada — antes isso dava `ignoredLines: 0`
+        // e o usuário achava que o arquivo inteiro tinha sido usado.
+        if (section.title === 'Início') ignoredCount += section.lines.length;
         break;
     }
   }
@@ -708,7 +743,7 @@ export function readPlan(text: string, filename: string, current: AppData): Impo
     skippedDuplicates: merged.skipped,
     relinked: merged.relinked,
     unknownSections,
-    ignoredLines: 0,
+    ignoredLines: ignoredCount,
   };
   return { ...summary, pending: buildPending(summary, current.goals, current) };
 }

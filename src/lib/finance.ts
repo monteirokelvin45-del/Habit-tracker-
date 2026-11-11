@@ -85,14 +85,26 @@ export function bucketTargets(
   monthKey: string,
   split: Record<BucketKey, number> = DEFAULT_SPLIT,
 ): BucketTarget[] {
-  const month = entries.filter((e) => e.date.startsWith(monthKey));
-  const income = month.filter((e) => e.type === 'income').reduce((a, b) => a + b.amount, 0);
+  // Defesa local: a tela e o storage já sanitizam, mas esta função é chamada com
+  // dados de snapshot/backup antigo. Um `amount` nulo ou em texto viraria
+  // `used = NaN` e contaminaria alvos, sobra e %. Só entra número finito > 0.
+  const amountOf = (e: FinanceEntry): number => {
+    const raw = (e as { amount?: unknown }).amount;
+    const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.replace(',', '.').trim()) : Number.NaN;
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  const safeEntries = (Array.isArray(entries) ? entries : []).filter(
+    (e) => e && typeof e.date === 'string' && e.date.startsWith(monthKey),
+  );
+  const month = safeEntries;
+  const income = month.filter((e) => e.type === 'income').reduce((a, b) => a + amountOf(b), 0);
   return BUCKETS.map((b) => {
-    const percent = split[b.key] ?? 0;
+    const rawPercent = split[b.key] ?? 0;
+    const percent = Number.isFinite(rawPercent) ? rawPercent : 0;
     const target = income > 0 ? (income * percent) / 100 : null;
     const used = month
       .filter((e) => e.type === 'expense' && bucketOf(e.category) === b.key)
-      .reduce((a, c) => a + c.amount, 0);
+      .reduce((a, c) => a + amountOf(c), 0);
     return {
       key: b.key,
       label: b.label,

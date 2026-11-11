@@ -26,6 +26,7 @@ import { addDays, nowHHmm, todayKey } from './date';
 import { buildChecklist, computeScore, taskKeyFor } from './score';
 import { isHHmm } from './schedule';
 import { evaluateBadges } from './badges';
+import { sanitizeFinanceEntry, sanitizeWeightEntry } from './sanitize';
 import { newlyUnlocked, type BadgeUnlock } from './achievements';
 import { evaluateRewards } from './rewards';
 import { newId } from './id';
@@ -784,7 +785,11 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   addFinance(entry) {
-    const finances = [...get().finances, entry];
+    // Segunda barreira: a tela já valida, mas um registro inválido (valor 0/NaN)
+    // quebraria a lista inteira no próximo render. Refuse > repair > invent.
+    const clean = sanitizeFinanceEntry(entry);
+    if (!clean) return;
+    const finances = [...get().finances, clean];
     set({ finances });
     void persist('finances', finances);
   },
@@ -796,8 +801,10 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   addWeight(entry) {
-    const rest = get().weight.filter((w) => w.date !== entry.date);
-    const weight = [...rest, { ...entry, id: entry.id ?? newId('w') }].sort((a, b) => (a.date < b.date ? -1 : 1));
+    const clean = sanitizeWeightEntry(entry);
+    if (!clean) return;
+    const rest = get().weight.filter((w) => w.date !== clean.date);
+    const weight = [...rest, { ...clean, id: clean.id ?? entry.id ?? newId('w') }].sort((a, b) => (a.date < b.date ? -1 : 1));
     set({ weight });
     void persist('weight', weight);
   },
@@ -870,6 +877,11 @@ export const useStore = create<StoreState>((set, get) => ({
         ayanokoji: full.ayanokoji,
         weeklyFocus: full.weeklyFocus,
         routeAdjustments: full.routeAdjustments,
+        // Faltava: backup completo restaurava tudo menos o diário de emoções.
+        emotions: full.emotions,
+        // Conquistas do backup entram como "já anunciadas": nada de banner em massa
+        // ao restaurar um histórico antigo.
+        freshUnlocks: [],
       });
       await persistMany([
         ['onboarded', true],
@@ -886,6 +898,7 @@ export const useStore = create<StoreState>((set, get) => ({
         ['ayanokoji', full.ayanokoji],
         ['weeklyFocus', full.weeklyFocus],
         ['routeAdjustments', full.routeAdjustments],
+        ['emotions', full.emotions],
       ]);
       return;
     }

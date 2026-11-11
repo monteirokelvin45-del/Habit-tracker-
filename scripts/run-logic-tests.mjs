@@ -36,6 +36,18 @@ for (const file of files) {
   fs.writeFileSync(dest, fixed);
 }
 
+// Config do app: app.json e app.config.ts descrevem os MESMOS widgets. Quando
+// divergem, o APK sai com o app.json e a config promete outra coisa — o teste
+// compara os dois arquivos de verdade.
+{
+  const file = path.join(root, 'app.config.ts');
+  const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    fileName: file,
+  }).outputText;
+  fs.writeFileSync(path.join(outRoot, 'app-config.mjs'), js);
+}
+
 // Componentes de widget: compilados à parte, com o módulo nativo trocado por um stub
 // que aponta para os componentes reais (funções puras) do pacote.
 const widgetTsx = ['ConstancyWidget', 'PrimeWidget', 'FallbackWidget'];
@@ -1490,6 +1502,132 @@ console.log('\n── Relatório PDF: conteúdo verificável ──');
     '2026-11-10',
   );
   check('mês com dia mas sem tarefa não inventa área', /Sem dado/.test(semTarefa.slice(semTarefa.indexOf('Equilíbrio'))));
+}
+
+/* ═══════════════ AUDITORIA: entrada suja não derruba tela ═══════════════ */
+
+console.log('\n── Sanitização de entrada (storage/backup) ──');
+{
+  const san = await import(path.join(outRoot, 'lib/sanitize.mjs'));
+  const storageMod = await import(path.join(outRoot, 'lib/storage.mjs'));
+
+  // O caso que derrubava as telas: JSON.stringify(NaN) grava null.
+  check('NaN viraria null no storage (origem do problema)', JSON.parse(JSON.stringify({ a: Number.NaN })).a === null);
+  const comNull = storageMod.normalizeData({ finances: [{ id: 'f', date: '2026-11-01', type: 'expense', amount: null, category: 'Lazer' }] }, storageMod.EMPTY_DATA);
+  check('finança com amount null é descartada', comNull.finances.length === 0, JSON.stringify(comNull.finances));
+  const comNaN = storageMod.normalizeData({ finances: [{ id: 'f', date: '2026-11-01', type: 'expense', amount: Number.NaN, category: 'Lazer' }] }, storageMod.EMPTY_DATA);
+  check('finança com amount NaN é descartada', comNaN.finances.length === 0);
+  const comZero = storageMod.normalizeData({ finances: [{ id: 'f', date: '2026-11-01', type: 'expense', amount: 0, category: 'Lazer' }] }, storageMod.EMPTY_DATA);
+  check('finança de valor 0 é descartada (não é lançamento)', comZero.finances.length === 0);
+  const comTexto = storageMod.normalizeData({ finances: [{ id: 'f', date: '2026-11-01', type: 'expense', amount: '50,25', category: 'Lazer' }] }, storageMod.EMPTY_DATA);
+  check('valor em texto numérico é reparado', comTexto.finances[0]?.amount === 50.25, JSON.stringify(comTexto.finances));
+  const comNegativo = storageMod.normalizeData({ finances: [{ id: 'f', date: '2026-11-01', type: 'expense', amount: -10, category: 'Lazer' }] }, storageMod.EMPTY_DATA);
+  check('valor negativo é descartado', comNegativo.finances.length === 0);
+  const semData = storageMod.normalizeData({ finances: [{ id: 'f', date: 'ontem', type: 'expense', amount: 10, category: 'Lazer' }] }, storageMod.EMPTY_DATA);
+  check('data inválida é descartada', semData.finances.length === 0);
+
+  // peso: plausibilidade
+  const pesoOk = san.sanitizeWeightEntry({ id: 'w', date: '2026-11-01', kg: '82,4' });
+  check('peso em texto é reparado', pesoOk?.kg === 82.4, JSON.stringify(pesoOk));
+  check('peso 0 é descartado', san.sanitizeWeightEntry({ id: 'w', date: '2026-11-01', kg: 0 }) === null);
+  check('peso 999 é descartado (digitação, não medida)', san.sanitizeWeightEntry({ id: 'w', date: '2026-11-01', kg: 999 }) === null);
+  check('duas pesagens no mesmo dia mantém uma', san.sanitizeWeightList([
+    { id: 'a', date: '2026-11-01', kg: 80 },
+    { id: 'b', date: '2026-11-01', kg: 81 },
+  ]).length === 1);
+
+  // livros / regras / recompensas
+  const livro = san.sanitizeBook({ id: 'b', title: 'X', totalPages: 300, currentPage: 400 });
+  check('página atual não passa do total', livro?.currentPage === 300);
+  check('livro sem título é descartado', san.sanitizeBook({ id: 'b', totalPages: 100 }) === null);
+  check('regra sem gatilho é descartada', san.sanitizeRule({ id: 'r', action: 'fazer' }) === null);
+  const regra = san.sanitizeRule({ id: 'r', trigger: 'se cansar', action: 'beber água' });
+  check('regra válida ganha defaults coerentes', regra?.active === true && regra?.timesActivated === 0 && regra?.successRate === 0);
+  check('recompensa sem nome é descartada', san.sanitizeReward({ id: 'x', criteria: 'streak' }) === null);
+  const recompensa = san.sanitizeReward({ id: 'x', name: 'Cinema', criteria: '7 dias', target: 7 });
+  check('recompensa ganha tipo e alvo válidos', recompensa?.criteriaType === 'consistency' && recompensa?.target === 7);
+
+  // relatório: a UI precisa saber que algo foi descartado
+  const rel = san.emptyReport();
+  san.sanitizeDataSlices({
+    finances: [{ id: 'ok', date: '2026-11-01', type: 'expense', amount: 10, category: 'Lazer' }, { id: 'ruim', date: '2026-11-01', type: 'expense', amount: null }],
+    weight: [{ id: 'w', date: '2026-11-01', kg: null }],
+  }, (g) => g, rel);
+  check('relatório conta o que foi descartado por entidade', rel.dropped.finances === 1 && rel.dropped.weight === 1 && rel.total === 2, JSON.stringify(rel));
+  check('entrada totalmente inválida vira lista vazia, não crash', Array.isArray(san.sanitizeFinanceList('lixo')) && san.sanitizeFinanceList(null).length === 0);
+
+  // O descarte NÃO pode ser silencioso: o boot publica o relatório e o Perfil lê.
+  storageMod.lastSanitize.dropped = {};
+  storageMod.lastSanitize.total = 0;
+  storageMod.normalizeData({
+    finances: [{ id: 'ok', date: '2026-11-01', type: 'expense', amount: 10, category: 'Lazer' }, { id: 'ruim', date: '2026-11-01', type: 'expense', amount: null }],
+    weight: [{ id: 'w', date: '2026-11-01', kg: null }],
+  }, storageMod.EMPTY_DATA);
+  check('boot publica o relatório do que descartou', storageMod.lastSanitize.total === 2, JSON.stringify(storageMod.lastSanitize));
+  check('relatório separa por lista', storageMod.lastSanitize.dropped.finances === 1 && storageMod.lastSanitize.dropped.weight === 1, JSON.stringify(storageMod.lastSanitize.dropped));
+  check('boot limpo zera o relatório', (() => {
+    storageMod.normalizeData({ finances: [] }, storageMod.EMPTY_DATA);
+    return storageMod.lastSanitize.total === 0;
+  })());
+}
+
+/* ═══════════════ AUDITORIA: app.json e app.config.ts não podem divergir ═══════════════ */
+
+console.log('\n── Configuração: app.json x app.config.ts ──');
+{
+  const appJson = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8')).expo;
+  const pluginEntry = (appJson.plugins ?? []).find((p) => Array.isArray(p) && p[0] === 'react-native-android-widget');
+  const jsonWidgets = pluginEntry?.[1]?.widgets ?? [];
+  check('app.json declara o plugin de widget', jsonWidgets.length > 0, `${jsonWidgets.length} widget(s)`);
+
+  const { default: buildConfig } = await import(path.join(outRoot, 'app-config.mjs'));
+  const resolved = buildConfig({ config: { ...appJson, plugins: (appJson.plugins ?? []).filter((p) => !Array.isArray(p) || p[0] !== 'react-native-android-widget') } });
+  const resolvedEntry = (resolved.plugins ?? []).find((p) => Array.isArray(p) && p[0] === 'react-native-android-widget');
+  const tsWidgets = resolvedEntry?.[1]?.widgets ?? [];
+  check('app.config.ts declara o plugin de widget', tsWidgets.length > 0, `${tsWidgets.length} widget(s)`);
+
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  check('os dois arquivos descrevem o mesmo número de widgets', jsonWidgets.length === tsWidgets.length, `${jsonWidgets.length} x ${tsWidgets.length}`);
+  for (const w of tsWidgets) {
+    const twin = jsonWidgets.find((j) => j.name === w.name);
+    if (!twin) { check(`widget ${w.name} existe nos dois arquivos`, false); continue; }
+    check(`widget ${w.name}: label igual`, twin.label === w.label, `${twin.label} x ${w.label}`);
+    check(`widget ${w.name}: minHeight igual`, twin.minHeight === w.minHeight, `${twin.minHeight} x ${w.minHeight}`);
+    check(`widget ${w.name}: cells iguais`, twin.targetCellWidth === w.targetCellWidth && twin.targetCellHeight === w.targetCellHeight, `${twin.targetCellWidth}x${twin.targetCellHeight} x ${w.targetCellWidth}x${w.targetCellHeight}`);
+    check(`widget ${w.name}: updatePeriodMillis igual`, twin.updatePeriodMillis === w.updatePeriodMillis, `${twin.updatePeriodMillis} x ${w.updatePeriodMillis}`);
+    check(`widget ${w.name}: updatePeriodMillis respeita o mínimo de 30 min do Android`, w.updatePeriodMillis === 0 || w.updatePeriodMillis >= 1800000, String(w.updatePeriodMillis));
+    check(`widget ${w.name}: previewImage existe`, fs.existsSync(path.join(root, w.previewImage.replace('./', ''))), w.previewImage);
+  }
+}
+
+/* ═══════════════ AUDITORIA: import não pode perder linha em silêncio ═══════════════ */
+
+console.log('\n── Importador: o resumo conta o que foi ignorado ──');
+{
+  const importer = await import(path.join(outRoot, 'lib/importer.mjs'));
+  const base = {
+    goals: [], days: [], rules: [], rewards: [], books: [], finances: [], weight: [],
+    emotions: [], user: {}, settings: {}, ayanokoji: {}, weeklyFocus: {}, routeAdjustments: {},
+    badges: [], onboarded: false,
+  };
+
+  const comSecao = importer.readPlan('# Treino\n- Correr 5km\n- Musculação 45min', 'plano.txt', base);
+  check('seção conhecida vira meta', comSecao.goals.length === 2, JSON.stringify(comSecao.goals.map((g) => g.name)));
+  check('arquivo limpo não reporta seção desconhecida', comSecao.unknownSections.length === 0, JSON.stringify(comSecao.unknownSections));
+
+  const comInventada = importer.readPlan('# Treino\n- Correr 5km\n\n# Seção Inventada\n- coisa\n- outra coisa', 'plano.txt', base);
+  check('seção desconhecida é reportada pelo nome', comInventada.unknownSections.includes('Seção Inventada'), JSON.stringify(comInventada.unknownSections));
+  check('linhas da seção desconhecida não viram meta fantasma', comInventada.goals.length === 1, JSON.stringify(comInventada.goals.map((g) => g.name)));
+
+  const textoRuim = importer.readPlan('linha solta\nmais uma linha\nterceira linha', 'x.txt', base);
+  check('arquivo sem nenhuma seção gera pendência explícita', textoRuim.source === 'plan-text' && textoRuim.pending.length > 0, `${textoRuim.pending.length} pendência(s)`);
+  check('arquivo sem seção não inventa meta', textoRuim.goals.length === 0);
+  check('arquivo sem seção conta as linhas perdidas', textoRuim.ignoredLines === 3, String(textoRuim.ignoredLines));
+  check('texto antes do primeiro cabeçalho também é contado', importer.readPlan('linha solta\n# Treino\n- Correr 5km', 'x.txt', base).ignoredLines === 1);
+
+  const comRuido = importer.readPlan('# Treino\n- ok\n- Correr 5km', 'plano.txt', base);
+  check('linha curta demais conta como ignorada, não como meta', comRuido.goals.length === 1 && comRuido.ignoredLines === 1, `metas=${comRuido.goals.length} ignored=${comRuido.ignoredLines}`);
+  check('contagem de ignoradas sobe com ruído real', comRuido.ignoredLines > comSecao.ignoredLines, `${comSecao.ignoredLines} → ${comRuido.ignoredLines}`);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);

@@ -23,6 +23,22 @@ import { BUCKETS, DEFAULT_SPLIT, bucketOf, bucketTargets, daysUntilFirstWant, im
 
 const CATEGORY_COLORS = ['#FF6B35', '#4488FF', '#FF66AA', '#FF4444', '#888888', '#00FF88', '#AA66FF'];
 
+/**
+ * Valor monetário seguro. Um backup antigo/editado pode trazer `null` (o que
+ * `JSON.stringify(NaN)` grava) ou número em texto: sem isto, `.toFixed` derruba
+ * a tela inteira. Registro fora da faixa não vira R$ 0 na lista — vira 0 só na
+ * aritmética, e a tela avisa que há lançamento ilegível.
+ */
+function money(value: unknown): number {
+  const n =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replace(',', '.').trim()) : Number.NaN;
+  return Number.isFinite(n) ? n : 0;
+}
+
+function isBrokenMoney(value: unknown): boolean {
+  return !Number.isFinite(typeof value === 'number' ? value : Number(String(value).replace(',', '.')));
+}
+
 export default function FinanceScreen() {
   const store = useStore();
   const [sheet, setSheet] = useState(false);
@@ -36,14 +52,15 @@ export default function FinanceScreen() {
 
   const monthK = todayKey().slice(0, 7);
   const monthEntries = store.finances.filter((f) => f.date.startsWith(monthK));
+  const brokenCount = store.finances.filter((f) => isBrokenMoney(f.amount)).length;
 
   const byMonth = useMemo(() => {
     const map = new Map<string, { income: number; expense: number }>();
     for (const f of store.finances) {
       const key = f.date.slice(0, 7);
       const item = map.get(key) ?? { income: 0, expense: 0 };
-      if (f.type === 'income') item.income += f.amount;
-      else item.expense += f.amount;
+      if (f.type === 'income') item.income += money(f.amount);
+      else item.expense += money(f.amount);
       map.set(key, item);
     }
     return Array.from(map.entries()).sort().slice(-6);
@@ -55,20 +72,20 @@ export default function FinanceScreen() {
       .slice()
       .sort((a, b) => (a.date < b.date ? -1 : 1))
       .map((f) => {
-        acc += f.type === 'income' ? f.amount : -f.amount;
+        acc += f.type === 'income' ? money(f.amount) : -money(f.amount);
         return { date: f.date, value: acc };
       });
   }, [store.finances]);
 
   const expenseByCategory = FINANCE_CATEGORIES.map((cat, i) => ({
     label: cat,
-    value: monthEntries.filter((f) => f.type === 'expense' && f.category === cat).reduce((a, b) => a + b.amount, 0),
+    value: monthEntries.filter((f) => f.type === 'expense' && f.category === cat).reduce((a, b) => a + money(b.amount), 0),
     color: CATEGORY_COLORS[i] ?? colors.textSecondary,
   })).filter((c) => c.value > 0);
 
   const impulseWeek = store.finances
     .filter((f) => f.isImpulse && f.date >= addDays(todayKey(), -6))
-    .reduce((a, b) => a + b.amount, 0);
+    .reduce((a, b) => a + money(b.amount), 0);
 
   // "Y dias de [meta]": compara o impulso com o custo médio diário declarado no diário.
   const dailyCostRef = (() => {
@@ -94,17 +111,27 @@ export default function FinanceScreen() {
     <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
       <ModalHeader title="💰 Finanças" subtitle={`${monthLabel(todayKey())} · ${monthEntries.length} lançamentos`} onAdd={() => setSheet(true)} addLabel="+ Lançamento" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60, gap: spacing.md }}>
+        {brokenCount > 0 ? (
+          <Card accent={colors.yellow + '33'}>
+            <Txt variant="caption" color={colors.yellow}>
+              {brokenCount === 1
+                ? '1 lançamento sem valor legível foi ignorado nas somas (o registro continua na lista).'
+                : `${brokenCount} lançamentos sem valor legível foram ignorados nas somas (os registros continuam na lista).`}
+            </Txt>
+            <Muted>Corrija ou exclua esses lançamentos para as somas voltarem a fechar.</Muted>
+          </Card>
+        ) : null}
         <Row gap={spacing.sm}>
           <Card style={{ flex: 1 }}>
             <Txt variant="micro" color={colors.textSecondary}>Receitas do mês</Txt>
             <Txt variant="h3" color={colors.green}>
-              R$ {monthEntries.filter((f) => f.type === 'income').reduce((a, b) => a + b.amount, 0).toFixed(0)}
+              R$ {monthEntries.filter((f) => f.type === 'income').reduce((a, b) => a + money(b.amount), 0).toFixed(0)}
             </Txt>
           </Card>
           <Card style={{ flex: 1 }}>
             <Txt variant="micro" color={colors.textSecondary}>Despesas do mês</Txt>
             <Txt variant="h3" color={colors.red}>
-              R$ {monthEntries.filter((f) => f.type === 'expense').reduce((a, b) => a + b.amount, 0).toFixed(0)}
+              R$ {monthEntries.filter((f) => f.type === 'expense').reduce((a, b) => a + money(b.amount), 0).toFixed(0)}
             </Txt>
           </Card>
         </Row>
@@ -172,14 +199,14 @@ export default function FinanceScreen() {
           ) : (
             <>
               <Txt variant="caption" color={colors.textPrimary}>
-                Pagamento em {payday.date} · R$ {payday.received.toFixed(0)}
+                Pagamento em {payday.date} · R$ {money(payday.received).toFixed(0)}
               </Txt>
               {payday.expected.map((e) => (
                 <Row key={e.key} style={{ justifyContent: 'space-between', marginTop: 4 }}>
                   <Txt variant="caption" color={colors.textSecondary}>
                     Separar em {e.label}
                   </Txt>
-                  <Txt variant="caption" color={colors.textPrimary}>R$ {e.amount.toFixed(0)}</Txt>
+                  <Txt variant="caption" color={colors.textPrimary}>R$ {money(e.amount).toFixed(0)}</Txt>
                 </Row>
               ))}
               <Muted style={{ marginTop: spacing.sm }}>{payday.verdict}</Muted>
@@ -242,7 +269,7 @@ export default function FinanceScreen() {
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Txt variant="caption" color={f.type === 'income' ? colors.green : colors.red}>
-                    {f.type === 'income' ? '+' : '-'} R$ {f.amount.toFixed(2)}
+                    {f.type === 'income' ? '+' : '-'} R$ {isBrokenMoney(f.amount) ? 'valor ilegível' : money(f.amount).toFixed(2)}
                   </Txt>
                   <Txt variant="micro" color={colors.textMuted} onPress={() => store.deleteFinance(f.id)}>excluir</Txt>
                 </View>

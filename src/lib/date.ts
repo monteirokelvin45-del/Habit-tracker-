@@ -134,17 +134,16 @@ export function formatMinutes(min: number): string {
 
 export function parseDurationToMinutes(text: string): number {
   if (!text) return 0;
-  const t = text.toLowerCase().replace(',', '.');
-  const hMatch = t.match(/(\d+(?:\.\d+)?)\s*h/);
-  const mMatch = t.match(/(\d+)\s*m/);
-  let total = 0;
-  if (hMatch && hMatch[1]) total += parseFloat(hMatch[1]) * 60;
-  if (mMatch && mMatch[1] && !hMatch) total = parseInt(mMatch[1], 10);
-  if (!hMatch && !mMatch) {
-    const num = t.match(/(\d+)/);
-    if (num && num[1]) total = parseInt(num[1], 10);
-  }
-  return Math.round(total);
+  const t = text.toLowerCase().replace(',', '.').trim();
+  // "1h30", "1h 30min", "1:30" → horas E minutos. Antes o "30" era engolido.
+  const both = t.match(/(\d+(?:\.\d+)?)\s*(?:h|hora[s]?)\s*(\d+)\s*(?:m|min|minuto[s]?)?/);
+  if (both && both[1] && both[2]) return Math.round(parseFloat(both[1]) * 60 + parseInt(both[2], 10));
+  const hMatch = t.match(/(\d+(?:\.\d+)?)\s*(?:h|hora[s]?)/);
+  const mMatch = t.match(/(\d+)\s*(?:m|min|minuto[s]?)/);
+  if (hMatch && hMatch[1]) return Math.round(parseFloat(hMatch[1]) * 60 + (mMatch && mMatch[1] ? parseInt(mMatch[1], 10) : 0));
+  if (mMatch && mMatch[1]) return parseInt(mMatch[1], 10);
+  const num = t.match(/(\d+)/);
+  return num && num[1] ? parseInt(num[1], 10) : 0;
 }
 
 export function relevantDateLabel(count: number): string {

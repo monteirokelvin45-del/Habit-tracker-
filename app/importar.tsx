@@ -261,6 +261,18 @@ export default function ImportScreen() {
               </Card>
             ) : null}
 
+            {summary.ignoredLines > 0 ? (
+              <Card accent={colors.yellow + '33'}>
+                <Txt variant="micro" color={colors.yellow}>LINHAS QUE NÃO VIRARAM META</Txt>
+                <Muted>
+                  {summary.ignoredLines === 1
+                    ? '1 linha foi lida e ignorada (curta demais ou linha de configuração).'
+                    : `${summary.ignoredLines} linhas foram lidas e ignoradas (curtas demais ou linhas de configuração).`}
+                </Muted>
+                <Muted>Se alguma delas era uma meta, escreva pelo menos 3 caracteres e coloque sob uma área.</Muted>
+              </Card>
+            ) : null}
+
             <PrimaryButton
               label={summary.source === 'backup' ? 'Restaurar backup completo' : 'Confirmar importação'}
               loading={busy}

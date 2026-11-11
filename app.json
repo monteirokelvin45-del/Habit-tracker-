@@ -63,19 +63,19 @@
               "targetCellWidth": 4,
               "targetCellHeight": 2,
               "resizeMode": "horizontal|vertical",
-              "updatePeriodMillis": 1800000,
+              "updatePeriodMillis": 10800000,
               "previewImage": "./assets/widget-preview/prime.png"
             },
             {
               "name": "Constancia",
-              "label": "Constância",
-              "description": "Mural de constância do mês.",
+              "label": "MY PRIME · Mural",
+              "description": "Mural de constância: os dias cumpridos em sequência",
               "minWidth": "250dp",
-              "minHeight": "110dp",
+              "minHeight": "150dp",
               "targetCellWidth": 4,
-              "targetCellHeight": 2,
+              "targetCellHeight": 3,
               "resizeMode": "horizontal|vertical",
-              "updatePeriodMillis": 1800000,
+              "updatePeriodMillis": 10800000,
               "previewImage": "./assets/widget-preview/constancia.png"
             }
           ]

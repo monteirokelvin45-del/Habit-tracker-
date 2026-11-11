@@ -175,6 +175,77 @@ Limites que continuam valendo (declarados):
 2. **Alarme nativo** abre o Relógio do Android para confirmação manual (o app não cria alarme de sistema por conta própria); é o comportamento documentado, não um bug.
 3. **Badges continuam sem som/modal**: o anúncio é uma faixa no topo da aba Hoje, dispensável com um toque.
 
+## Auditoria cética — o que os ✅ escondiam
+
+Revisão feita sem confiar nos documentos acima: cada função foi chamada com dado real e com dado
+hostil (o que um backup antigo grava de verdade), e cada tela foi renderizada fora do emulador.
+**Todo defeito abaixo tem teste de regressão no `npm test`** — não é relatório, é trava.
+
+### Defeito 1 — `1h30` valia 60 minutos
+
+`parseDurationToMinutes` somava horas **ou** minutos: `'1h30'` → 60, `'45min'` → 45, `'2 horas'` → 120.
+Alvo com formato composto (o mais comum numa meta de treino) subestimava a carga do dia em 33%.
+Corrigido: `'1h30'` = 90, `'1h 30min'` = 90, `'1:30'` = 90, `'1,5h'` = 90, `'2 horas'` = 120.
+
+### Defeito 2 — baldes somavam valor cru
+
+`bucketTargets` fazia `a + c.amount` sem checar nada: despesa `-50` subtraía do balde, `NaN` contaminava
+alvo/sobra/`%`, `'80'` (texto de backup) virava concatenação. Corrigido: só entra número finito > 0;
+entrada não-array ou com data inválida é filtrada. `addFinance`/`addWeight` passaram a recusar valor
+inválido na origem (segunda barreira).
+
+### Defeito 3 — tela de Finanças e de Peso quebravam com backup antigo
+
+`JSON.stringify(NaN)` grava `null` no disco. `normalizeData`/`loadAll` sanitizavam `days`, `goals` e
+`emotions` — `finances`, `weight`, `books`, `rules` e `rewards` entravam **crus**. Resultado real
+(render fora do app): `financas` estourava em `monthEntries.filter(...).reduce(...).toFixed`, e `peso`
+em `Cannot read properties of null (reading 'toFixed')`.
+
+Corrigido em três camadas:
+
+1. `src/lib/sanitize.ts` (novo): repara o que dá (`"50,25"`, `" R$ 50 "`, peso `"82,4"`), descarta o
+   que não dá (valor ≤ 0, data inválida, peso fora de 20–400 kg, livro sem título, regra sem gatilho).
+2. `storage.ts`: boot e import passam pelo sanitizador; **e contam o que descartaram** (`lastSanitize`).
+3. Telas de Finanças e Peso formatam com guarda local e mostram aviso do que foi ignorado.
+
+O descarte **não é silencioso**: o Perfil mostra quantos registros foram descartados e em qual lista.
+Sem esse aviso, o total do mês mudaria sem explicação — o que seria pior que o crash.
+
+### Defeito 4 — backup completo não restaurava o diário de emoções
+
+`applyImport` copiava 14 campos e esquecia `emotions`: restaurar um backup apagava o diário de
+emoções do estado (e do disco). Corrigido nos dois caminhos (`set` e `persistMany`); ao restaurar,
+`freshUnlocks` começa vazio para não anunciar 30 conquistas de uma vez.
+
+### Defeito 5 — importador dizia `0` linhas ignoradas sempre
+
+Texto livre sem estrutura gerava 7 pendências, `ignoredLines: 0` e `unknownSections: []` — o usuário
+não tinha como saber que nada do arquivo tinha sido aproveitado. Agora: seção desconhecida entra pelo
+nome, linha que não virou meta é contada (inclusive o texto antes do primeiro cabeçalho), e a tela de
+importação mostra o bloco "linhas que não viraram meta".
+
+### Defeito 6 — `app.json` e `app.config.ts` descreviam widgets diferentes
+
+O APK sai do `app.json`, mas a config tipada prometia outra coisa: Constancia 110dp/4×2/30min contra
+150dp/4×3/3h, e o Prime com 30min contra 3h. Alinhado ao `app.config.ts` (120dp de conteúdo + padding
+cabe em 4×3; 3h respeita o mínimo de 30min do Android). Um teste compara os dois arquivos de verdade —
+se divergirem de novo, o `npm test` falha.
+
+### Verificado e OK (não só "parece ok")
+
+Datas (`addDays`, `weekStart`, `daysInMonth(2028, 1) = 29`, `diffDays`), `generalStreak` com buraco e
+duplicata, `detectDanger`, `computeScore` com meta inativa, `bookPercent` 0..1, `pagesPerDay`,
+`waterProgress`, `dietTrend`, timer (`formatClock(65) = '01:05'`), mural 9×7 sem score no futuro,
+`recorded` = score **ou** tarefas, `fulfilled ≤ recorded`, waffle sem célula futura, gauge mensal ≤ 100%,
+progresso diário ≤ 1, ranking sem divisão por zero, gate de 7 dias, `sleepCorrelation`/`emotionCorrelation`
+com amostra curta → `null`, `trendLine` confiável só com 7+ pontos, e 11 cenários de dado hostil sem NaN.
+
+### Limites que continuam (declarados, não escondidos)
+
+1. **Backup de versão futura** é aceito com aviso, não bloqueado — não há como migrar o que não existe.
+2. **PDF enviado** não é lido (binário); o app diz isso em vez de fingir extração.
+3. **Widget** só roda em APK/dev build, e o teste de layout é estrutural (não mede o launcher real).
+
 ## Dados (AsyncStorage)
 
 Todas as chaves do briefing existem ✅ + extras declarados: `ayanokoji`, `weeklyFocus`,
@@ -280,9 +351,10 @@ agora são reagendados 1× por dia, não a cada edição).
 
 ### Testes que guardam isso
 
-- `npm run test:store` → 31 asserções, incluindo: boot sem dias + snapshot marca recuperação,
+- `npm run test:store` → 62 asserções, incluindo: boot sem dias + snapshot marca recuperação,
   restaurar devolve histórico e recalcula badges, boot normal não acusa perda, restore sem
-  snapshot retorna `false` (sem falso sucesso).
+  snapshot retorna `false` (sem falso sucesso), **backup restaura o log de emoções** e
+  **valor inválido (NaN/0) não entra no estado** por `addFinance`/`addWeight`.
 - Verificação direta de `normalizeData` com backup incompleto (meta sem `id`, sem `priority`,
   dia com tarefa inválida): meta inválida é descartada, dia é normalizado, settings preservadas.
 
@@ -301,12 +373,14 @@ agora são reagendados 1× por dia, não a cada edição).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **422/422** (modos, score, streaks, cobrança, gate de 7 dias,
+- `node scripts/run-logic-tests.mjs` → **469/469** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
-- `node scripts/audited-store.mjs` → **52/52** (ações do store: dia fechado, reabrir, pomodoro, metas,
+- `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
+- `node scripts/render-screens-smoke.mjs` → **63/63** (21 telas × 3 cenários: com histórico, primeiro uso
+  e **dados corrompidos** — `null`/`NaN`/texto de backup antigo)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200
 - `npx expo prebuild -p android` → `Prime.java` + `Constancia.java`,
   `widgetprovider_prime.xml` + `widgetprovider_constancia.xml`, dois `<receiver>` no manifest

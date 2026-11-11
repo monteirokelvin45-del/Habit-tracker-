@@ -440,6 +440,27 @@ const cheio = {
   energy: { physical: 7, mental: 6, stress: 4 },
 };
 
+/* ───────────── Cenário hostil: o que um backup antigo grava de verdade ─────────────
+ * `JSON.stringify(NaN)` grava `null`. Esses registros já existiram em disco, então
+ * a tela tem que sobreviver — e o boot (`normalizeData`) tem que limpá-los antes.
+ */
+const sujo = {
+  ...cheio,
+  finances: [
+    { id: 'f1', date: key(0), type: 'expense', amount: 42, category: 'Alimentação', isImpulse: true, note: 'impulso: fome' },
+    { id: 'f2', date: key(-1), type: 'expense', amount: null, category: 'Lazer' },
+    { id: 'f3', date: key(-2), type: 'income', amount: '500', category: 'Fixo' },
+    { id: 'f4', date: 'data-invalida', type: 'expense', amount: 10, category: 'Outros' },
+    { id: 'f5', date: key(-3), type: 'expense', amount: Number.NaN, category: 'Outros' },
+  ],
+  weight: [
+    { id: 'w1', date: key(-1), kg: null },
+    { id: 'w2', date: key(-2), kg: 80 },
+    { id: 'w3', date: key(-3), kg: '81,5' },
+  ],
+  books: [{ id: 'b1', title: 'Mindset', totalPages: 350, currentPage: null }],
+};
+
 const vazio = {
   ...cheio,
   user: { name: '', identity: '', noMore: '', areas: [], createdAt: '' },
@@ -564,6 +585,21 @@ for (const [label, file] of screens) {
     // `bgElevated`/`undefined->` aparecem em props opcionais legítimas; o alvo é
     // texto visível com NaN/Infinity ou a palavra "undefined" solta no conteúdo.
     else if (/NaN|Infinity/.test(html) || />[^<]*\bundefined\b[^<]*</.test(html)) log(false, `${label}: valor inválido no HTML`);
+    else log(true, `${label} (${html.length} chars)`);
+  } catch (e) {
+    log(false, `${label}: ${e.message}`);
+  }
+}
+
+console.log('\n── Telas: dados corrompidos (null/NaN/texto de backup antigo) ──');
+for (const [label, file] of screens) {
+  try {
+    const copy = await withStore(file, 'sujo', sujo);
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const html = renderToStaticMarkup(React.createElement(Screen));
+    if (html.length < 200) log(false, `${label}: markup vazio com dado corrompido`);
+    // NaN visível é o sintoma de aritmética não protegida.
+    else if (/NaN|Infinity/.test(html)) log(false, `${label}: NaN/Infinity no HTML com dado corrompido`);
     else log(true, `${label} (${html.length} chars)`);
   } catch (e) {
     log(false, `${label}: ${e.message}`);

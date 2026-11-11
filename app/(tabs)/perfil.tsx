@@ -26,11 +26,23 @@ import { exportJson, exportPdf } from '../../src/lib/export';
 import { generalStreak, goalStreak } from '../../src/lib/score';
 import { closedDays } from '../../src/lib/insights';
 import { todayKey } from '../../src/lib/date';
-import { storageHealth } from '../../src/lib/storage';
+import { lastSanitize, storageHealth } from '../../src/lib/storage';
 import { openAppLimits } from '../../src/lib/native';
 import { lastReminderSchedule, scheduleReminders } from '../../src/lib/notifications';
 import { haptic } from '../../src/lib/haptics';
 import { LIFE_AREAS } from '../../src/lib/types';
+
+/** Nomes, em português, das listas que a sanitização pode descartar. */
+const SANITIZE_LABELS: Record<string, string> = {
+  finances: 'finanças',
+  weight: 'peso',
+  books: 'livros',
+  rules: 'regras',
+  rewards: 'recompensas',
+  goals: 'metas',
+  days: 'dias',
+  emotions: 'emoções',
+};
 
 export default function ProfileScreen() {
   useTheme();
@@ -101,6 +113,27 @@ export default function ProfileScreen() {
             <Muted style={{ marginTop: 4 }}>Chave com problema: {storageHealth.lastFailedKey ?? 'desconhecida'}</Muted>
           </Card>
         ) : null}
+        {/* Sanitização: o boot descarta o que não dá para ler. Sem este aviso o
+            descarte seria silencioso — e o usuário veria o total do mês mudar
+            sem explicação. */}
+        {lastSanitize.total > 0 ? (
+          <Card accent={colors.yellow + '55'}>
+            <Txt variant="caption" color={colors.yellow}>
+              ⚠️ {lastSanitize.total === 1
+                ? '1 registro ilegível foi descartado na abertura do app'
+                : `${lastSanitize.total} registros ilegíveis foram descartados na abertura do app`}
+              {Object.entries(lastSanitize.dropped)
+                .filter(([, n]) => n > 0)
+                .map(([field, n]) => ` · ${SANITIZE_LABELS[field] ?? field}: ${n}`)
+                .join('')}
+            </Txt>
+            <Muted style={{ marginTop: 4 }}>
+              Valor vazio, data inválida ou número que não é número (backup antigo). O registro saiu da lista para as
+              somas não mentirem.
+            </Muted>
+          </Card>
+        ) : null}
+
         {/* HEADER */}
         <Row style={{ justifyContent: 'space-between' }}>
           <View>

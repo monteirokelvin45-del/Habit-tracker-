@@ -62,7 +62,7 @@ export async function discardSnapshots() { for (const k of Object.keys(snapshots
 export async function persist(key, value) { state.writes.push([key, value]); }
 export async function persistMany(entries) { state.writes.push(...entries); }
 export async function resetAll() { state.writes.push(['reset']); }
-export async function normalizeData(input, base) { return { ...base, ...(input ?? {}) }; }
+export function normalizeData(input, base) { return { ...base, ...(input ?? {}) }; }
 `,
 );
 
@@ -389,6 +389,54 @@ console.log('\n── Conquistas: o store avisa quando desbloqueia ──');
   useStore.setState({ days: dias, badges: [] });
   useStore.getState().closeDay(today, types.emptyDiary());
   check('fechar o dia que completa 7 dias anuncia a conquista', useStore.getState().freshUnlocks.some((u) => u.id === 'first-week'), JSON.stringify(useStore.getState().freshUnlocks.map((u) => u.id)));
+}
+
+console.log('\n── Backup: restaurar não perde o diário de emoções ──');
+{
+  const storageStub = await import(pathToFileURL(path.join(outRoot, 'storage-stub.mjs')).href);
+  const importer = await import(pathToFileURL(path.join(outRoot, 'importer.mjs')).href);
+
+  seed({ goals: [goal('g1')], days: [] });
+  // Backup mínimo realista: dias com tarefas e diário, como o export gera.
+  const backup = {
+    ...storageStub.EMPTY_DATA,
+    app: 'MY PRIME',
+    schemaVersion: 1,
+    onboarded: true,
+    goals: [goal('g1')],
+    days: [closedDay(yesterday, [{ goalId: 'g1', done: true, note: '' }], 8)],
+    emotions: [
+      { at: `${yesterday}T08:00:00.000Z`, date: yesterday, emotion: 'Ansioso', moment: 'manhã', intensity: 4 },
+      { at: `${yesterday}T20:00:00.000Z`, date: yesterday, emotion: 'Calmo', moment: 'noite', intensity: 3 },
+    ],
+  };
+  const summary = importer.readPlan(JSON.stringify(backup), 'backup.json', useStore.getState());
+  if (process.env.DEBUG_IMPORT) {
+    console.log('DEBUG summary:', summary.source, '| full.days:', summary.full?.days?.length, '| typeof:', typeof summary.full?.days);
+  }
+  await useStore.getState().applyImport(summary);
+  check('import de backup reconhece o arquivo', summary.source === 'backup');
+  check('restaura o log de emoções', useStore.getState().emotions.length === 2, `${useStore.getState().emotions.length} · summary.full.emotions=${(summary.full && summary.full.emotions || []).length}`);
+  check('restaura os dias do backup', useStore.getState().days.length === 1);
+  check('não dispara anúncio de conquista em massa ao restaurar', useStore.getState().freshUnlocks.length === 0, JSON.stringify(useStore.getState().freshUnlocks.map((u) => u.id)));
+}
+
+console.log('\n── Sanitização: valor inválido não entra no estado ──');
+{
+  seed({ goals: [goal('g1')], days: [] });
+  useStore.getState().addFinance({ id: 'f1', date: today, type: 'expense', amount: Number.NaN, category: 'Lazer', isImpulse: false, note: '' });
+  check('addFinance recusa amount NaN', useStore.getState().finances.length === 0, JSON.stringify(useStore.getState().finances));
+  useStore.getState().addFinance({ id: 'f2', date: today, type: 'expense', amount: 0, category: 'Lazer', isImpulse: false, note: '' });
+  check('addFinance recusa valor 0', useStore.getState().finances.length === 0);
+  useStore.getState().addFinance({ id: 'f3', date: today, type: 'expense', amount: 25.5, category: 'Lazer', isImpulse: false, note: '' });
+  check('addFinance aceita valor válido', useStore.getState().finances.length === 1 && useStore.getState().finances[0].amount === 25.5);
+
+  useStore.getState().addWeight({ date: today, kg: Number.NaN });
+  check('addWeight recusa kg NaN', useStore.getState().weight.length === 0);
+  useStore.getState().addWeight({ date: today, kg: 0 });
+  check('addWeight recusa kg 0', useStore.getState().weight.length === 0);
+  useStore.getState().addWeight({ date: today, kg: 82.4 });
+  check('addWeight aceita peso plausível', useStore.getState().weight.length === 1 && useStore.getState().weight[0].kg === 82.4);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);

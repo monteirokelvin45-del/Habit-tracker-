@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { emptyDiary } from './types';
 import { sanitizeEmotionLog } from './emotions';
+import { emptyReport, sanitizeDataSlices, type SanitizeReport } from './sanitize';
 import type {
   AppData,
   BadgeState,
@@ -95,6 +96,16 @@ export interface StorageHealth {
 export const storageHealth: StorageHealth = { lastFailedKey: null, failedWrites: 0 };
 
 /**
+ * Último resultado da sanitização de entrada.
+ *
+ * Antes, `finances`/`weight`/`books`/`rules`/`rewards` entravam crus: um registro
+ * com `amount: null` (o que `JSON.stringify(NaN)` grava) derrubava a tela de
+ * Finanças e a de Peso com `.toFixed is not a function`. Agora o boot repara o
+ * que dá, descarta o que não dá e **conta** o que descartou — o Perfil mostra.
+ */
+export const lastSanitize: SanitizeReport = emptyReport();
+
+/**
  * Chaves espelhadas num snapshot automático. Se `days` um dia voltar vazio (bug de
  * migração, multiRemove acidental, storage corrompido), o app consegue recuperar a
  * última versão boa em vez de começar do zero.
@@ -187,18 +198,34 @@ export function normalizeData(input: Partial<AppData> | null | undefined, base: 
   const days = arr<Partial<Day>>(raw.days)
     .filter((d) => !!d && typeof d === 'object' && typeof d.date === 'string')
     .map(normalizeDay);
+  const report = emptyReport();
+  const clean = sanitizeDataSlices(
+    {
+      goals: arr<Partial<Goal>>(raw.goals),
+      finances: raw.finances,
+      weight: raw.weight,
+      books: raw.books,
+      rules: raw.rules,
+      rewards: raw.rewards,
+    },
+    sanitizeGoal,
+    report,
+  );
+  // Mesmo relatório do boot: um backup importado que perde registros também
+  // precisa contar o que perdeu (senão o total do mês muda sem explicação).
+  lastSanitize.dropped = report.dropped;
+  lastSanitize.total = report.total;
   return {
     onboarded: raw.onboarded ?? base.onboarded,
     user: { ...base.user, ...(raw.user ?? {}), areas: arr<string>((raw.user as User | undefined)?.areas) },
-    goals: arr<Partial<Goal> | null>(raw.goals)
-      .filter((g): g is Partial<Goal> => !!g && typeof g === 'object' && typeof g.id === 'string')
-      .map(sanitizeGoal),
+    goals: clean.goals,
     days,
-    rules: arr<Rule>(raw.rules),
-    rewards: arr<Reward>(raw.rewards),
-    books: arr<Book>(raw.books),
-    finances: arr<FinanceEntry>(raw.finances),
-    weight: arr<WeightEntry>(raw.weight),
+    // Mesma sanitização do boot: backup editado à mão não pode derrubar tela.
+    rules: clean.rules,
+    rewards: clean.rewards,
+    books: clean.books,
+    finances: clean.finances,
+    weight: clean.weight,
     settings: { ...DEFAULT_SETTINGS, ...base.settings, ...(raw.settings ?? {}) },
     badges: arr<BadgeState>(raw.badges),
     ayanokoji: raw.ayanokoji ?? base.ayanokoji,
@@ -292,16 +319,23 @@ export async function loadAll(): Promise<AppData> {
     read<unknown>(KEYS.emotions, []),
   ]);
 
+  // Sanitiza tudo o que vem do storage. `days`, `goals` e `emotions` já tinham
+  // tratamento próprio logo acima; o resto entrava cru.
+  const report = emptyReport();
+  const clean = sanitizeDataSlices({ goals, finances, weight, books, rules, rewards }, sanitizeGoal, report);
+  lastSanitize.dropped = report.dropped;
+  lastSanitize.total = report.total;
+
   return {
     onboarded,
     user,
-    goals,
+    goals: clean.goals,
     days,
-    rules,
-    rewards,
-    books,
-    finances,
-    weight,
+    rules: clean.rules,
+    rewards: clean.rewards,
+    books: clean.books,
+    finances: clean.finances,
+    weight: clean.weight,
     settings: { ...DEFAULT_SETTINGS, ...settings },
     badges,
     ayanokoji: ayanokoji ?? { startDate: '', scores: [], tasksDone: {} },
