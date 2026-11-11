@@ -14,12 +14,12 @@ import {
   type ViewStyle,
   type StyleProp,
 } from 'react-native';
-import { colors, radius, spacing, type } from '../theme';
+import { colors, radius, spacing, type, useTheme } from '../theme';
 import { haptic } from '../lib/haptics';
 
 /* ─────────────────────────────── Text ─────────────────────────────── */
 
-type TextVariant = 'h1' | 'h2' | 'h3' | 'body' | 'caption' | 'micro';
+type TextVariant = 'h1' | 'h2' | 'h3' | 'metric' | 'body' | 'caption' | 'micro';
 
 export function Txt({
   variant = 'body',
@@ -36,6 +36,7 @@ export function Txt({
   numberOfLines?: number;
   onPress?: () => void;
 }) {
+  useTheme(); // re-render na troca de tema
   return (
     <Text
       onPress={onPress}
@@ -62,6 +63,8 @@ export function Muted({ children, style }: { children?: React.ReactNode; style?:
 
 /** "Sem dado" — regra absoluta 1: nunca inventar. */
 export function NoData({ label = 'Sem dado' }: { label?: string }) {
+  useTheme();
+
   return (
     <Txt variant="caption" color={colors.textMuted}>
       {label}
@@ -95,10 +98,12 @@ export function Card({
     return () => loop.stop();
   }, [pulse, anim]);
 
+  const t = useTheme();
   return (
     <Animated.View
       style={[
         styles.card,
+        { backgroundColor: t.bgCard, borderColor: t.border },
         accent ? { borderColor: accent } : null,
         pulse ? { opacity: anim, borderColor: accent ?? colors.red } : null,
         style,
@@ -134,6 +139,7 @@ export function Chip({
   color?: string;
   emoji?: string;
 }) {
+  useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -175,6 +181,7 @@ export function PrimaryButton({
   color?: string;
   style?: StyleProp<ViewStyle>;
 }) {
+  useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -213,6 +220,7 @@ export function SecondaryButton({
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
 }) {
+  useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -245,6 +253,7 @@ export function IconButton({
   color?: string;
   size?: number;
 }) {
+  useTheme();
   return (
     <Pressable hitSlop={12} onPress={() => { haptic('light'); onPress?.(); }} accessibilityRole="button">
       <Text style={{ color, fontSize: size, fontWeight: '700' }}>{label}</Text>
@@ -277,6 +286,7 @@ export function Field({
   maxLength?: number;
   autoFocus?: boolean;
 }) {
+  const t = useTheme();
   return (
     <View style={[{ gap: 6 }, style]}>
       {label ? <Txt variant="caption" color={colors.textSecondary}>{label}</Txt> : null}
@@ -289,7 +299,11 @@ export function Field({
         keyboardType={keyboardType}
         maxLength={maxLength}
         autoFocus={autoFocus}
-        style={[styles.input, multiline && { minHeight: 92, textAlignVertical: 'top' }]}
+        style={[
+          styles.input,
+          { backgroundColor: t.bgInput, borderColor: t.borderAccent, color: t.textPrimary },
+          multiline && { minHeight: 92, textAlignVertical: 'top' },
+        ]}
       />
       {hint ? <Txt variant="micro" color={colors.textMuted}>{hint}</Txt> : null}
     </View>
@@ -309,6 +323,7 @@ export function Checkbox({
   onLongPress?: () => void;
   color?: string;
 }) {
+  const t = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
   const handle = () => {
     Animated.sequence([
@@ -322,6 +337,7 @@ export function Checkbox({
       <Animated.View
         style={[
           styles.checkbox,
+          { borderColor: checked ? color : t.borderAccent, backgroundColor: checked ? color : 'transparent' },
           { transform: [{ scale }] },
           checked && { backgroundColor: color, borderColor: color },
         ]}
@@ -347,6 +363,7 @@ export function Slider({
   max?: number;
   color?: string;
 }) {
+  useTheme();
   const [width, setWidth] = useState(0);
   const steps = max - min;
   const pick = (x: number) => {
@@ -413,12 +430,13 @@ export function Sheet({
   footer?: React.ReactNode;
   scroll?: boolean;
 }) {
+  const t = useTheme();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.sheetBackdrop}>
         <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Fechar" />
-        <View style={styles.sheet}>
-          <View style={styles.sheetHandle} />
+        <View style={[styles.sheet, { backgroundColor: t.bgElevated, borderColor: t.border }]}>
+          <View style={[styles.sheetHandle, { backgroundColor: t.track }]} />
           {title ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingBottom: spacing.md }}>
               <Txt variant="h3">{title}</Txt>
@@ -457,6 +475,7 @@ export function OptionPicker({
   onSelect: (v: string) => void;
   placeholder?: string;
 }) {
+  const t = useTheme();
   const [open, setOpen] = useState(false);
   return (
     <View style={{ gap: 6 }}>
@@ -476,7 +495,10 @@ export function OptionPicker({
               onSelect(opt);
               setOpen(false);
             }}
-            style={[styles.optionRow, value === opt && { borderColor: colors.green }]}
+            style={[
+              styles.optionRow,
+              { backgroundColor: t.bgCard, borderColor: value === opt ? t.green : t.border },
+            ]}
           >
             <Txt variant="body" color={value === opt ? colors.green : colors.textPrimary}>
               {opt}
@@ -501,6 +523,7 @@ export function TimeField({
   value: string;
   onChange: (v: string) => void;
 }) {
+  useTheme();
   const [open, setOpen] = useState(false);
   const [h, m] = (value || '07:00').split(':');
   const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
@@ -559,6 +582,7 @@ export function ToggleRow({
   value: boolean;
   onChange: (v: boolean) => void;
 }) {
+  useTheme();
   return (
     <Pressable
       onPress={() => {
@@ -611,7 +635,8 @@ export function SectionTitle({ children, right }: { children: React.ReactNode; r
 }
 
 export function Divider() {
-  return <View style={{ height: 1, backgroundColor: colors.border, marginVertical: spacing.sm }} />;
+  const t = useTheme();
+  return <View style={{ height: 1, backgroundColor: t.border, marginVertical: spacing.sm }} />;
 }
 
 export function Row({ children, gap = spacing.sm, style }: { children?: React.ReactNode; gap?: number; style?: StyleProp<ViewStyle> }) {
@@ -631,6 +656,7 @@ export function Accordion({
   defaultOpen?: boolean;
   right?: React.ReactNode;
 }) {
+  useTheme();
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Card style={{ padding: 0, overflow: 'hidden' }}>
@@ -668,12 +694,12 @@ export function EmptyState({ emoji, title, hint }: { emoji: string; title: strin
 }
 
 const styles = StyleSheet.create({
+  // Só geometria aqui. Cor vem de `useTheme()` no componente: `StyleSheet` congela
+  // o valor no import do módulo e a troca de tema não refletiria.
   card: {
-    backgroundColor: colors.bgCard,
     borderRadius: radius.lg,
     padding: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   badge: {
     borderRadius: radius.pill,
@@ -704,13 +730,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   input: {
-    backgroundColor: colors.bgInput,
     borderWidth: 1,
-    borderColor: '#333333',
     borderRadius: radius.md,
     padding: 14,
-    color: colors.textPrimary,
-    fontSize: 16,
+    fontSize: 15,
     minHeight: 50,
   },
   checkbox: {
@@ -718,7 +741,6 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 7,
     borderWidth: 2,
-    borderColor: '#555555',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -732,7 +754,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: colors.bgElevated,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '88%',
@@ -743,7 +764,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.track,
     alignSelf: 'center',
     marginVertical: spacing.md,
   },
@@ -755,8 +775,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgCard,
   },
   wrap: {
     flexDirection: 'row',

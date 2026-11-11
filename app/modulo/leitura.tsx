@@ -1,211 +1,380 @@
-import React, { useState } from 'react';
-import { ScrollView, View } from 'react-native';
-import { areaColor, colors, spacing } from '../../src/theme';
-import {
-  Badge,
-  Card,
-  Field,
-  Muted,
-  NoData,
-  PrimaryButton,
-  Row,
-  SecondaryButton,
-  Sheet,
-  Txt,
-} from '../../src/components/ui';
+import React, { useMemo, useState } from 'react';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ModalHeader } from '../../src/components/ModalHeader';
-import { Heatmap, LineChart } from '../../src/components/charts';
-import { useStore, newId } from '../../src/lib/store';
-import { lastNDays, todayKey } from '../../src/lib/date';
+import { Icon } from '../../src/components/Icon';
+import { Badge, Card, Muted, PrimaryButton, Row, SecondaryButton, Sheet, Txt } from '../../src/components/ui';
+import { colors, radius, spacing, useTheme } from '../../src/theme';
+import { useStore } from '../../src/lib/store';
+import { todayKey } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
-import type { Book } from '../../src/lib/types';
+import {
+  applyPages,
+  bookPercent,
+  daysToFinish,
+  pagesPerDay,
+  progressSeries,
+  type BookProgress,
+} from '../../src/lib/reading';
+import { LineChart } from '../../src/components/charts';
 
-export default function ReadingScreen() {
+/**
+ * Detalhamento da área LEITURA.
+ *
+ * Livro em andamento com progresso real, contador do dia, citação/reflexão e
+ * biblioteca (fila + concluídos). Estimativa de conclusão só com velocidade
+ * medida — sem dado, diz que não tem.
+ */
+export default function LeituraScreen() {
+  useTheme();
   const store = useStore();
-  const [sheet, setSheet] = useState(false);
-  const [title, setTitle] = useState('');
-  const [author, setAuthor] = useState('');
-  const [totalPages, setTotalPages] = useState('');
-  const [currentPage, setCurrentPage] = useState('');
+  const today = todayKey();
 
-  const books = store.books;
-  const current = books.find((b) => !b.finished);
-  const allLogs = books.flatMap((b) => b.log ?? []);
-  const pagesThisYear = allLogs.filter((l) => l.date.startsWith(todayKey().slice(0, 4))).reduce((a, b) => a + b.pages, 0);
+  const day = store.days.find((d) => d.date === today);
+  const diary = (day?.diary ?? {}) as { book?: BookProgress };
 
-  const daysWithReading = Array.from(new Set(allLogs.map((l) => l.date))).sort();
-  const last14 = lastNDays(14);
-  // Aqui o eixo é "leu ou não leu": usa 6 (faixa verde), não 8 (que pintaria tudo como nível máximo).
-  const heat = last14.map((date) => ({
-    date,
-    score: daysWithReading.includes(date) ? 6 : null,
-  }));
+  const [book, setBook] = useState<BookProgress>(
+    diary.book ?? {
+      title: store.books.find((b) => !b.finished)?.title ?? '',
+      author: '',
+      totalPages: 350,
+      currentPage: 0,
+      todayPages: 0,
+    },
+  );
+  const [inputPage, setInputPage] = useState(false);
+  const [pageInput, setPageInput] = useState('');
+  const [quoteOpen, setQuoteOpen] = useState(false);
 
-  const avgDaily = (() => {
-    if (!allLogs.length) return 0;
-    const byDate = new Map<string, number>();
-    for (const l of allLogs) byDate.set(l.date, (byDate.get(l.date) ?? 0) + l.pages);
-    return Array.from(byDate.values()).reduce((a, b) => a + b, 0) / byDate.size;
-  })();
+  /* histórico real: dias com página registrada */
+  const history = useMemo(
+    () =>
+      store.days
+        .map((d) => {
+          const b = d.diary.book as BookProgress | undefined;
+          return b ? { date: d.date, page: b.currentPage } : null;
+        })
+        .filter((p): p is { date: string; page: number } => !!p),
+    [store.days],
+  );
 
-  const remainingPages = current ? Math.max(0, current.totalPages - current.currentPage) : 0;
-  const daysToFinish = avgDaily > 0 ? Math.ceil(remainingPages / avgDaily) : null;
+  const speed = pagesPerDay(history);
+  const estimate = daysToFinish(book, speed, today);
+  const percent = bookPercent(book);
 
-  const registerPages = (book: Book, pages: number) => {
-    if (!book || pages <= 0) return;
-    const nextPage = Math.min(book.totalPages, book.currentPage + pages);
-    // O log registra o que foi realmente lido, não o que foi pedido:
-    // num livro a 440/443, "+30" não pode virar 30 páginas lidas.
-    const actuallyRead = Math.max(0, nextPage - book.currentPage);
-    if (!actuallyRead) return;
-    const updated: Book = {
-      ...book,
-      currentPage: nextPage,
-      finished: nextPage >= book.totalPages,
-      log: [...(book.log ?? []), { date: todayKey(), pages: actuallyRead }],
-    };
-    store.updateBook(updated);
-    haptic('success');
+  const commit = (next: BookProgress) => {
+    setBook(next);
+    store.patchDiary(today, { book: next });
+    haptic('light');
   };
 
+  const series = progressSeries(history);
+  const queue = store.books.filter((b) => !b.finished);
+  const finished = store.books.filter((b) => b.finished);
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
-      <ModalHeader title="📚 Leitura" subtitle={`${pagesThisYear} páginas neste ano`} onAdd={() => setSheet(true)} addLabel="+ Livro" />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60, gap: spacing.md }}>
-        {current ? (
-          <Card accent={areaColor('Leitura') + '55'} style={{ gap: spacing.sm }}>
-            <Row style={{ justifyContent: 'space-between' }}>
-              <View style={{ flex: 1 }}>
-                <Txt variant="h3">{current.title}</Txt>
-                <Muted>{current.author || 'Autor não informado'}</Muted>
-              </View>
-              <Badge label={`${current.currentPage}/${current.totalPages}p`} color={areaColor('Leitura')} />
-            </Row>
-            <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.track }}>
-              <View
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bgPrimary }} edges={['top']}>
+      <ModalHeader
+        title="Leitura"
+        subtitle={book.title || 'Livro em andamento'}
+        onAdd={() => setQuoteOpen(true)}
+        addLabel="Citação"
+      />
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}>
+        {/* LIVRO */}
+        <Card style={{ gap: spacing.md }}>
+          <Row gap={spacing.md} style={{ alignItems: 'flex-start' }}>
+            <View
+              style={{
+                width: 58,
+                height: 82,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: colors.borderAccent,
+                backgroundColor: colors.bgElevated,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icon name="leitura" size={22} color={colors.cyan} />
+            </View>
+            <View style={{ flex: 1, gap: 4 }}>
+              <TextInput
+                value={book.title}
+                onChangeText={(v) => setBook({ ...book, title: v })}
+                placeholder="Título do livro"
+                placeholderTextColor={colors.textMuted}
+                style={{ color: colors.textPrimary, fontSize: 18, fontWeight: '700' }}
+              />
+              <TextInput
+                value={book.author}
+                onChangeText={(v) => setBook({ ...book, author: v })}
+                placeholder="Autor"
+                placeholderTextColor={colors.textMuted}
+                style={{ color: colors.textSecondary, fontSize: 13 }}
+              />
+              <Badge label={`pág. ${book.currentPage} de ${book.totalPages}`} color={colors.cyan} />
+            </View>
+          </Row>
+
+          <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.track, overflow: 'hidden' }}>
+            <View style={{ height: 6, width: `${percent * 100}%`, backgroundColor: colors.cyan }} />
+          </View>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Txt variant="caption" color={colors.cyan}>
+              {Math.round(percent * 100)}%
+            </Txt>
+            <Txt variant="micro" color={colors.textMuted} style={{ letterSpacing: 0 }}>
+              {estimate.label}
+            </Txt>
+          </Row>
+        </Card>
+
+        {/* META DO DIA */}
+        <Card style={{ gap: spacing.md }}>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <View>
+              <Txt variant="micro" color={colors.textSecondary} style={{ letterSpacing: 2 }}>
+                Páginas hoje
+              </Txt>
+              <Txt variant="h1" color={colors.cyan}>
+                {book.todayPages}
+              </Txt>
+            </View>
+            <View style={{ alignItems: 'flex-end', gap: 4 }}>
+              <Txt variant="micro" color={colors.textMuted} style={{ letterSpacing: 0 }}>
+                {speed == null ? 'velocidade: sem dado' : `${speed} pág/dia`}
+              </Txt>
+              <Txt variant="micro" color={colors.textMuted} style={{ letterSpacing: 0 }}>
+                {book.totalPages - book.currentPage} páginas restantes
+              </Txt>
+            </View>
+          </Row>
+
+          <Row gap={spacing.sm}>
+            <SecondaryButton
+              label="−5"
+              color={colors.textSecondary}
+              style={{ flex: 1 }}
+              onPress={() => commit(applyPages(book, -5))}
+            />
+            <SecondaryButton
+              label="+5"
+              color={colors.cyan}
+              style={{ flex: 1 }}
+              onPress={() => commit(applyPages(book, 5))}
+            />
+            <SecondaryButton
+              label="+10"
+              color={colors.cyan}
+              style={{ flex: 1 }}
+              onPress={() => commit(applyPages(book, 10))}
+            />
+          </Row>
+          <Pressable onPress={() => setInputPage((v) => !v)}>
+            <Txt variant="caption" color={colors.textSecondary}>
+              {inputPage ? 'fechar' : 'digitar página exata'}
+            </Txt>
+          </Pressable>
+          {inputPage ? (
+            <Row gap={spacing.sm}>
+              <TextInput
+                value={pageInput}
+                onChangeText={setPageInput}
+                keyboardType="number-pad"
+                placeholder={`até ${book.totalPages}`}
+                placeholderTextColor={colors.textMuted}
                 style={{
-                  width: `${Math.min(100, (current.currentPage / Math.max(1, current.totalPages)) * 100)}%`,
-                  height: '100%',
-                  borderRadius: 4,
-                  backgroundColor: areaColor('Leitura'),
+                  flex: 1,
+                  backgroundColor: colors.bgInput,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: radius.md,
+                  padding: spacing.md,
+                  color: colors.textPrimary,
+                }}
+              />
+              <PrimaryButton
+                label="Ir"
+                onPress={() => {
+                  const target = Number(pageInput);
+                  if (!Number.isFinite(target)) return;
+                  commit({ ...book, currentPage: Math.min(book.totalPages, Math.max(0, target)) });
+                  setPageInput('');
+                  setInputPage(false);
+                }}
+              />
+            </Row>
+          ) : null}
+
+          <Row gap={spacing.sm}>
+            <View style={{ flex: 1 }}>
+              <Txt variant="micro" color={colors.textMuted} style={{ letterSpacing: 0 }}>
+                total de páginas
+              </Txt>
+              <TextInput
+                value={String(book.totalPages)}
+                onChangeText={(v) => setBook({ ...book, totalPages: Math.max(1, Number(v.replace(/\D/g, '')) || 1) })}
+                keyboardType="number-pad"
+                style={{
+                  backgroundColor: colors.bgInput,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 8,
+                  paddingVertical: 6,
+                  paddingHorizontal: 8,
+                  color: colors.textPrimary,
                 }}
               />
             </View>
-            <Row gap={spacing.sm} style={{ flexWrap: 'wrap' }}>
-              {[5, 10, 20, 30].map((p) => (
-                <SecondaryButton
-                  key={p}
-                  label={`+${p}p`}
-                  style={{ height: 40, minWidth: 72 }}
-                  color={areaColor('Leitura')}
-                  onPress={() => registerPages(current, p)}
-                />
-              ))}
-            </Row>
-            <Muted>
-              Meta diária: {current.dailyGoal.min} / {current.dailyGoal.ideal} / {current.dailyGoal.excellent} páginas
-            </Muted>
-            <Muted>
-              {daysToFinish != null
-                ? `No ritmo atual (${avgDaily.toFixed(1)} p/dia), termina em ~${daysToFinish} dia(s).`
-                : 'Sem média diária suficiente para estimar.'}
-            </Muted>
-            <Row gap={spacing.md}>
-              <Txt variant="micro" color={colors.yellow} onPress={() => store.updateBook({ ...current, finished: true, currentPage: current.totalPages })}>
-                marcar concluído
+            <View style={{ flex: 2 }}>
+              <Txt variant="micro" color={colors.textMuted} style={{ letterSpacing: 0 }}>
+                citação marcante
               </Txt>
-              <Txt variant="micro" color={colors.red} onPress={() => store.deleteBook(current.id)}>excluir</Txt>
-            </Row>
-          </Card>
-        ) : (
-          <Card>
-            <Txt variant="h3">Nenhum livro em andamento</Txt>
-            <Muted style={{ marginTop: 4 }}>Adicione um livro para acompanhar páginas, ritmo e previsão de término.</Muted>
-            <PrimaryButton label="Adicionar livro" style={{ marginTop: spacing.md }} onPress={() => setSheet(true)} />
-          </Card>
-        )}
+              <TextInput
+                value={book.quote ?? ''}
+                onChangeText={(v) => setBook({ ...book, quote: v })}
+                placeholder="trecho que vale registrar"
+                placeholderTextColor={colors.textMuted}
+                style={{
+                  backgroundColor: colors.bgInput,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 8,
+                  paddingVertical: 6,
+                  paddingHorizontal: 8,
+                  color: colors.textPrimary,
+                }}
+              />
+            </View>
+          </Row>
+          <TextInput
+            value={book.reflection ?? ''}
+            onChangeText={(v) => setBook({ ...book, reflection: v })}
+            placeholder="Reflexão prática: o que eu faço diferente por causa disso?"
+            placeholderTextColor={colors.textMuted}
+            multiline
+            style={{
+              backgroundColor: colors.bgInput,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: radius.md,
+              padding: spacing.md,
+              color: colors.textPrimary,
+              minHeight: 76,
+              textAlignVertical: 'top',
+              fontSize: 14,
+            }}
+          />
+          <PrimaryButton label="Salvar leitura" onPress={() => commit(book)} />
+        </Card>
 
-        <Card>
-          <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Páginas acumuladas</Txt>
-          {allLogs.length >= 3 ? (
-            <LineChart
-              labels={Array.from(new Set(allLogs.map((l) => l.date))).sort().map((d) => d.slice(8, 10))}
-              series={[
-                {
-                  name: 'Páginas/dia',
-                  color: areaColor('Leitura'),
-                  points: Array.from(new Set(allLogs.map((l) => l.date)))
-                    .sort()
-                    .map((date) => allLogs.filter((l) => l.date === date).reduce((a, b) => a + b.pages, 0)),
-                },
-              ]}
-              max={Math.max(10, ...allLogs.map((l) => l.pages))}
-            />
+        {/* HISTÓRICO */}
+        <Card style={{ gap: spacing.sm }}>
+          <Txt variant="micro" color={colors.textSecondary} style={{ letterSpacing: 2 }}>
+            Progresso registrado
+          </Txt>
+          {series.points.length < 2 ? (
+            <Muted>Sem dado — 2 registros de página em dias diferentes liberam o gráfico.</Muted>
           ) : (
-            <NoData label="Gráficos a partir de 3 pontos de dado" />
+            <LineChart
+              series={[{ name: 'página', color: colors.cyan, points: series.points }]}
+              labels={series.labels}
+              max={Math.max(book.totalPages, ...series.points)}
+              height={140}
+            />
           )}
         </Card>
 
-        <Card>
-          <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Heatmap de leitura (14 dias)</Txt>
-          <Heatmap data={heat} cell={28} />
+        {/* BIBLIOTECA */}
+        <Card style={{ gap: spacing.sm }}>
+          <Txt variant="micro" color={colors.textSecondary} style={{ letterSpacing: 2 }}>
+            Fila de leitura
+          </Txt>
+          {queue.length === 0 ? (
+            <Muted>Sem dado — nenhum livro na fila.</Muted>
+          ) : (
+            queue.slice(0, 5).map((b) => (
+              <Row key={b.id} gap={spacing.sm}>
+                <Icon name="fila" size={13} color={colors.textMuted} />
+                <Txt variant="caption" color={colors.textPrimary} style={{ flex: 1 }} numberOfLines={1}>
+                  {b.title}
+                </Txt>
+                <Txt variant="micro" color={colors.textMuted} onPress={() => store.updateBook({ ...b, finished: true })}>
+                  concluir
+                </Txt>
+              </Row>
+            ))
+          )}
+          <Txt
+            variant="micro"
+            color={colors.cyan}
+            onPress={() =>
+              store.addBook({
+                id: `${Date.now()}`,
+                title: book.title || 'Novo livro',
+                author: book.author,
+                totalPages: book.totalPages,
+                currentPage: 0,
+                dailyGoal: { min: 5, ideal: 20, excellent: 40 },
+                finished: false,
+              })
+            }
+          >
+            + adicionar à fila
+          </Txt>
         </Card>
 
-        <Txt variant="h3">Biblioteca</Txt>
-        {books.length === 0 ? <NoData label="Sem livros cadastrados" /> : null}
-        {books.map((b) => (
-          <Card key={b.id} style={{ gap: 4 }}>
-            <Row style={{ justifyContent: 'space-between' }}>
-              <Txt variant="caption" color={colors.textPrimary}>{b.title}</Txt>
-              <Badge label={b.finished ? 'concluído' : `${Math.round((b.currentPage / Math.max(1, b.totalPages)) * 100)}%`} color={b.finished ? colors.green : colors.textSecondary} />
-            </Row>
-            <Muted>{b.author || '—'} · {b.totalPages}p · lido até {b.currentPage}</Muted>
-            {!b.finished ? (
-              <Row gap={spacing.md}>
-                <Txt variant="micro" color={areaColor('Leitura')} onPress={() => registerPages(b, 10)}>+10 páginas</Txt>
-                <Txt variant="micro" color={colors.red} onPress={() => store.deleteBook(b.id)}>excluir</Txt>
+        <Card>
+          <Txt variant="micro" color={colors.textSecondary} style={{ letterSpacing: 2 }}>
+            Concluídos
+          </Txt>
+          {finished.length === 0 ? (
+            <Muted style={{ marginTop: 4 }}>Sem dado — nenhum livro concluído.</Muted>
+          ) : (
+            finished.slice(-5).map((b) => (
+              <Row key={b.id} gap={spacing.sm} style={{ marginTop: 4 }}>
+                <Icon name="trofeu" size={13} color={colors.green} />
+                <Txt variant="caption" color={colors.textPrimary} style={{ flex: 1 }} numberOfLines={1}>
+                  {b.title}
+                </Txt>
+                <Txt variant="micro" color={colors.textMuted} style={{ letterSpacing: 0 }}>
+                  {b.log?.length ? b.log[b.log.length - 1]!.date : 'sem data'}
+                </Txt>
               </Row>
-            ) : null}
-          </Card>
-        ))}
+            ))
+          )}
+        </Card>
       </ScrollView>
 
-      <Sheet
-        visible={sheet}
-        onClose={() => setSheet(false)}
-        title="Novo livro"
-        footer={
-          <PrimaryButton
-            label="Adicionar"
-            disabled={!title.trim() || !Number(totalPages)}
-            onPress={() => {
-              store.addBook({
-                id: newId('book'),
-                title: title.trim(),
-                author: author.trim(),
-                totalPages: Number(totalPages) || 0,
-                currentPage: Number(currentPage) || 0,
-                dailyGoal: { min: 10, ideal: 20, excellent: 30 },
-                finished: false,
-                log: [],
-              });
-              setTitle('');
-              setAuthor('');
-              setTotalPages('');
-              setCurrentPage('');
-              setSheet(false);
-              haptic('success');
+      <Sheet visible={quoteOpen} onClose={() => setQuoteOpen(false)} title="Citação marcante">
+        <View style={{ padding: spacing.lg, gap: spacing.sm }}>
+          <TextInput
+            value={book.quote ?? ''}
+            onChangeText={(v) => setBook({ ...book, quote: v })}
+            placeholder="Trecho do livro"
+            placeholderTextColor={colors.textMuted}
+            multiline
+            style={{
+              backgroundColor: colors.bgInput,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: radius.md,
+              padding: spacing.md,
+              color: colors.textPrimary,
+              minHeight: 100,
+              textAlignVertical: 'top',
             }}
           />
-        }
-      >
-        <Field label="Título" value={title} onChangeText={setTitle} />
-        <Field label="Autor" value={author} onChangeText={setAuthor} />
-        <Row gap={spacing.sm}>
-          <Field label="Páginas totais" value={totalPages} onChangeText={setTotalPages} keyboardType="number-pad" style={{ flex: 1 }} />
-          <Field label="Página atual" value={currentPage} onChangeText={setCurrentPage} keyboardType="number-pad" style={{ flex: 1 }} />
-        </Row>
+          <PrimaryButton
+            label="Salvar citação"
+            onPress={() => {
+              commit(book);
+              setQuoteOpen(false);
+            }}
+          />
+        </View>
       </Sheet>
-    </View>
+    </SafeAreaView>
   );
 }

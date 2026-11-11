@@ -8,3 +8,4 @@ ios/
 .logic-build/
 .render-build/
 .store-build/
+.screens-build/

@@ -19,6 +19,7 @@ import { useStore, newId } from '../../src/lib/store';
 import { addDays, todayKey, monthLabel, MONTHS_SHORT } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 import { FINANCE_CATEGORIES } from '../../src/lib/types';
+import { BUCKETS, DEFAULT_SPLIT, bucketOf, bucketTargets, daysUntilFirstWant, impulseCostInFutureDays, paydayCheck } from '../../src/lib/finance';
 
 const CATEGORY_COLORS = ['#FF6B35', '#4488FF', '#FF66AA', '#FF4444', '#888888', '#00FF88', '#AA66FF'];
 
@@ -28,6 +29,7 @@ export default function FinanceScreen() {
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<string>('Alimentação');
+  const [impulseWhy, setImpulseWhy] = useState('');
   const [isImpulse, setIsImpulse] = useState(false);
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayKey());
@@ -83,6 +85,11 @@ export default function FinanceScreen() {
       ? `≈ ${Math.max(1, Math.round(impulseWeek / dailyCostRef))} custo(s) de oportunidade registrado(s)`
       : null;
 
+  const buckets = bucketTargets(store.finances, monthK, DEFAULT_SPLIT);
+  const payday = paydayCheck(store.finances, monthK, DEFAULT_SPLIT);
+  const firstWantIn = daysUntilFirstWant(store.finances, monthK);
+  const impulseInFutureDays = impulseCostInFutureDays(store.finances, monthK, DEFAULT_SPLIT);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
       <ModalHeader title="💰 Finanças" subtitle={`${monthLabel(todayKey())} · ${monthEntries.length} lançamentos`} onAdd={() => setSheet(true)} addLabel="+ Lançamento" />
@@ -107,6 +114,82 @@ export default function FinanceScreen() {
             Gastos por impulso esta semana: R$ {impulseWeek.toFixed(0)}
             {impulseDaysEquivalent ? ` (${impulseDaysEquivalent})` : ''}
           </Txt>
+          <Muted>
+            {impulseInFutureDays == null
+              ? 'Sem dado de reserva para medir o custo em dias de Futuro.'
+              : impulseInFutureDays === 0
+                ? 'Nenhum impulso no mês: o balde Futuro está intacto.'
+                : `Esse impulso equivale a ${impulseInFutureDays.toFixed(1)} dia(s) de reserva do balde Futuro.`}
+          </Muted>
+        </Card>
+
+        <Txt variant="h3">Três baldes do mês</Txt>
+        <Card>
+          <Muted>
+            Divisão {BUCKETS.map((b) => `${DEFAULT_SPLIT[b.key]}% ${b.label}`).join(' · ')} da renda do mês.
+            O balde Futuro sai no dia do pagamento, não no fim do mês.
+          </Muted>
+          {buckets.map((b) => (
+            <View key={b.key} style={{ marginTop: spacing.md, gap: 4 }}>
+              <Row style={{ justifyContent: 'space-between' }}>
+                <Txt variant="caption" color={colors.textPrimary}>
+                  {b.label} · {b.percent}%
+                </Txt>
+                <Txt variant="caption" color={b.ratio == null ? colors.textMuted : b.ratio > 1 ? colors.red : colors.green}>
+                  {b.target == null ? 'Sem dado' : `R$ ${b.used.toFixed(0)} / R$ ${b.target.toFixed(0)}`}
+                </Txt>
+              </Row>
+              {b.ratio == null ? (
+                <Muted>Sem renda registrada no mês — alvo não calculado.</Muted>
+              ) : (
+                <>
+                  <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.bgElevated, overflow: 'hidden' }}>
+                    <View
+                      style={{
+                        height: 6,
+                        width: `${Math.min(100, Math.round(b.ratio * 100))}%`,
+                        backgroundColor: b.ratio > 1 ? colors.red : colors.cyan,
+                      }}
+                    />
+                  </View>
+                  <Muted>
+                    {b.left == null
+                      ? 'Sem dado'
+                      : b.left >= 0
+                        ? `Sobra R$ ${b.left.toFixed(0)} no balde`
+                        : `Estourou R$ ${Math.abs(b.left).toFixed(0)} do balde`}
+                  </Muted>
+                </>
+              )}
+            </View>
+          ))}
+        </Card>
+
+        <Txt variant="h3">Regra do Dia de Pagamento</Txt>
+        <Card accent={(payday?.gap ?? 0) < 0 ? colors.yellow + '33' : undefined}>
+          {payday == null ? (
+            <NoData label="Sem receita registrada neste mês — a regra só mede a partir do dia do pagamento" />
+          ) : (
+            <>
+              <Txt variant="caption" color={colors.textPrimary}>
+                Pagamento em {payday.date} · R$ {payday.received.toFixed(0)}
+              </Txt>
+              {payday.expected.map((e) => (
+                <Row key={e.key} style={{ justifyContent: 'space-between', marginTop: 4 }}>
+                  <Txt variant="caption" color={colors.textSecondary}>
+                    Separar em {e.label}
+                  </Txt>
+                  <Txt variant="caption" color={colors.textPrimary}>R$ {e.amount.toFixed(0)}</Txt>
+                </Row>
+              ))}
+              <Muted style={{ marginTop: spacing.sm }}>{payday.verdict}</Muted>
+              <Muted>
+                {firstWantIn == null
+                  ? 'Sem dado de gasto de vontade neste mês.'
+                  : `Primeiro gasto de vontade: ${firstWantIn} dia(s) depois do pagamento.`}
+              </Muted>
+            </>
+          )}
         </Card>
 
         <Card>
@@ -153,7 +236,7 @@ export default function FinanceScreen() {
               <Row style={{ justifyContent: 'space-between' }}>
                 <View style={{ flex: 1 }}>
                   <Txt variant="caption" color={colors.textPrimary}>
-                    {f.category} {f.isImpulse ? '⚡' : ''}
+                    {f.category} · {bucketOf(f.category)} {f.isImpulse ? '⚡' : ''}
                   </Txt>
                   <Muted>{f.date} {f.note ? `· ${f.note}` : ''}</Muted>
                 </View>
@@ -175,7 +258,7 @@ export default function FinanceScreen() {
         footer={
           <PrimaryButton
             label="Registrar"
-            disabled={!Number(amount.replace(',', '.'))}
+            disabled={!Number(amount.replace(',', '.')) || (isImpulse && !impulseWhy.trim())}
             onPress={() => {
               store.addFinance({
                 id: newId('fin'),
@@ -184,10 +267,14 @@ export default function FinanceScreen() {
                 amount: Number(amount.replace(',', '.')) || 0,
                 category,
                 isImpulse,
-                note: note.trim(),
+                // Justificativa do impulso entra na nota: é o que permite ver o padrão depois.
+                note: [note.trim(), isImpulse && impulseWhy.trim() ? `impulso: ${impulseWhy.trim()}` : '']
+                  .filter(Boolean)
+                  .join(' · '),
               });
               setAmount('');
               setNote('');
+              setImpulseWhy('');
               setIsImpulse(false);
               setSheet(false);
               haptic('success');
@@ -207,6 +294,14 @@ export default function FinanceScreen() {
           ))}
         </View>
         <ToggleRow label="Gasto por impulso" sub="Marca para o cálculo de custo real" value={isImpulse} onChange={setIsImpulse} />
+        {isImpulse ? (
+          <Field
+            label="Por que foi impulso?"
+            value={impulseWhy}
+            onChangeText={setImpulseWhy}
+            placeholder="Ex.: abri o app e comprei sem precisar"
+          />
+        ) : null}
         <Field label="Nota" value={note} onChangeText={setNote} placeholder="opcional" />
         <Field label="Data (AAAA-MM-DD)" value={date} onChangeText={setDate} />
       </Sheet>

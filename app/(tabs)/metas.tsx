@@ -21,12 +21,14 @@ import {
 } from '../../src/components/ui';
 import { useStore, newId } from '../../src/lib/store';
 import { SwipeableRow } from '../../src/components/SwipeableRow';
+import { DragHandle } from '../../src/components/DragHandle';
 import { AREA_EMOJI, LIFE_AREAS, PRIORITY_META, type Goal, type Priority } from '../../src/lib/types';
 import { goalStreak } from '../../src/lib/score';
 import { todayKey } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 
 const MODULES = [
+  { href: '/modulo/dieta', emoji: '🥗', label: 'Dieta', area: 'Dieta', sub: 'Refeições, gatilhos e água' },
   { href: '/modulo/leitura', emoji: '📚', label: 'Leitura', area: 'Leitura', sub: 'Livros, páginas e progresso' },
   { href: '/modulo/financas', emoji: '💰', label: 'Finanças', area: 'Finanças', sub: 'Receitas, despesas e impulsos' },
   { href: '/modulo/peso', emoji: '⚖️', label: 'Peso e medidas', area: 'Saúde', sub: 'Peso, médias e fotos' },
@@ -59,7 +61,10 @@ export default function GoalsScreen() {
 
   const grouped = useMemo(() => {
     const map = new Map<string, Goal[]>();
-    for (const g of store.goals.filter((x) => !x.archived)) {
+    for (const g of store.goals
+      .filter((x) => !x.archived)
+      // Ordem arrastada manda; sem `order`, a ordem de criação fica.
+      .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity))) {
       const list = map.get(g.area) ?? [];
       list.push(g);
       map.set(g.area, list);
@@ -92,6 +97,23 @@ export default function GoalsScreen() {
     setExcellent(goal.excellent);
     setActive(goal.active);
     setSheet(true);
+  };
+
+  /**
+   * Reordena arrastando: troca de posição com o vizinho e grava a ordem final.
+   * A ordem vale para o checklist do dia (regra 9 respeitada: modo continua
+   * decidindo QUEM entra; a ordem só decide em que sequência).
+   */
+  const move = (goal: Goal, delta: -1 | 1, group: Goal[]) => {
+    const index = group.findIndex((g) => g.id === goal.id);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= group.length) return;
+    const reordered = [...group];
+    const [item] = reordered.splice(index, 1);
+    if (!item) return;
+    reordered.splice(target, 0, item);
+    store.reorderGoals(reordered.map((g) => g.id));
+    haptic('select');
   };
 
   const save = () => {
@@ -182,6 +204,13 @@ export default function GoalsScreen() {
                   >
                     <Row style={{ justifyContent: 'space-between' }}>
                       <Row gap={6} style={{ flex: 1 }}>
+                        <DragHandle
+                          label={goal.name}
+                          canMoveUp={goals[0]?.id !== goal.id}
+                          canMoveDown={goals[goals.length - 1]?.id !== goal.id}
+                          onMoveUp={() => move(goal, -1, goals)}
+                          onMoveDown={() => move(goal, 1, goals)}
+                        />
                         <Txt variant="caption">{PRIORITY_META[goal.priority].emoji}</Txt>
                         <Txt variant="body" style={{ flexShrink: 1 }}>{goal.name}</Txt>
                       </Row>

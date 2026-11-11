@@ -25,7 +25,7 @@ fs.writeFileSync(
   `export const state = { writes: [] };
 export const DEFAULT_SETTINGS = {
   morningReminder: '07:00', nightReminder: '21:00', middayCheckin: true, middayTime: '13:00',
-  streakNotification: true, haptics: true, sleepGoalHours: 7.5, targetDailyScore: 7,
+  streakNotification: true, haptics: true, sleepGoalHours: 7.5, focusGoalMinutes: 240, targetDailyScore: 7,
 };
 export const EMPTY_DATA = {
   onboarded: false,
@@ -67,20 +67,31 @@ export async function normalizeData(input, base) { return { ...base, ...(input ?
 );
 
 /* 2. compila src/lib trocando storage pelo stub e completando extensões */
-for (const file of fs
-  .readdirSync(path.join(root, 'src/lib'))
-  .filter((f) => f.endsWith('.ts') && f !== 'storage.ts')) {
-  const full = path.join(root, 'src/lib', file);
+// `src/lib` + `src/theme.ts` (o store aplica o tema no boot).
+const sources = [
+  ...fs
+    .readdirSync(path.join(root, 'src/lib'))
+    .filter((f) => f.endsWith('.ts') && f !== 'storage.ts')
+    .map((f) => [f, path.join(root, 'src/lib', f)]),
+  ['theme.ts', path.join(root, 'src/theme.ts')],
+];
+
+for (const [file, full] of sources) {
   let js = ts.transpileModule(fs.readFileSync(full, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
     fileName: full,
   }).outputText;
   js = js
+    .replace(/from '\.\/lib\/store'/g, "from './store.mjs'")
+    .replace(/from '\.\/lib\/([a-zA-Z0-9_-]+)'/g, "from './$1.mjs'")
     .replace(/from '\.\/storage'/g, "from './storage-stub.mjs'")
     .replace(/from '(\.\/[a-zA-Z0-9_-]+)'/g, "from '$1.mjs'")
     // `await import('./storage')` (carregamento tardio no store) também vai ao stub.
     .replace(/import\('\.\/storage'\)/g, "import('./storage-stub.mjs')")
-    .replace(/import\('(\.\/[a-zA-Z0-9_-]+)'\)/g, "import('$1.mjs')");
+    // O store em `src/lib` usa `../theme`; o tema é compilado na raiz do out.
+    .replace(/import\('\.\.\/theme'\)/g, "import('./theme.mjs')")
+    .replace(/import\('(\.\/[a-zA-Z0-9_-]+)'\)/g, "import('$1.mjs')")
+    .replace(/from '\.\.\/theme'/g, "from './theme.mjs'");
   fs.writeFileSync(path.join(outRoot, file.replace(/\.ts$/, '.mjs')), js);
 }
 

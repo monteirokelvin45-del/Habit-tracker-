@@ -24,6 +24,7 @@ import type {
 import { emptyDiary, normalizeDiary } from './types';
 import { addDays, nowHHmm, todayKey } from './date';
 import { buildChecklist, computeScore, taskKeyFor } from './score';
+import { isHHmm } from './schedule';
 import { evaluateBadges } from './badges';
 import { evaluateRewards } from './rewards';
 import { newId } from './id';
@@ -63,11 +64,18 @@ export interface StoreState extends AppData {
   setMidday: (date: string, data: { priorityDone: boolean; energy: number; note: string; partial?: boolean }) => void;
   /** Atualiza campos do diário fora do fechamento (sono, humor, foco...). */
   patchDiary: (date: string, patch: Partial<Diary>) => void;
+  /**
+   * Move um bloco do cronograma (arrastar / +15min / −15min).
+   * Fica em `day.scheduleOverrides` e é sempre sugestão, nunca registro.
+   */
+  setScheduleOverride: (date: string, key: string, start: string) => void;
   closeDay: (date: string, diary: Diary) => Day;
   resolveHonestyFlag: (date: string, goalId: string, resolution: 'confirmed' | 'adjusted') => void;
   reopenDay: (date: string) => void;
 
   upsertGoal: (goal: Goal) => void;
+  /** Reordena metas arrastando (lista de ids na ordem final). */
+  reorderGoals: (orderedIds: string[]) => void;
   archiveGoal: (id: string) => void;
   deleteGoal: (id: string) => void;
 
@@ -174,6 +182,9 @@ export const useStore = create<StoreState>((set, get) => ({
       goals: data.goals.map(sanitizeGoal),
       status: 'ready',
     });
+    // Tema salvo precisa valer antes da primeira tela desenhar.
+    const { applyTheme, isThemeId } = await import('../theme');
+    applyTheme(isThemeId(data.settings.theme) ? data.settings.theme : 'emerald');
 
     // Abriu sem nenhum dia mas existe cópia automática com histórico: sinaliza em
     // vez de começar do zero calado (era exatamente o sintoma de perda de dados).
@@ -426,6 +437,20 @@ export const useStore = create<StoreState>((set, get) => ({
     ]);
   },
 
+  setScheduleOverride(date, key, start) {
+    const state = get();
+    if (isClosed(state.days.find((d) => d.date === date))) return;
+    if (!isHHmm(start)) return;
+    if (!state.days.some((d) => d.date === date)) state.ensureDay(date);
+    const days = get().days.map((d) =>
+      d.date === date
+        ? { ...d, scheduleOverrides: { ...(d.scheduleOverrides ?? {}), [key]: start } }
+        : d,
+    );
+    set({ days });
+    void persist('days', days);
+  },
+
   closeDay(date, diary) {
     const state = get();
     const existing = state.days.find((d) => d.date === date) ?? makeDay(date, state.goals);
@@ -491,6 +516,16 @@ export const useStore = create<StoreState>((set, get) => ({
     );
     set({ days });
     void persist('days', days);
+  },
+
+  reorderGoals(orderedIds) {
+    const state = get();
+    const index = new Map(orderedIds.map((id, i) => [id, i]));
+    const goals = state.goals.map((g) =>
+      index.has(g.id) ? { ...g, order: index.get(g.id) } : g,
+    );
+    set({ goals });
+    void persist('goals', goals);
   },
 
   upsertGoal(goal) {
@@ -571,6 +606,12 @@ export const useStore = create<StoreState>((set, get) => ({
     const settings = { ...get().settings, ...patch };
     set({ settings });
     void persist('settings', settings);
+    // Troca de tema aplica na hora: as telas usam `useTheme()`, que observa settings.theme.
+    if (patch.theme !== undefined) {
+      void import('../theme').then(({ applyTheme, isThemeId }) =>
+        applyTheme(isThemeId(patch.theme) ? patch.theme : 'emerald'),
+      );
+    }
   },
 
   upsertRule(rule) {

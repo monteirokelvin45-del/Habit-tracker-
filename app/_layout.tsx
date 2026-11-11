@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { colors } from '../src/theme';
 import { useStore } from '../src/lib/store';
 import { configureNotifications, scheduleReminders } from '../src/lib/notifications';
@@ -37,24 +38,26 @@ export default function RootLayout() {
   }, [status, settings, days, goals]);
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="light" backgroundColor={colors.bgPrimary} />
-      <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
-        <AppShell>
-          <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.bgPrimary },
-            animation: 'slide_from_right',
-            animationDuration: 250,
-          }}
-        >
-          <Stack.Screen name="index" />
-          <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
-          <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-          </Stack>
-        </AppShell>
-      </View>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style="light" backgroundColor={colors.bgPrimary} />
+        <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
+          <AppShell>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.bgPrimary },
+                animation: 'slide_from_right',
+                animationDuration: 250,
+              }}
+            >
+              <Stack.Screen name="index" />
+              <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+              <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+            </Stack>
+          </AppShell>
+        </View>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

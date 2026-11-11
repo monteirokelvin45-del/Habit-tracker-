@@ -760,3 +760,23 @@ export function categoryDistribution(data: AppData, window = 30, end = todayKey(
     .map(([label, value]) => ({ label, value }))
     .sort((a, b) => b.value - a.value);
 }
+
+/**
+ * Minutos de foco do dia (pomodoros registrados).
+ * `null` quando o dia não existe — diferente de "focou 0 minutos".
+ */
+export function focusMinutes(day: { pomodoros?: { minutes: number }[] } | undefined): number | null {
+  if (!day) return null;
+  return (day.pomodoros ?? []).reduce((sum, p) => sum + (p.minutes || 0), 0);
+}
+
+/** Média diária de foco nos dias com registro (para comparar com hoje). */
+export function averageFocusMinutes(days: { pomodoros?: { minutes: number }[] }[], window = 7): number | null {
+  const withFocus = days
+    .filter((d) => Array.isArray(d.pomodoros))
+    .map((d) => (d.pomodoros ?? []).reduce((s, p) => s + (p.minutes || 0), 0))
+    .filter((m) => m > 0)
+    .slice(-window);
+  if (!withFocus.length) return null;
+  return Math.round(withFocus.reduce((a, b) => a + b, 0) / withFocus.length);
+}

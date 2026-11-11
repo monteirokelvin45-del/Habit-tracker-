@@ -1,0 +1,560 @@
+/**
+ * Smoke de render das TELAS (não só dos gráficos), sem emulador e sem browser.
+ *
+ * Monta cada tela com `renderToStaticMarkup` usando o mesmo truque do smoke dos
+ * gráficos (stub de store por cenário) e verifica o que o TypeScript não vê:
+ * crash em runtime com dado real, tela vazia, e "Sem dado" espalhado quando
+ * existem dados.
+ *
+ * Cenários: app com histórico rico e app zerado (primeiro uso).
+ *
+ *   node scripts/render-screens-smoke.mjs
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const outRoot = path.join(root, '.screens-build');
+const require = createRequire(path.join(root, 'package.json'));
+const ts = require('typescript');
+
+fs.rmSync(outRoot, { recursive: true, force: true });
+fs.mkdirSync(outRoot, { recursive: true });
+
+/* ─────────────────────── stubs de ambiente ─────────────────────── */
+
+const stub = (name, code) => fs.writeFileSync(path.join(outRoot, name), code);
+
+const SVG_NAMES = ['Svg', 'Path', 'Line', 'Circle', 'G', 'Text', 'Rect', 'Defs', 'LinearGradient', 'Stop', 'Polygon', 'Polyline', 'Ellipse'];
+stub(
+  'stub-rn-svg.mjs',
+  `import React from 'react';
+const names = ${JSON.stringify(SVG_NAMES)};
+const cache = new Map();
+export const make = (name) => {
+  if (!cache.has(name)) {
+    const C = function Stub(props) {
+      const { children, ...rest } = props || {};
+      const clean = {};
+      for (const [k, v] of Object.entries(rest)) {
+        if (k === 'children' || v === undefined || v === null || typeof v === 'function') continue;
+        clean[k] = typeof v === 'object' ? undefined : String(v);
+      }
+      return React.createElement(name.toLowerCase(), clean, children);
+    };
+    C.displayName = name;
+    C.default = C; // o código usa require('react-native-svg').default
+    cache.set(name, C);
+  }
+  return cache.get(name);
+};
+export const Default = make('Svg');
+${SVG_NAMES.map((n) => `export const ${n} = make("${n}");`).join('\n')}
+export default make('Svg');
+`,
+);
+
+stub(
+  'stub-haptics.mjs',
+  `export const haptic = () => {};\nexport const hapticsEnabled = () => true;\n`,
+);
+
+stub(
+  'stub-router.mjs',
+  `export const useRouter = () => ({ push: () => {}, back: () => {}, replace: () => {} });
+export const router = { push: () => {}, back: () => {}, replace: () => {} };
+export const useLocalSearchParams = () => ({});
+export const Link = ({ children }) => children;
+export const Stack = ({ children }) => children;
+`,
+);
+
+stub(
+  'stub-safe-area.mjs',
+  `import React from 'react';
+import { View } from 'react-native';
+export const SafeAreaView = ({ children, style }) => React.createElement(View, { style }, children);
+export const SafeAreaProvider = ({ children }) => children;
+export const useSafeAreaInsets = () => ({ top: 0, bottom: 0, left: 0, right: 0 });
+`,
+);
+
+// lottie e widget nativo não existem em Node: stub vazio é o suficiente.
+stub('stub-empty.mjs', `export default () => null;\nexport const FlexWidget = () => null;\nexport const TextWidget = () => null;\n`);
+
+// Nomes usados por src/components/Icon.tsx — o ESM exige export nomeado real.
+const LUCIDE_NAMES = [
+  'Activity', 'ArrowRight', 'BedDouble', 'Bell', 'BookOpen', 'Brain', 'BrainCircuit',
+  'CalendarDays', 'ChartColumn', 'ChevronDown', 'ChevronRight', 'CircleCheck', 'Clock',
+  'Download', 'Droplet', 'Dumbbell', 'Flag', 'Flame', 'Gauge', 'House', 'Layers', 'Link2',
+  'Lock', 'Moon', 'Palette', 'Pause', 'Play', 'Plus', 'RotateCcw', 'Scale', 'Settings',
+  'ShieldAlert', 'Sparkles', 'Sun', 'Target', 'Timer', 'TrendingUp', 'TriangleAlert',
+  'Trophy', 'Upload', 'User', 'Wallet', 'X', 'Zap', 'Utensils',
+];
+stub(
+  'stub-lucide.mjs',
+  `import React from 'react';
+import { Text } from 'react-native';
+export const make = (name) => {
+  const C = (props) => React.createElement(Text, { ...props, accessibilityLabel: String(name) }, '·');
+  C.displayName = name;
+  return C;
+};
+${LUCIDE_NAMES.map((n) => `export const ${n} = make('${n}');`).join('\n')}
+export default make('Icon');
+`,
+);
+
+stub(
+  'stub-gesture.mjs',
+  `import React from 'react';
+import { View } from 'react-native';
+const chain = () => {
+  const api = {
+    activeOffsetY: () => api,
+    onBegin: () => api,
+    onUpdate: () => api,
+    onEnd: () => api,
+    onFinalize: () => api,
+    enabled: () => api,
+  };
+  return api;
+};
+export const Gesture = { Pan: chain, Tap: chain, LongPress: chain, Simultaneous: () => chain() };
+export const GestureDetector = ({ children }) => children;
+export const GestureHandlerRootView = (props) => React.createElement(View, props);
+export const Swipeable = (props) => React.createElement(View, props);
+`,
+);
+
+stub(
+  'stub-native.mjs',
+  `export async function syncDayToCalendar() { return { ok: true, message: 'ok' }; }
+export async function createNativeAlarm() { return { ok: true, message: 'ok' }; }
+export async function restTimerAlarm() { return { ok: true, message: 'ok' }; }
+export async function openAppLimits() { return { ok: true, message: 'ok' }; }
+export function watchEscapes() { return () => []; }
+export function formatAway() { return '0s'; }
+`,
+);
+
+/* ─────────────────────── compilação ─────────────────────── */
+
+const entries = [];
+const walk = (dir) => {
+  for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, item.name);
+    if (item.isDirectory()) {
+      if (item.name === 'node_modules' || item.name.startsWith('.')) continue;
+      walk(full);
+    } else if (/\.tsx?$/.test(item.name)) {
+      entries.push(full);
+    }
+  }
+};
+walk(path.join(root, 'src'));
+walk(path.join(root, 'app'));
+
+const importMap = [
+  ["from 'react-native-svg'", "from '@rb/stub-rn-svg.mjs'"],
+  ["from 'expo-haptics'", "from '@rb/stub-haptics.mjs'"],
+  ["from 'expo-router'", "from '@rb/stub-router.mjs'"],
+  ["from 'react-native-safe-area-context'", "from '@rb/stub-safe-area.mjs'"],
+  ["from 'lottie-react-native'", "from '@rb/stub-empty.mjs'"],
+  ["from 'react-native-android-widget'", "from '@rb/stub-empty.mjs'"],
+  ["from '../../src/lib/native'", "from '@rb/stub-native.mjs'"],
+  ["from '../lib/native'", "from '@rb/stub-native.mjs'"],
+];
+
+// Chaves do JSX runtime: sem isso o transpile usa `React.createElement` em alguns
+// arquivos e `_jsx` em outros, e o Node trata cada forma de forma diferente.
+const JSX_OPTIONS = {
+  module: ts.ModuleKind.ESNext,
+  target: ts.ScriptTarget.ES2020,
+  jsx: ts.JsxEmit.ReactJSX,
+  esModuleInterop: true,
+};
+
+for (const file of entries) {
+  const source = fs.readFileSync(file, 'utf8');
+  let js = ts.transpileModule(source, { compilerOptions: JSX_OPTIONS, fileName: file }).outputText;
+
+  // `require('react-native-svg')` dentro de função não existe em ESM: vira o stub
+  // (mesma estratégia do smoke dos gráficos).
+  const usesSvg = js.includes("require('react-native-svg')");
+  if (usesSvg) js = js.split("require('react-native-svg')").join('__rnSvgNS');
+  const header = usesSvg ? `import * as __rnSvgNS from '@rb/stub-rn-svg.mjs';\n` : '';
+  js = header + js;
+
+  for (const [from, to] of importMap) js = js.split(from).join(to);
+
+  // extensão .js nos imports relativos (ESM do Node exige) — antes de reescrever os stubs
+  js = js.replace(/from '(\.[^']+)'/g, (m, p) => (p.endsWith('.js') || p.endsWith('.mjs') ? m : `from '${p}.js'`));
+
+  // Resolve `@rb/x.mjs` para o caminho relativo real do stub: reescrita de texto é
+  // mais confiável que interceptar resolução de pacote no loader do Node.
+  const dest0 = path.join(outRoot, path.relative(root, file).replace(/\.tsx?$/, '.js'));
+  js = js.replace(/'@rb\/([^']+)'/g, (m, name) => {
+    const target = path.join(outRoot, name);
+    const rel = path.relative(path.dirname(dest0), target).split(path.sep).join('/');
+    return `'${rel.startsWith('.') ? rel : `./${rel}`}'`;
+  });
+  const dest = path.join(outRoot, path.relative(root, file).replace(/\.tsx?$/, '.js'));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, js);
+}
+
+// Módulos de UI nativa não têm equivalente em Node (CJS + TS). São stubs vazios:
+// o smoke quer provar que a tela monta, não o comportamento do calendário/agenda.
+const stubModule = (name, exports) => {
+  const file = path.join(outRoot, `nm-${name.replace(/[^a-z0-9]/gi, '_')}.mjs`);
+  fs.writeFileSync(file, exports);
+  return { name, file };
+};
+const nativeStubs = [
+  stubModule('expo-calendar', "export const requestCalendarPermissionsAsync = async () => ({ status: 'granted' });\nexport const getCalendarsAsync = async () => [];\nexport const createCalendarAsync = async () => 'id';\nexport const createEventAsync = async () => 'id';\nexport const EntityTypes = { EVENT: 'event' };\nexport const CalendarAccessLevel = { OWNER: 'owner' };\nexport default {};\n"),
+  stubModule('expo-intent-launcher', "export const startActivityAsync = async () => ({});\nexport default {};\n"),
+  stubModule('expo-file-system', "export class File { constructor() {} create() {} write() {} get uri() { return ''; } }\nexport const Paths = { cache: '' };\nexport default {};\n"),
+  stubModule('expo-modules-core', "export const requireNativeModule = () => ({});\nexport default {};\n"),
+  stubModule('expo-image-picker', "export const launchImageLibraryAsync = async () => ({ canceled: true });\nexport const launchCameraAsync = async () => ({ canceled: true });\nexport const requestMediaLibraryPermissionsAsync = async () => ({ status: 'granted' });\nexport const MediaTypeOptions = { Images: 'Images' };\nexport default {};\n"),
+  stubModule('expo-document-picker', "export const getDocumentAsync = async () => ({ canceled: true });\nexport default {};\n"),
+  stubModule('expo-notifications', "export const scheduleNotificationAsync = async () => 'id';\nexport const cancelAllScheduledNotificationsAsync = async () => {};\nexport const getPermissionsAsync = async () => ({ status: 'granted' });\nexport const requestPermissionsAsync = async () => ({ status: 'granted' });\nexport const setNotificationHandler = () => {};\nexport const AndroidNotificationPriority = { MAX: 'max' };\nexport const SchedulableTriggerInputTypes = { DAILY: 'daily' };\nexport default {};\n"),
+  stubModule('expo-print', "export const printToFileAsync = async () => ({ uri: '' });\nexport default {};\n"),
+  stubModule('expo-sharing', "export const isAvailableAsync = async () => false;\nexport const shareAsync = async () => {};\nexport default {};\n"),
+  stubModule(
+    'react-native-reanimated',
+    [
+      "import React from 'react';",
+      "import { ScrollView, Text, View } from 'react-native';",
+      'const chain = () => {',
+      '  const api = {',
+      '    duration: () => api, delay: () => api, springify: () => api, damping: () => api,',
+      '    withInitialValues: () => api, build: () => ({}),',
+      '  };',
+      '  return api;',
+      '};',
+      'const Animated = { View, Text, ScrollView, Image: View, createAnimatedComponent: (C) => C };',
+      'export default Animated;',
+      'export const useSharedValue = (v) => ({ value: v });',
+      'export const useAnimatedStyle = () => ({});',
+      'export const useDerivedValue = (fn) => ({ value: fn() });',
+      'export const withTiming = (v) => v;',
+      'export const withSpring = (v) => v;',
+      'export const withDelay = (_, v) => v;',
+      'export const withRepeat = (v) => v;',
+      'export const withSequence = (...v) => v[0];',
+      'export const cancelAnimation = () => {};',
+      'export const runOnJS = (fn) => fn;',
+      'export const runOnUI = (fn) => fn;',
+      'export const Easing = { out: chain(), inOut: chain(), ease: chain(), linear: chain(), bezier: () => chain() };',
+      'export const FadeIn = chain();',
+      'export const FadeInDown = chain();',
+      'export const FadeInUp = chain();',
+      'export const FadeOut = chain();',
+      'export const SlideInRight = chain();',
+      'export const SlideInLeft = chain();',
+      'export const SlideOutRight = chain();',
+      'export const Layout = chain();',
+      'export const LinearTransition = chain();',
+      'export const ZoomIn = chain();',
+    ].join('\n'),
+  ),
+];
+
+/* ─────────────────────── loader ─────────────────────── */
+
+fs.writeFileSync(
+  path.join(outRoot, 'hooks.mjs'),
+  `import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const outRoot = ${JSON.stringify(outRoot)};
+const root = ${JSON.stringify(root)};
+const NATIVE_STUBS = ${JSON.stringify(Object.fromEntries(nativeStubs.map((s) => [s.name, s.file])))};
+export async function resolve(specifier, context, next) {
+  if (process.env.DEBUG_RESOLVE) console.error('RESOLVE', specifier, '<-', context.parentURL ?? '-');
+  if (specifier.startsWith('@rb/')) {
+    const p = path.join(outRoot, path.basename(specifier));
+    return { url: pathToFileURL(p).href, format: 'module', shortCircuit: true };
+  }
+  if (specifier === 'react-native-gesture-handler') {
+    return { url: pathToFileURL(path.join(outRoot, 'stub-gesture.mjs')).href, format: 'module', shortCircuit: true };
+  }
+  if (specifier === 'lucide-react-native') {
+    return { url: pathToFileURL(path.join(outRoot, 'stub-lucide.mjs')).href, format: 'module', shortCircuit: true };
+  }
+  if (NATIVE_STUBS[specifier]) {
+    return { url: pathToFileURL(NATIVE_STUBS[specifier]).href, format: 'module', shortCircuit: true };
+  }
+  if (specifier === 'react-native') {
+    // Igual ao smoke dos gráficos: reescreve para react-native-web a partir da raiz.
+    return next('react-native-web', { ...context, parentURL: pathToFileURL(path.join(root, 'index.js')).href });
+  }
+  if (specifier.startsWith('.') && context.parentURL?.startsWith('file:')) {
+    const base = path.resolve(path.dirname(new URL(context.parentURL).pathname), specifier);
+    for (const cand of [base, base + '.js', base + '/index.js']) {
+      if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+        return { url: pathToFileURL(cand).href, format: 'module', shortCircuit: true };
+      }
+    }
+  }
+  return next(specifier, context);
+}
+export async function load(url, context, next) {
+  if (process.env.DEBUG_SCREENS) console.error('LOAD', url);
+  try {
+    if (url.endsWith('.js') && url.includes('/.screens-build/')) {
+      return { ...(await next(url, { ...context, format: 'module' })), format: 'module' };
+    }
+    return next(url, context);
+  } catch (e) {
+    if (process.env.DEBUG_SCREENS) console.error('LOAD FAIL:', url, '=>', e.message.split(String.fromCharCode(10))[0]);
+    throw e;
+  }
+}
+`,
+);
+
+fs.writeFileSync(
+  path.join(outRoot, 'register.mjs'),
+  `import { register } from 'node:module';
+import { pathToFileURL } from 'node:url';
+register(pathToFileURL(${JSON.stringify(path.join(outRoot, 'hooks.mjs'))}).href, import.meta.url);
+`,
+);
+
+/* ─────────────────────── fixtures ─────────────────────── */
+
+const today = new Date();
+const key = (offset) => {
+  const d = new Date(today);
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+};
+
+const goal = (id, area, name, priority = 'normal') => ({
+  id,
+  name,
+  area,
+  priority,
+  min: '10min',
+  ideal: '30min',
+  excellent: '1h',
+  active: true,
+  createdAt: '2026-01-01T10:00:00.000Z',
+});
+
+const diary = (over = {}) => ({
+  promised: '',
+  done: '',
+  avoided: '',
+  blocked: '',
+  context: { where: '', when: '', distraction: '', trigger: '' },
+  correction: '',
+  mood: '',
+  sleep: { hours: 0, quality: 0, blockers: [] },
+  food: '',
+  focus: 0,
+  temptation: '',
+  relapse: '',
+  smallWin: '',
+  impulseCost: 0,
+  emotions: [],
+  // Refeições no formato de `src/lib/diet.ts` (uma por linha) + água.
+  food: ['08:10|Café|café e pão|1|', '12:40|Almoço|arroz, feijão e frango|1|', '16:20|Lanche|bolacha|0|Tédio'].join('\n'),
+  waterCups: 5,
+  // Estudo: blocos do dia + edital (formato de `src/lib/study.ts` e `studies.ts`).
+  study: [
+    { subject: 'Matemática', plannedMinutes: 90, doneMinutes: 45, material: 'PDF', doubts: ['regra de três composta'] },
+    { subject: 'Direito', plannedMinutes: 60, doneMinutes: 0, material: 'Vídeo', doubts: [] },
+  ],
+  studyPlan: {
+    name: 'Concurso',
+    examDate: key(30),
+    topics: [
+      { id: 't1', subject: 'Matemática', topic: 'Porcentagem', weight: 4, status: 'estudado', lastSeen: key(-6) },
+      { id: 't2', subject: 'Direito', topic: 'Constitucional', weight: 5, status: 'novo' },
+      { id: 't3', subject: 'Português', topic: 'Crase', weight: 2, status: 'revisado', lastSeen: key(-2) },
+    ],
+  },
+  ...over,
+});
+
+const days = Array.from({ length: 12 }, (_, i) => {
+  const date = key(-(11 - i));
+  const total = [7.5, 8.2, 4, 6.1, 9, 5.2, 7.8, 6.5, 8.9, 7.1, 6.8, 0][i] ?? 6;
+  return {
+    date,
+    energy: { physical: 7, mental: 6, stress: 4 },
+    mode: 'normal',
+    tasks: [
+      { goalId: 'g1', done: i % 3 !== 0, note: '' },
+      { goalId: 'g2', done: i % 2 === 0, note: '' },
+      { goalId: 'g3', done: false, note: '' },
+    ],
+    diary: diary({
+      done: i === 11 ? '' : 'treinei',
+      avoided: 'nada',
+      blocked: 'cansaço',
+      context: { where: 'casa', when: 'manhã', distraction: 'celular', trigger: 'cansaço' },
+      sleep: { hours: 7.5, quality: 8, blockers: ['Tela'] },
+    }),
+    pomodoros: i % 2 === 0 ? [{ goalId: 'g1', minutes: 25, at: '10:00' }] : [],
+    score: { regularity: total, continuity: 6, recovery: 6, honesty: 7, progress: total, total },
+    closedAt: `${date}T22:00:00`,
+  };
+});
+
+const cheio = {
+  onboarded: true,
+  status: 'ready',
+  booted: true,
+  user: { name: 'Kelvin', identity: 'Operador', noMore: 'desculpa', areas: ['Treino', 'Estudo', 'Leitura'], createdAt: '2026-01-01T10:00:00.000Z' },
+  goals: [goal('g1', 'Treino', 'Treino A', 'high'), goal('g2', 'Estudo', 'Estudar 2h'), goal('g3', 'Leitura', 'Ler 20 páginas')],
+  days,
+  settings: { theme: 'emerald', targetDailyScore: 7, sleepGoalHours: 7.5, focusGoalMinutes: 240, middayCheckin: true, middayTime: '13:00', morningReminder: '07:00', nightReminder: '21:00', streakNotification: true, haptics: true },
+  rewards: [],
+  badges: [],
+  rules: [],
+  books: [{ id: 'b1', title: 'Mindset', author: 'Dweck', totalPages: 350, currentPage: 142, dailyGoal: { min: 5, ideal: 20, excellent: 40 }, finished: false }],
+  finances: [{ id: 'f1', date: key(0), type: 'expense', amount: 42, category: 'Alimentação', isImpulse: true, note: 'impulso: fome' }],
+  weight: [],
+  ayanokoji: { startDate: key(-12), scores: days.map((d) => d.score.total), tasksDone: {} },
+  weeklyFocus: {},
+  routeAdjustments: {},
+  recovery: null,
+  energy: { physical: 7, mental: 6, stress: 4 },
+};
+
+const vazio = {
+  ...cheio,
+  user: { name: '', identity: '', noMore: '', areas: [], createdAt: '' },
+  goals: [],
+  days: [],
+  books: [],
+  finances: [],
+  ayanokoji: { startDate: '', scores: [], tasksDone: {} },
+};
+
+/* ─────────────────────── execução ─────────────────────── */
+
+// Registra o loader DEPOIS de escrever os stubs e ANTES de importar qualquer tela.
+const { register } = await import('node:module');
+register(pathToFileURL(path.join(outRoot, 'hooks.mjs')).href, import.meta.url);
+
+const React = (await import('react')).default;
+const { renderToStaticMarkup } = await import('react-dom/server');
+
+const screens = [
+  ['Hoje', 'app/(tabs)/index.js'],
+  ['Revisões', 'app/(tabs)/revisoes.js'],
+  ['Metas', 'app/(tabs)/metas.js'],
+  ['Inteligência', 'app/(tabs)/inteligencia.js'],
+  ['Perfil', 'app/(tabs)/perfil.js'],
+  ['Treino', 'app/modulo/treino.js'],
+  ['Estudo', 'app/modulo/estudo.js'],
+  ['Leitura', 'app/modulo/leitura.js'],
+  ['Projeto', 'app/modulo/projeto.js'],
+  ['Sono', 'app/modulo/sono.js'],
+  ['Dieta', 'app/modulo/dieta.js'],
+  ['Finanças', 'app/modulo/financas.js'],
+  ['Peso', 'app/modulo/peso.js'],
+  ['Pomodoro', 'app/modulo/pomodoro.js'],
+  ['Gráficos', 'app/modulo/graficos.js'],
+  ['Constância', 'app/modulo/constancia.js'],
+  ['Recompensas', 'app/modulo/recompensas.js'],
+  ['Conquistas', 'app/modulo/conquistas.js'],
+  ['Widget', 'app/modulo/widget.js'],
+  ['Ayanokoji', 'app/modulo/ayanokoji.js'],
+];
+
+// Caminho do store em relação ao arquivo compilado (as telas ficam em
+// app/<pasta>/ ou app/(tabs)/, então o relativo muda por arquivo).
+const storeRel = (fromFile) =>
+  path
+    .relative(path.dirname(path.join(outRoot, fromFile)), path.join(outRoot, 'src/lib/store.js'))
+    .split(path.sep)
+    .join('/');
+
+const withStore = async (file, name, fixture) => {
+  const src = fs.readFileSync(path.join(outRoot, file), 'utf8');
+  const rel = storeRel(file);
+  const specifier = rel.startsWith('.') ? rel : `./${rel}`;
+
+  // stub por cenário: o módulo ESM é cacheado por URL, então cada cenário tem o seu
+  const stubPath = path.join(path.dirname(path.join(outRoot, file)), `store-${name}.js`);
+  fs.writeFileSync(
+    stubPath,
+    `export * from '${specifier}';
+import { useStore as real } from '${specifier}';
+const fixture = ${JSON.stringify(fixture)};
+const merge = () => ({ ...real.getState(), ...fixture });
+export const useStore = (sel) => (sel ? sel(merge()) : merge());
+useStore.getState = merge;
+useStore.setState = real.setState;
+useStore.subscribe = real.subscribe;
+`,
+  );
+
+  const stubRel = path.relative(path.dirname(path.join(outRoot, file)), stubPath).split(path.sep).join('/');
+  // troca QUALQUER import do store (a extensão .js já foi adicionada na compilação)
+  const patched = src.replace(
+    new RegExp(`from (['"])[^'"]*src/lib/store(\\.js)?\\1`, 'g'),
+    `from './${stubRel}'`,
+  );
+  if (patched === src) throw new Error(`store não encontrado em ${file}`);
+  const copy = path.join(path.dirname(path.join(outRoot, file)), `${path.basename(file, '.js')}-${name}.js`);
+  fs.writeFileSync(copy, patched);
+  return copy;
+};
+
+let pass = 0;
+let fails = 0;
+const log = (ok, message) => {
+  console.log(`  ${ok ? '✓' : '✗'} ${message}`);
+  ok ? pass++ : fails++;
+};
+
+// Teto de "Sem dado" por tela: o fixture não preenche todo campo de propósito
+// (regras, foco, rota), e essas seções DEVEM dizer "Sem dado".
+const SEM_DADO_MAX = { 'Inteligência': 99, Recompensas: 99, Revisões: 20, Perfil: 6 };
+
+console.log('\n── Telas: app com histórico ──');
+for (const [label, file] of screens) {
+  try {
+    const copy = await withStore(file, 'dados', cheio);
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const html = renderToStaticMarkup(React.createElement(Screen));
+    const semDado = (html.match(/Sem dado/g) ?? []).length;
+    if (html.length < 200) log(false, `${label}: markup vazio (${html.length} chars)`);
+    // Revisões cobre semana/mês/período e depende de dados que o fixture não tem
+    // (foco da semana, regras SE-ENTÃO, rota) — o teto é maior de propósito.
+    else if (SEM_DADO_MAX[label] !== undefined && semDado > SEM_DADO_MAX[label]) log(false, `${label}: ${semDado}x "Sem dado" com dados carregados`);
+    else if (SEM_DADO_MAX[label] === undefined && semDado > 12) log(false, `${label}: ${semDado}x "Sem dado" com dados carregados`);
+    else log(true, `${label} (${html.length} chars, ${semDado}x "Sem dado")`);
+  } catch (e) {
+    if (process.env.DEBUG_SCREENS) console.log(e.stack);
+    log(false, `${label}: ${e.message}`);
+  }
+}
+
+console.log('\n── Telas: primeiro uso (app zerado) ──');
+for (const [label, file] of screens) {
+  try {
+    const copy = await withStore(file, 'vazio', vazio);
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const html = renderToStaticMarkup(React.createElement(Screen));
+    if (html.length < 200) log(false, `${label}: markup vazio`);
+    // `bgElevated`/`undefined->` aparecem em props opcionais legítimas; o alvo é
+    // texto visível com NaN/Infinity ou a palavra "undefined" solta no conteúdo.
+    else if (/NaN|Infinity/.test(html) || />[^<]*\bundefined\b[^<]*</.test(html)) log(false, `${label}: valor inválido no HTML`);
+    else log(true, `${label} (${html.length} chars)`);
+  } catch (e) {
+    log(false, `${label}: ${e.message}`);
+  }
+}
+
+console.log(`\n${fails === 0 ? '✅' : '❌'} ${pass} telas ok, ${fails} falharam\n`);
+process.exit(fails === 0 ? 0 : 1);

@@ -9,14 +9,20 @@ import { buildChecklist } from '../../src/lib/score';
 import { todayKey } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 import { notifyNow } from '../../src/lib/notifications';
+import {
+  PRESETS,
+  formatClock,
+  initTimer,
+  presetLabel,
+  progress,
+  reset,
+  tick,
+  toggle,
+  type TimerConfig,
+  type TimerState,
+} from '../../src/lib/timer';
 
-type Preset = { label: string; focus: number; rest: number };
-
-const PRESETS: Preset[] = [
-  { label: '25 / 5', focus: 25, rest: 5 },
-  { label: '50 / 10', focus: 50, rest: 10 },
-  { label: '90 / 20', focus: 90, rest: 20 },
-];
+const PRESET_LABELS = PRESETS.map(presetLabel);
 
 export default function PomodoroScreen() {
   const store = useStore();
@@ -27,75 +33,53 @@ export default function PomodoroScreen() {
   // extraKey, senão o pomodoro era gravado num goalId que não existe no dia.
   const taskKey = (i: (typeof items)[number]) => i.extraKey ?? i.goal.id;
 
-  const [preset, setPreset] = useState<Preset>(PRESETS[0]!);
+  // Todo o relógio vive em `src/lib/timer.ts` (estado puro): a tela só chama
+  // `tick` a cada segundo. Assim a regra "fim do foco entra em pausa, fim da
+  // pausa volta PARADO" é a mesma no app e no teste.
+  const [config, setConfig] = useState<TimerConfig>(PRESETS[0]!);
+  const [state, setState] = useState<TimerState>(() => initTimer(PRESETS[0]!));
   const [goalId, setGoalId] = useState<string>(items[0] ? taskKey(items[0]) : '');
+  const configRef = useRef(config);
+  configRef.current = config;
+
   // A lista de tarefas muda depois (nova meta, outro modo): mantém a seleção válida.
   useEffect(() => {
     if (!items.length) return;
     if (!items.some((i) => taskKey(i) === goalId)) setGoalId(taskKey(items[0]!));
   }, [items, goalId]);
-  const [phase, setPhase] = useState<'focus' | 'rest'>('focus');
-  const [remaining, setRemaining] = useState(preset.focus * 60);
-  const remainingRef = useRef(preset.focus * 60);
-  const [running, setRunning] = useState(false);
-  const [completed, setCompleted] = useState(0);
-  const tick = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const goalIdRef = useRef(goalId);
+  goalIdRef.current = goalId;
 
   useEffect(() => {
-    if (!running) {
-      if (tick.current) clearInterval(tick.current);
-      return;
-    }
-    tick.current = setInterval(() => {
-      const next = remainingRef.current - 1;
-      if (next > 0) {
-        remainingRef.current = next;
-        setRemaining(next);
-        return;
-      }
-      // fim do ciclo — efeitos fora do updater de estado (sem duplicar em StrictMode)
-      if (phase === 'focus') {
-        haptic('success');
-        void notifyNow('Ciclo concluído', `${preset.focus} min de foco registrados. Hora de ${preset.rest} min de pausa.`);
-        store.addPomodoro(today, goalId, preset.focus);
-        setCompleted((c) => c + 1);
-        setPhase('rest');
-        remainingRef.current = preset.rest * 60;
-        setRemaining(preset.rest * 60);
-      } else {
-        haptic('medium');
-        void notifyNow('Pausa encerrada', 'Pronto para o próximo ciclo? O loop continua.');
-        setPhase('focus');
-        setRunning(false);
-        remainingRef.current = preset.focus * 60;
-        setRemaining(preset.focus * 60);
-      }
+    if (state.status !== 'running') return;
+    const id = setInterval(() => {
+      setState((prev) => {
+        const result = tick(prev, configRef.current);
+        // Efeitos colaterais fora do updater: StrictMode roda o updater 2×.
+        if (result.event === 'focus-done') {
+          haptic('success');
+          void notifyNow('Ciclo concluído', `${configRef.current.focus} min de foco registrados. Hora de ${configRef.current.rest} min de pausa.`);
+          store.addPomodoro(today, goalIdRef.current, configRef.current.focus);
+        }
+        if (result.event === 'rest-done') {
+          haptic('medium');
+          void notifyNow('Pausa encerrada', 'Pronto para o próximo ciclo? Retomar é sua escolha.');
+        }
+        return result.state;
+      });
     }, 1000);
-    return () => {
-      if (tick.current) clearInterval(tick.current);
-    };
-  }, [running, phase, preset, goalId, store, today]);
+    return () => clearInterval(id);
+  }, [state.status, store, today]);
 
-  const total = (phase === 'focus' ? preset.focus : preset.rest) * 60;
-  const minutes = Math.floor(remaining / 60);
-  const seconds = remaining % 60;
   const todayPomodoros = day?.pomodoros ?? [];
   const totalMinutes = todayPomodoros.reduce((a, b) => a + b.minutes, 0);
 
-  const changePreset = (p: Preset) => {
-    setPreset(p);
-    setRunning(false);
-    setPhase('focus');
-    remainingRef.current = p.focus * 60;
-    setRemaining(p.focus * 60);
+  const changePreset = (p: TimerConfig) => {
+    setConfig(p);
+    setState(reset(p, state.cycles));
   };
-
-  const resetTimer = () => {
-    setRunning(false);
-    setPhase('focus');
-    remainingRef.current = preset.focus * 60;
-    setRemaining(preset.focus * 60);
-  };
+  const resetTimer = () => setState(reset(config, state.cycles));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
@@ -103,20 +87,34 @@ export default function PomodoroScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60, gap: spacing.md }}>
         <Row gap={spacing.sm}>
           {PRESETS.map((p) => (
-            <Chip key={p.label} label={p.label} color={colors.cyan} selected={preset.label === p.label} onPress={() => changePreset(p)} />
+            <Chip
+              key={presetLabel(p)}
+              label={presetLabel(p)}
+              color={colors.cyan}
+              selected={presetLabel(config) === presetLabel(p)}
+              onPress={() => changePreset(p)}
+            />
           ))}
         </Row>
+        <Muted>Presets: {PRESET_LABELS.join(' · ')} (foco / pausa, em minutos)</Muted>
 
-        <Card style={{ alignItems: 'center', gap: spacing.sm }} accent={phase === 'focus' ? colors.cyan + '55' : colors.blue + '55'}>
-          <Badge label={phase === 'focus' ? 'foco' : 'pausa'} color={phase === 'focus' ? colors.cyan : colors.blue} />
-          <Txt style={{ fontSize: 62, fontWeight: '800', color: phase === 'focus' ? colors.cyan : colors.blue, fontVariant: ['tabular-nums'] }}>
-            {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+        <Card style={{ alignItems: 'center', gap: spacing.sm }} accent={state.phase === 'focus' ? colors.cyan + '55' : colors.blue + '55'}>
+          <Badge label={state.phase === 'focus' ? 'foco' : 'pausa'} color={state.phase === 'focus' ? colors.cyan : colors.blue} />
+          <Txt style={{ fontSize: 62, fontWeight: '800', color: state.phase === 'focus' ? colors.cyan : colors.blue, fontVariant: ['tabular-nums'] }}>
+            {formatClock(state.remaining)}
           </Txt>
           <View style={{ width: '100%', height: 6, borderRadius: 3, backgroundColor: colors.track }}>
-            <View style={{ width: `${(1 - remaining / total) * 100}%`, height: '100%', borderRadius: 3, backgroundColor: phase === 'focus' ? colors.cyan : colors.blue }} />
+            <View style={{ width: `${progress(state) * 100}%`, height: '100%', borderRadius: 3, backgroundColor: state.phase === 'focus' ? colors.cyan : colors.blue }} />
           </View>
+          <Muted style={{ letterSpacing: 0 }}>
+            {state.status === 'running' ? 'correndo' : state.status === 'paused' ? 'pausado — retomar é escolha' : 'parado'} · fase {state.phase}
+          </Muted>
           <Row gap={spacing.sm} style={{ marginTop: spacing.sm }}>
-            <SecondaryButton label={running ? 'Pausar' : 'Iniciar'} style={{ height: 46, minWidth: 110 }} onPress={() => setRunning((r) => !r)} />
+            <SecondaryButton
+              label={state.status === 'running' ? 'Pausar' : 'Iniciar'}
+              style={{ height: 46, minWidth: 110 }}
+              onPress={() => setState((prev) => toggle(prev))}
+            />
             <SecondaryButton
               color={colors.textSecondary}
               label="Reiniciar"
@@ -160,7 +158,8 @@ export default function PomodoroScreen() {
 
         <Card>
           <Txt variant="caption" color={colors.textSecondary}>
-            Ciclos finalizados nesta sessão: {completed}. Cada ciclo vira registro de tempo na tarefa e alimenta a checagem de honestidade.
+            Ciclos finalizados nesta sessão: {state.cycles}. Cada ciclo vira registro de tempo na tarefa e alimenta a checagem de honestidade.
+          {' '}Ciclo interrompido não conta: só o que chega ao fim é tempo de foco registrado.
           </Txt>
         </Card>
 

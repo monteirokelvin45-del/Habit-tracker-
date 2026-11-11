@@ -78,7 +78,7 @@ export default function SleepScreen() {
         </Row>
 
         <Card>
-          <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Horas por noite</Txt>
+          <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Últimas 14 noites</Txt>
           {nights.length >= 3 ? (
             <>
               <BarChart
@@ -89,7 +89,7 @@ export default function SleepScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
                 <View style={{ width: 16, height: 0, borderTopWidth: 1, borderTopColor: colors.green, borderStyle: 'dashed' }} />
                 <Muted>
-                  Meta {store.settings.sleepGoalHours}h · barra azul = atingiu, amarela = abaixo
+                  Meta {store.settings.sleepGoalHours}h · azul = atingiu, amarela = abaixo
                 </Muted>
               </View>
             </>

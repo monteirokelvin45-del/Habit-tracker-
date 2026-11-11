@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { areaColor, colors, spacing } from '../../src/theme';
+import { THEMES, areaColor, colors, spacing, useTheme, type ThemeId } from '../../src/theme';
 import {
   Accordion,
   Badge,
@@ -27,13 +27,16 @@ import { generalStreak, goalStreak } from '../../src/lib/score';
 import { closedDays } from '../../src/lib/insights';
 import { todayKey } from '../../src/lib/date';
 import { storageHealth } from '../../src/lib/storage';
+import { openAppLimits } from '../../src/lib/native';
 import { haptic } from '../../src/lib/haptics';
 import { LIFE_AREAS } from '../../src/lib/types';
 
 export default function ProfileScreen() {
+  useTheme();
   const router = useRouter();
   const store = useStore();
   const [identitySheet, setIdentitySheet] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const [name, setName] = useState(store.user.name);
   const [identity, setIdentity] = useState(store.user.identity);
   const [noMore, setNoMore] = useState(store.user.noMore);
@@ -113,8 +116,54 @@ export default function ProfileScreen() {
           </View>
         </Card>
 
+        {/* APARÊNCIA */}
+        <SectionTitle>Aparência</SectionTitle>
+        <Card style={{ gap: spacing.sm }}>
+          <Muted>Tema do aplicativo. A troca vale na hora, sem reiniciar.</Muted>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: 4 }}>
+            {(Object.keys(THEMES) as ThemeId[]).map((id) => {
+              const active = (store.settings.theme ?? 'emerald') === id;
+              return (
+                <Pressable
+                  key={id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => {
+                    haptic('light');
+                    store.updateSettings({ theme: id });
+                  }}
+                  style={{
+                    flexBasis: '47%',
+                    flexGrow: 1,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: active ? colors.green : colors.border,
+                    backgroundColor: colors.bgElevated,
+                    padding: spacing.md,
+                    gap: spacing.sm,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', gap: 4 }}>
+                    {[THEMES[id].palette.bgPrimary, THEMES[id].palette.bgElevated, THEMES[id].swatch].map((c) => (
+                      <View key={c} style={{ width: 16, height: 16, borderRadius: 4, backgroundColor: c }} />
+                    ))}
+                  </View>
+                  <Txt variant="caption" color={active ? colors.green : colors.textPrimary}>
+                    {THEMES[id].label}
+                  </Txt>
+                  {active ? (
+                    <Txt variant="micro" color={colors.green}>
+                      em uso
+                    </Txt>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
+
         {/* CONFIGURAÇÕES */}
-        <SectionTitle>Configurações</SectionTitle>
+        <SectionTitle>Sistema &amp; dispositivo</SectionTitle>
         <Card style={{ gap: spacing.md }}>
           <TimeField label="Lembrete matinal" value={store.settings.morningReminder} onChange={(v) => store.updateSettings({ morningReminder: v })} />
           <TimeField label="Lembrete noturno" value={store.settings.nightReminder} onChange={(v) => store.updateSettings({ nightReminder: v })} />
@@ -133,6 +182,29 @@ export default function ProfileScreen() {
             onChange={(v) => store.updateSettings({ streakNotification: v })}
           />
           <ToggleRow label="Vibração / haptic" value={store.settings.haptics} onChange={(v) => store.updateSettings({ haptics: v })} />
+          <ToggleRow
+            label="Sincronizar com agenda"
+            sub="Cria a agenda MY PRIME e os blocos do dia"
+            value={!!store.settings.syncCalendar}
+            onChange={(v) => store.updateSettings({ syncCalendar: v })}
+          />
+          <ToggleRow
+            label="Alarmes nativos"
+            sub="Abre o Relógio do Android para confirmar"
+            value={!!store.settings.nativeAlarms}
+            onChange={(v) => store.updateSettings({ nativeAlarms: v })}
+          />
+          <ToggleRow
+            label="Detector de fuga"
+            sub="Registra quando você sai do app em sessão de foco"
+            value={store.settings.escapeDetector !== false}
+            onChange={(v) => store.updateSettings({ escapeDetector: v })}
+          />
+          <SecondaryButton
+            label="Configurar limites de apps (Android)"
+            color={colors.textSecondary}
+            onPress={() => void openAppLimits().then((r) => setNote(r.message))}
+          />
           <Field
             label="Meta de sono (horas)"
             value={String(store.settings.sleepGoalHours)}
@@ -252,6 +324,14 @@ export default function ProfileScreen() {
         </Accordion>
 
         {/* SOBRE */}
+        {note ? (
+          <Card accent={colors.yellow + '44'}>
+            <Txt variant="caption" color={colors.yellow} onPress={() => setNote(null)}>
+              {note}
+            </Txt>
+          </Card>
+        ) : null}
+
         <SectionTitle>Sobre</SectionTitle>
         <Card style={{ gap: 4 }}>
           <Txt variant="h3" color={colors.green}>MY PRIME v1.0</Txt>

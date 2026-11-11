@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { colors, MODES, spacing } from '../theme';
+import { colors, MODES, spacing, useTheme } from '../theme';
 import { Badge, Card, Muted, PrimaryButton, Row, Slider, Txt } from './ui';
 import type { Day, DayMode } from '../lib/types';
 import { suggestMode } from '../lib/score';
@@ -13,13 +13,19 @@ export function EnergyCard({
   yesterdayScore,
   onEnergy,
   onMode,
+  collapsedByDefault = false,
 }: {
   day: Day;
   yesterdayScore?: number;
   onEnergy: (energy: Day['energy']) => void;
   onMode: (mode: DayMode) => void;
+  /** Já preenchido: o dashboard mostra a linha resumida e só expande a pedido. */
+  collapsedByDefault?: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(!!day.closedAt);
+  useTheme();
+  // Energia "não mexida" = 5/5/5 (o padrão). Se o usuário já definiu, começa recolhido.
+  const touched = day.energy.physical !== 5 || day.energy.mental !== 5 || day.energy.stress !== 5;
+  const [collapsed, setCollapsed] = useState(!!day.closedAt || (collapsedByDefault && touched));
   const suggestion = suggestMode({ physical: day.energy.physical, mental: day.energy.mental }, yesterdayScore);
   const modeMeta = MODES[day.mode];
 

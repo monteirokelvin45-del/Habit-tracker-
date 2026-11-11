@@ -27,6 +27,8 @@ export interface Goal {
   createdAt: string;
   /** Id usado por tarefas antigas quando a meta foi reimportada com outro id. */
   originId?: string;
+  /** Posição escolhida arrastando na tela de Metas. Ausente = ordem de criação. */
+  order?: number;
 }
 
 export interface Excuse {
@@ -77,6 +79,19 @@ export interface Diary {
   impulseCost: number;
   emotions: string[];
   photo?: string;
+  /** Copos de água (250 ml) marcados no dia. `undefined` = não registrado. */
+  waterCups?: number;
+  /**
+   * Extensões por área: cada módulo grava o seu objeto no diário do dia em vez
+   * de criar chave nova no storage. Tipados como `unknown` no modelo base e
+   * estreitados pelos módulos que os leem (`StudyBlock[]`, `WorkoutSession`…).
+   */
+  study?: unknown;
+  studyPlan?: unknown;
+  workout?: unknown;
+  book?: unknown;
+  project?: unknown;
+  distraction?: string;
 }
 
 export interface ScoreBreakdown {
@@ -110,6 +125,12 @@ export interface Day {
   pomodoros?: { goalId: string; minutes: number; at: string }[];
   /** Registros marcados como "feito" mas sinalizados pela checagem de honestidade. */
   honestyFlags?: { goalId: string; reason: string; resolved: 'confirmed' | 'adjusted' }[];
+  /**
+   * Só o que a pessoa MUDOU no cronograma (chave do bloco → horário `HH:MM`).
+   * Bloco sem entrada aqui usa o horário sugerido; o mapa nunca é tratado como
+   * registro do que aconteceu.
+   */
+  scheduleOverrides?: Record<string, string>;
 }
 
 export interface Rule {
@@ -169,7 +190,17 @@ export interface WeightEntry {
   };
 }
 
+export type ThemeId = 'emerald' | 'golden' | 'cyberpunk' | 'ocean';
+
 export interface Settings {
+  /** Tema visual ativo (Perfil → Aparência). */
+  theme?: ThemeId;
+  /** Sincronizar o cronograma do dia com a agenda nativa do celular. */
+  syncCalendar?: boolean;
+  /** Criar alarmes nativos no Relógio do Android. */
+  nativeAlarms?: boolean;
+  /** Detector de fuga durante sessões de foco (AppState). */
+  escapeDetector?: boolean;
   morningReminder: string;
   nightReminder: string;
   middayCheckin: boolean;
@@ -177,6 +208,8 @@ export interface Settings {
   streakNotification: boolean;
   haptics: boolean;
   sleepGoalHours: number;
+  /** Meta de foco diária em minutos (dashboard "Foco"). */
+  focusGoalMinutes?: number;
   weightGoalKg?: number;
   targetDailyScore: number;
 }
@@ -332,6 +365,15 @@ export function normalizeDiary(input: unknown): Diary {
     impulseCost: num(d.impulseCost),
     emotions: Array.isArray(d.emotions) ? d.emotions.filter((e): e is string => typeof e === 'string') : [],
     photo: typeof d.photo === 'string' ? d.photo : undefined,
+    // `undefined` continua sendo "não registrado" — 0 é um registro válido.
+    waterCups: typeof d.waterCups === 'number' && Number.isFinite(d.waterCups) ? d.waterCups : undefined,
+    // Extensões por área atravessam o backup como vieram (cada módulo valida).
+    study: d.study,
+    studyPlan: d.studyPlan,
+    workout: d.workout,
+    book: d.book,
+    project: d.project,
+    distraction: typeof d.distraction === 'string' ? d.distraction : '',
   };
 }
 

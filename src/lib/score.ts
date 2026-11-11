@@ -49,7 +49,10 @@ export interface ChecklistItem {
  * RECUPERAÇÃO → só prioridade alta no mínimo + plano de retorno
  */
 export function buildChecklist(goals: Goal[], mode: DayMode): ChecklistItem[] {
-  const active = goals.filter((g) => g.active && !g.archived);
+  // Ordem arrastada na tela de Metas manda; sem `order`, a ordem de criação fica.
+  const active = goals
+    .filter((g) => g.active && !g.archived)
+    .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
   const items: ChecklistItem[] = [];
 
   for (const goal of active) {

@@ -119,7 +119,12 @@ const widget = await import(path.join(outRoot, 'widget/data.mjs'));
 const importer = await import(path.join(outRoot, 'lib/importer.mjs'));
 const heat = await import(path.join(outRoot, 'lib/heatmap.mjs'));
 const stats = await import(path.join(outRoot, 'lib/stats.mjs'));
+const sched = await import(path.join(outRoot, 'lib/schedule.mjs'));
 const scoreLib = await import(path.join(outRoot, 'lib/score.mjs'));
+const finance = await import(path.join(outRoot, 'lib/finance.mjs'));
+const diet = await import(path.join(outRoot, 'lib/diet.mjs'));
+const timer = await import(path.join(outRoot, 'lib/timer.mjs'));
+const studies = await import(path.join(outRoot, 'lib/studies.mjs'));
 
 let pass = 0;
 let fail = 0;
@@ -845,6 +850,174 @@ console.log('\n── Auditoria: gauge do mês ──');
   const vazio = stats.monthlyGauge({ ...wData, days: [] }, today);
   check('gauge de mês sem registro projeta 0 (não esconde o vazio)', vazio.projection === 0 && vazio.current === 0);
   check('gauge nunca projeta acima do alvo', vazio.projection <= vazio.target);
+}
+
+console.log('\n── Auditoria: cronograma e métricas do dashboard ──');
+{
+  const goals = [
+    { id: 'g1', name: 'Treino A', area: 'Treino', priority: 'high', min: '10min' },
+    { id: 'g2', name: 'Ler 20p', area: 'Leitura', priority: 'normal', min: '5p' },
+    { id: 'g3', name: 'Estudar', area: 'Estudo', priority: 'high', min: '30min' },
+    { id: 'g4', name: 'Treino B', area: 'Treino', priority: 'low', min: '5min' },
+  ];
+  const slots = sched.buildSchedule({
+    date: '2026-11-10',
+    goals,
+    tasks: [
+      { goalId: 'g1', done: true },
+      { goalId: 'g2', done: false },
+      { goalId: 'g3', done: false },
+    ],
+  });
+  check('cronograma tem um bloco por área', slots.length === 3, String(slots.length));
+  const treino = slots.find((s) => s.area === 'Treino');
+  check('bloco da área usa a meta de maior prioridade', treino?.title === 'Treino A', treino?.title);
+  check('área fica marcada como feita só com dado real', treino?.status === 'done');
+  check('bloco não feito fica em aberto', slots.find((s) => s.area === 'Leitura')?.status === 'open');
+  check('blocos vêm em ordem de horário', slots.every((s, i) => i === 0 || slots[i - 1].start <= s.start));
+  check('horário sugerido é estável para a mesma data', sched.defaultHourFor('Xyz', '2026-11-10') === sched.defaultHourFor('Xyz', '2026-11-10'));
+  check('horário sugerido muda com a data (sem ficar sempre 9h)', sched.defaultHourFor('Xyz', '2026-11-10') !== sched.defaultHourFor('Xyz', '2026-11-11'));
+  check('fim do bloco é 60min depois', sched.addMinutes('09:00', 60) === '10:00');
+  check('fim do bloco atravessa hora cheia', sched.addMinutes('23:30', 60) === '00:30');
+  check('próximo bloco ignora os já feitos', sched.nextSlot(slots, '05:00')?.area === 'Estudo', sched.nextSlot(slots, '05:00')?.area);
+  check('próximo bloco prioriza o horário à frente', sched.nextSlot(slots, '21:00')?.area === 'Leitura');
+  check('sincroniza só o que está em aberto', sched.slotsToSync(slots).every((s) => s.status === 'open'));
+
+  const progresso = sched.areaProgress(goals, [{ goalId: 'g1', done: true }, { goalId: 'g1', done: true }], 'Treino');
+  check('progresso de área conta só tarefas da área', progresso.total === 2 && progresso.done === 2);
+  const semArea = sched.areaProgress(goals, [], 'Finanças');
+  check('área sem tarefa diz "Sem dado" (não 0/0)', semArea.headline === 'Sem dado');
+  check('prazo futuro usa contagem regressiva', sched.deadlineLabel('2026-11-20', '2026-11-10') === '10d restantes');
+  check('prazo de hoje é dito explicitamente', sched.deadlineLabel('2026-11-10', '2026-11-10') === 'vence hoje');
+
+  // foco: 0 min ≠ sem dado
+  check('dia existente sem pomodoro é 0 min', stats.focusMinutes({ pomodoros: [] }) === 0);
+  check('dia inexistente é null (sem dado)', stats.focusMinutes(undefined) === null);
+  check('média de foco ignora dias sem registro', stats.averageFocusMinutes([{ pomodoros: [] }, { pomodoros: [{ minutes: 50 }] }]) === 50);
+  check('média de foco sem nenhum registro é null', stats.averageFocusMinutes([{ pomodoros: [] }]) === null);
+
+  /* ── Finanças: três baldes + Regra do Dia de Pagamento ── */
+  const MES = '2026-11';
+  const fin = [
+    { id: 'a', date: '2026-11-05', type: 'income', amount: 3000, category: 'Outros', isImpulse: false, note: '' },
+    { id: 'b', date: '2026-11-06', type: 'expense', amount: 900, category: 'Fixo', isImpulse: false, note: '' },
+    { id: 'c', date: '2026-11-07', type: 'expense', amount: 300, category: 'Lazer', isImpulse: false, note: '' },
+    { id: 'd', date: '2026-11-08', type: 'expense', amount: 250, category: 'Impulso', isImpulse: true, note: 'impulso: tédio' },
+    { id: 'e', date: '2026-11-09', type: 'expense', amount: 200, category: 'Investimento', isImpulse: false, note: '' },
+  ];
+  const baldes = finance.bucketTargets(fin, MES);
+  check('três baldes sempre presentes', baldes.length === 3);
+  check('alvo de necessidade é 50% da renda', baldes.find((b) => b.key === 'necessidade')?.target === 1500);
+  check('balde Futuro recebe 20% da renda', baldes.find((b) => b.key === 'futuro')?.target === 600);
+  check('investimento cai no balde Futuro', baldes.find((b) => b.key === 'futuro')?.used === 200);
+  // Fixo (900) + Transporte (0) = 900 usado; alvo 1500 → sobram 600.
+  check('sobra do balde é alvo menos usado', baldes.find((b) => b.key === 'necessidade')?.left === 600, String(baldes.find((b) => b.key === 'necessidade')?.left));
+  // Lazer 300 + Impulso 250 = 550 no balde Vontade.
+  check('impulso conta no balde Vontade', baldes.find((b) => b.key === 'vontade')?.used === 550, String(baldes.find((b) => b.key === 'vontade')?.used));
+  const semRenda = finance.bucketTargets(fin.filter((f) => f.type === 'expense'), MES);
+  check('sem receita o alvo é null (não zero)', semRenda.every((b) => b.target === null && b.ratio === null));
+  check('divisão padrão soma 100', finance.splitTotal(finance.DEFAULT_SPLIT) === 100 && finance.splitIsValid(finance.DEFAULT_SPLIT));
+  check('divisão que não soma 100 é inválida', !finance.splitIsValid({ necessidade: 60, vontade: 30, futuro: 5 }));
+
+  const payday = finance.paydayCheck(fin, MES);
+  check('pagamento usa a maior receita do mês', payday?.date === '2026-11-05' && payday?.received === 3000);
+  check('regra aponta quanto faltou separar', payday?.gap === -400, String(payday?.gap));
+  check('veredito da regra cobra a escolha, não a pessoa', /Faltou separar/.test(payday?.verdict ?? ''));
+  check('mês sem receita não tem payday', finance.paydayCheck(fin.filter((f) => f.type === 'expense'), MES) === null);
+  check('primeiro gasto de vontade mede dias após o pagamento', finance.daysUntilFirstWant(fin, MES) === 2);
+  check('custo do impulso em dias de Futuro é calculado', Math.round((finance.impulseCostInFutureDays(fin, MES) ?? 0) * 10) / 10 === 12.5, String(finance.impulseCostInFutureDays(fin, MES)));
+  check('categoria desconhecida cai em Vontade', finance.bucketOf('Cripto') === 'vontade');
+
+  /* ── Dieta: refeições, gatilhos e água ── */
+  const refeicoes = [
+    { time: '08:00', kind: 'Café', what: 'pão e ovo', onPlan: true, trigger: '' },
+    { time: '13:00', kind: 'Almoço', what: 'arroz e frango', onPlan: true, trigger: '' },
+    { time: '16:00', kind: 'Lanche', what: 'bolacha', onPlan: false, trigger: 'Tédio' },
+  ];
+  const roundtrip = diet.parseMeals(diet.serializeMeals(refeicoes));
+  check('refeição sobrevive ao round-trip do diário', roundtrip.length === 3 && roundtrip[2].trigger === 'Tédio');
+  check('refeição fora do plano é contada', diet.parseMeals(diet.serializeMeals(refeicoes)).filter((m) => !m.onPlan).length === 1);
+  check('texto livre antigo não é perdido', diet.parseMeals('comi pizza').length === 1 && diet.parseMeals('comi pizza')[0].time === '');
+  const diaDieta = diet.dayDiet({ diary: { food: diet.serializeMeals(refeicoes) } });
+  check('razão dentro do plano é 2/3', Math.round((diaDieta.planRatio ?? 0) * 100) === 67);
+  check('gatilho dominante vem do registro real', diaDieta.topTrigger?.label === 'Tédio' && diaDieta.topTrigger?.count === 1);
+  const diaVazio = diet.dayDiet({ diary: { food: '' } });
+  check('dia sem refeição é "Sem dado", não 0%', diaVazio.planRatio === null && diaVazio.total === 0);
+  check('dia inexistente também é "Sem dado"', diet.dayDiet(undefined).planRatio === null);
+  check('tendência ignora dias sem registro', diet.dietTrend([{ date: '2026-11-01', diary: { food: '' } }], 14).offPlanPerDay === null);
+  check('tendência soma fora do plano por dia registrado', diet.dietTrend([{ date: '2026-11-01', diary: { food: diet.serializeMeals(refeicoes) } }], 14).offPlanPerDay === 1);
+  // 16:00 (antes das 22h) → jantar ainda no prazo; 22h → já passou.
+  check('refeição atrasada sem registro é apontada', diet.missingMeals(refeicoes, 22).join(',') === 'Jantar', diet.missingMeals(refeicoes, 22).join(','));
+  check('jantar não é cobrado antes do horário', diet.missingMeals(refeicoes, 16).length === 0);
+  check('sem água registrada o progresso é null', diet.waterProgress(undefined) === null);
+  check('zero copo é um registro válido (0%)', diet.waterProgress(0) === 0);
+  check('meta de água bate em 8 copos', diet.waterProgress(8) === 1);
+
+  /* ── Timer de foco: estado puro ── */
+  const cfg = { focus: 25, rest: 5 };
+  let timerState = timer.initTimer(cfg);
+  check('timer começa parado no foco', timerState.status === 'idle' && timerState.remaining === 1500);
+  check('tick com timer parado não anda', timer.tick(timerState, cfg).state.remaining === 1500);
+  timerState = timer.start(timerState);
+  timerState = timer.tick(timerState, cfg).state;
+  check('tick enquanto corre desconta 1s', timerState.remaining === 1499);
+  check('progresso do timer cresce', Math.round(timer.progress(timerState) * 1500) === 1);
+  timerState = { ...timerState, remaining: 1 };
+  const fimFoco = timer.tick(timerState, cfg);
+  check('fim do foco dispara evento', fimFoco.event === 'focus-done');
+  check('fim do foco entra na pausa correndo', fimFoco.state.phase === 'rest' && fimFoco.state.status === 'running');
+  check('fim do foco conta o ciclo', fimFoco.state.cycles === 1);
+  check('pausa começa com o tempo cheio', fimFoco.state.remaining === 300);
+  const fimPausa = timer.tick({ ...fimFoco.state, remaining: 1 }, cfg);
+  check('fim da pausa volta para o foco PARADO', fimPausa.state.phase === 'focus' && fimPausa.state.status === 'paused');
+  check('fim da pausa dispara evento', fimPausa.event === 'rest-done');
+  check('toggle pausa e retoma', timer.toggle(timer.start(timer.initTimer(cfg))).status === 'paused');
+  check('reiniciar zera o tempo e mantém ciclos', timer.reset(cfg, 2).remaining === 1500 && timer.reset(cfg, 2).cycles === 2);
+  check('relógio formata com dois dígitos', timer.formatClock(65) === '01:05');
+  check('minutos de foco contam só ciclos completos', timer.focusMinutesOf({ ...timer.initTimer(cfg), cycles: 2 }, cfg) === 50);
+  check('timer parado não tem previsão de fim', timer.endsAt(timer.initTimer(cfg), 0) === null);
+  check('presets do timer são 25/5, 50/10 e 90/20', timer.PRESETS.map(timer.presetLabel).join(' | ') === '25 / 5 | 50 / 10 | 90 / 20');
+
+  /* ── Plano de estudo, edital e apoio a TDAH ── */
+  const plano = {
+    name: 'Concurso',
+    examDate: '2026-12-10',
+    topics: [
+      { id: 'a', subject: 'Matemática', topic: 'Porcentagem', weight: 4, status: 'estudado', lastSeen: '2026-11-04' },
+      { id: 'b', subject: 'Direito', topic: 'Constitucional', weight: 5, status: 'novo' },
+      { id: 'c', subject: 'Português', topic: 'Crase', weight: 2, status: 'revisado', lastSeen: '2026-11-08' },
+    ],
+  };
+  const planoInfo = studies.planProgress(plano);
+  check('progresso do edital conta estudados', planoInfo.studied === 2 && planoInfo.total === 3);
+  check('progresso do edital é razão real', Math.round((planoInfo.ratio ?? 0) * 100) === 67);
+  check('edital vazio é "Sem dado", não 0%', studies.planProgress({ name: '', examDate: '', topics: [] }).ratio === null);
+  check('dias até a prova contam do dia de hoje', studies.daysToExam(plano, '2026-11-10') === 30);
+  check('tópicos por dia usa os pendentes e os dias', Math.round((studies.topicsPerDayNeeded(plano, '2026-11-10') ?? 0) * 30) === 1);
+  check('prova sem data não calcula ritmo', studies.topicsPerDayNeeded({ ...plano, examDate: '' }, '2026-11-10') === null);
+  check('prova passada não calcula ritmo', studies.topicsPerDayNeeded({ ...plano, examDate: '2026-01-01' }, '2026-11-10') === null);
+  const proximo = studies.nextTopic(plano, '2026-11-10');
+  check('próximo tópico prioriza o nunca estudado', proximo?.topic.id === 'b', proximo?.topic.id);
+  check('próximo tópico explica o motivo', proximo?.reason === 'nunca estudado', proximo?.reason);
+  check('tópico nunca estudado ganha do antigo mesmo com peso menor', studies.nextTopic({ ...plano, topics: plano.topics.slice(1) }, '2026-11-10')?.topic.id === 'b');
+  check('sem tópicos não há próximo', studies.nextTopic({ name: '', examDate: '', topics: [] }, '2026-11-10') === null);
+  check('peso fora de 1–5 é limitado', studies.weightOf({ id: 'x', subject: 's', topic: 't', weight: 9, status: 'novo' }) === 5);
+  check('carga por matéria soma peso do edital', studies.workloadBySubject(plano)[0]?.subject === 'Direito');
+  const tdahInicio = studies.adhdSupport(0);
+  check('TDAH sugere sessão curta no primeiro bloco', tdahInicio.firstSessionMinutes === 10);
+  check('TDAH começa pelos 2 minutos', tdahInicio.startSteps.some((s) => s.includes('2 minutos')));
+  check('TDAH muda o texto quando já estudou', studies.adhdSupport(45).afterBreak.includes('45 min'));
+  check('sessão abaixo do piso não conta', !studies.countsAsSession(1) && studies.countsAsSession(2));
+
+  /* ── Cronograma: semana e horário manual ── */
+  const goalsSemana = [{ id: 'g1', name: 'Treino A', area: 'Treino', priority: 'high', min: '10min' }];
+  const base = sched.buildSchedule({ date: '2026-11-10', goals: goalsSemana, tasks: [] });
+  check('bloco começa na hora da área', base[0]?.start === '06:00', base[0]?.start);
+  const comOverride = sched.buildSchedule({ date: '2026-11-10', goals: goalsSemana, tasks: [], overrides: { g1: '18:30' } });
+  check('horário manual vence a sugestão', comOverride[0]?.start === '18:30' && comOverride[0]?.end === '19:30');
+  const overrideInvalido = sched.buildSchedule({ date: '2026-11-10', goals: goalsSemana, tasks: [], overrides: { g1: '99:99' } });
+  check('horário manual inválido é ignorado', overrideInvalido[0]?.start === '06:00');
+  check('valida HH:MM', sched.isHHmm('23:59') && !sched.isHHmm('24:00') && !sched.isHHmm('7h'));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);

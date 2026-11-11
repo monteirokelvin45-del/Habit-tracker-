@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { areaColor, colors, spacing } from '../../src/theme';
+import { areaColor, colors, spacing, useTheme } from '../../src/theme';
+import { Icon } from '../../src/components/Icon';
 import {
   Badge,
   Card,
@@ -47,6 +49,8 @@ const RULE_SUGGESTIONS = [
 ];
 
 export default function IntelligenceScreen() {
+  useTheme();
+  const router = useRouter();
   const store = useStore();
   const [ruleSheet, setRuleSheet] = useState(false);
   const [editing, setEditing] = useState<Rule | null>(null);
@@ -124,6 +128,60 @@ export default function IntelligenceScreen() {
   };
 
   const weekActivated = store.rules.filter((r) => r.timesActivated > 0).length;
+
+  // Regra do briefing: com menos de 7 dias registrados não existe base para padrão.
+  // Em vez de uma tela de cards "Sem dado", UM card explica o que falta e libera o quê.
+  const gate = closed.length < 7;
+  const gatePct = Math.min(100, Math.round((closed.length / 7) * 100));
+
+  if (gate) {
+    const missing = 7 - closed.length;
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.bgPrimary }} edges={['top']}>
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, flexGrow: 1, justifyContent: 'center' }}>
+          <Card style={{ alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xxl }}>
+            <View
+              style={{
+                width: 58,
+                height: 58,
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: colors.borderAccent,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icon name="cerebro" size={26} color={colors.green} />
+            </View>
+            <Txt variant="h2" style={{ textAlign: 'center' }}>
+              Cérebro de dados em aprendizado
+            </Txt>
+            <Txt variant="caption" color={colors.textSecondary} style={{ textAlign: 'center' }}>
+              O que não tem base vira chute — e chute não corrige comportamento.
+            </Txt>
+            <View style={{ alignSelf: 'stretch', gap: 6, marginTop: spacing.sm }}>
+              <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.track, overflow: 'hidden' }}>
+                <View style={{ height: 6, width: `${gatePct}%`, backgroundColor: colors.green }} />
+              </View>
+              <Row style={{ justifyContent: 'space-between' }}>
+                <Txt variant="micro" color={colors.textSecondary}>
+                  {closed.length} / 7 dias registrados
+                </Txt>
+                <Txt variant="micro" color={colors.green}>
+                  {gatePct}%
+                </Txt>
+              </Row>
+            </View>
+            <Txt variant="caption" color={colors.textMuted} style={{ textAlign: 'center', marginTop: 2 }}>
+              Faltam {missing} dia{missing > 1 ? 's' : ''} para liberar: horário de falha, pico de execução,
+              correlação de áreas, desculpa mais usada e checagem de honestidade.
+            </Txt>
+            <SecondaryButton label="Ir para o dia de hoje" color={colors.green} onPress={() => router.push('/(tabs)')} />
+          </Card>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bgPrimary }} edges={['top']}>

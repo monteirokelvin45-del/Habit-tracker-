@@ -30,7 +30,7 @@ export function ConstancyWidget({
       style={{
         height: 'match_parent',
         width: 'match_parent',
-        backgroundColor: '#0A0A0A',
+        backgroundColor: '#051F20',
         borderRadius: 20,
         padding: 12,
         flexDirection: 'column',
@@ -39,8 +39,8 @@ export function ConstancyWidget({
     >
       {/* cabeçalho */}
       <FlexWidget style={{ flexDirection: 'row', width: 'match_parent', justifyContent: 'space-between', alignItems: 'center' }}>
-        <TextWidget text="MURAL DE CONSTÂNCIA" style={{ fontSize: 10, color: '#00FF88', fontWeight: '700', letterSpacing: 1.2 }} />
-        <TextWidget text={`🔥 ${mural.streak}`} style={{ fontSize: 12, color: '#FFAA00', fontWeight: '700' }} />
+        <TextWidget text="MURAL DE CONSTÂNCIA" style={{ fontSize: 10, color: '#DAF1DE', fontWeight: '700', letterSpacing: 1.2 }} />
+        <TextWidget text={`🔥 ${mural.streak}`} style={{ fontSize: 12, color: '#E8A838', fontWeight: '700' }} />
       </FlexWidget>
 
       {/* grade */}
@@ -49,7 +49,7 @@ export function ConstancyWidget({
         <FlexWidget style={{ flexDirection: 'column', width: 16, justifyContent: 'space-between' }}>
           {DAY_LABELS.map((label, i) => (
             <FlexWidget key={`dl-${i}`} style={{ height: cell + gap, marginTop: gap, justifyContent: 'center' }}>
-              <TextWidget text={label} style={{ fontSize: 7, color: '#555555' }} />
+              <TextWidget text={label} style={{ fontSize: 7, color: '#5A7A6E' }} />
             </FlexWidget>
           ))}
         </FlexWidget>
@@ -87,19 +87,19 @@ export function ConstancyWidget({
       >
         <TextWidget
           text={`${mural.fulfilled} dia(s) cumprido(s) · ${mural.weeks} sem`}
-          style={{ fontSize: 9, color: '#888888' }}
+          style={{ fontSize: 9, color: '#8EB69B' }}
           maxLines={1}
           truncate="END"
         />
         <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TextWidget text="menos" style={{ fontSize: 7, color: '#555555', marginRight: 3 }} />
+          <TextWidget text="menos" style={{ fontSize: 7, color: '#5A7A6E', marginRight: 3 }} />
           {(['#1F1F1F', '#B32B2B', '#A87300', '#00A85A', '#39FF14'] as const).map((color) => (
             <FlexWidget
               key={color}
               style={{ width: 7, height: 7, borderRadius: 1, backgroundColor: color, marginLeft: 2 }}
             />
           ))}
-          <TextWidget text="mais" style={{ fontSize: 7, color: '#555555', marginLeft: 3 }} />
+          <TextWidget text="mais" style={{ fontSize: 7, color: '#5A7A6E', marginLeft: 3 }} />
         </FlexWidget>
       </FlexWidget>
     </FlexWidget>

@@ -32,6 +32,10 @@ export const KEYS = {
 } as const;
 
 export const DEFAULT_SETTINGS: Settings = {
+  theme: 'emerald',
+  syncCalendar: false,
+  nativeAlarms: false,
+  escapeDetector: true,
   morningReminder: '07:00',
   nightReminder: '21:00',
   middayCheckin: true,
@@ -39,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   streakNotification: true,
   haptics: true,
   sleepGoalHours: 7.5,
+  focusGoalMinutes: 240,
   targetDailyScore: 7,
 };
 

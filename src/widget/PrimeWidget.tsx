@@ -20,7 +20,7 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
       style={{
         height: 'match_parent',
         width: 'match_parent',
-        backgroundColor: '#0A0A0A',
+        backgroundColor: '#051F20',
         borderRadius: 20,
         padding: 14,
         flexDirection: 'column',
@@ -36,9 +36,9 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
           alignItems: 'center',
         }}
       >
-        <TextWidget text="MY PRIME" style={{ fontSize: 11, color: '#00FF88', fontWeight: '700', letterSpacing: 1.5 }} />
+        <TextWidget text="MY PRIME" style={{ fontSize: 11, color: '#DAF1DE', fontWeight: '700', letterSpacing: 1.5 }} />
         <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TextWidget text={`🔥 ${w.streak}`} style={{ fontSize: 13, color: '#FFAA00', fontWeight: '700' }} />
+          <TextWidget text={`🔥 ${w.streak}`} style={{ fontSize: 13, color: '#E8A838', fontWeight: '700' }} />
         </FlexWidget>
       </FlexWidget>
 
@@ -57,7 +57,7 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
         />
         <TextWidget
           text={`${w.done}/${w.total}`}
-          style={{ fontSize: 14, color: w.ratio >= 1 ? '#00FF88' : '#888888', fontWeight: '700' }}
+          style={{ fontSize: 14, color: w.ratio >= 1 ? '#DAF1DE' : '#8EB69B', fontWeight: '700' }}
         />
       </FlexWidget>
 
@@ -66,7 +66,7 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
         style={{
           width: 'match_parent',
           height: 6,
-          backgroundColor: '#2A2A2A',
+          backgroundColor: '#163832',
           borderRadius: 3,
           flexDirection: 'row',
           marginTop: 2,
@@ -77,7 +77,7 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
           style={{
             width: barWidth,
             height: 6,
-            backgroundColor: w.allDone ? '#00FF88' : w.modeColor,
+            backgroundColor: w.allDone ? '#DAF1DE' : w.modeColor,
             borderRadius: 3,
           }}
         />
@@ -95,7 +95,7 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
             />
             <TextWidget
               text={`${w.nextTask.area} · ${w.nextTask.target}`}
-              style={{ fontSize: 11, color: '#888888' }}
+              style={{ fontSize: 11, color: '#8EB69B' }}
               maxLines={1}
               truncate="END"
             />
@@ -105,7 +105,7 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
             <TextWidget text={w.hasGoals ? w.hint : 'Sem dado'} style={{ fontSize: 14, color: '#FFFFFF', fontWeight: '600' }} />
             <TextWidget
               text={w.hasGoals ? 'Nada em aberto neste modo' : 'Nenhuma meta ativa'}
-              style={{ fontSize: 11, color: '#888888' }}
+              style={{ fontSize: 11, color: '#8EB69B' }}
               maxLines={1}
             />
           </>
@@ -128,7 +128,7 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
             style={{
               paddingHorizontal: 10,
               paddingVertical: 6,
-              backgroundColor: '#00FF88',
+              backgroundColor: '#DAF1DE',
               borderRadius: 10,
               flexDirection: 'row',
               alignItems: 'center',
@@ -137,11 +137,11 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
             <TextWidget text="✓ Feito" style={{ fontSize: 12, color: '#000000', fontWeight: '800' }} />
           </FlexWidget>
         ) : (
-          <FlexWidget style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#1A1A1A', borderRadius: 10 }}>
-            <TextWidget text={w.hint} style={{ fontSize: 11, color: '#888888' }} maxLines={1} />
+          <FlexWidget style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#0B2B26', borderRadius: 10 }}>
+            <TextWidget text={w.hint} style={{ fontSize: 11, color: '#8EB69B' }} maxLines={1} />
           </FlexWidget>
         )}
-        <TextWidget text="ABRIR ›" style={{ fontSize: 10, color: '#555555', fontWeight: '600', letterSpacing: 1 }} />
+        <TextWidget text="ABRIR ›" style={{ fontSize: 10, color: '#5A7A6E', fontWeight: '600', letterSpacing: 1 }} />
       </FlexWidget>
     </FlexWidget>
   );
