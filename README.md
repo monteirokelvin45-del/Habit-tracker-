@@ -25,8 +25,8 @@ npm start          # Expo dev server (QR code no Expo Go)
 npm run android    # emulador/dispositivo
 npm run web        # preview rápido no navegador
 npm run typecheck  # tsc --noEmit (strict)
-npm run test:logic  # 385 testes de lógica pura (score, modos, insights, parser, importador, timer, finanças, dieta, edital, semana, emoções)
-npm run test:store  # 46 testes de AÇÃO do store (dia fechado, reabrir, pomodoro, metas, fechar o dia, emoções)
+npm run test:logic  # 422 testes de lógica pura (score, modos, insights, parser, importador, timer, finanças, dieta, edital, semana, emoções)
+npm run test:store  # 52 testes de AÇÃO do store (dia fechado, reabrir, pomodoro, metas, fechar o dia, emoções)
 npm run test:render # 42 renders dos 21 gráficos + tela, com e sem dado (react-dom/server, sem emulador)
 npm run test:screens # 42 montagens de tela: app com histórico e app zerado (SSR, sem emulador)
 npm test            # os quatro
@@ -94,10 +94,11 @@ src/
     haptics.ts           Feedback tátil respeitando o toggle
     stats.ts             Métricas puras dos 21 gráficos (sem dado = null)
     emotions.ts          Diário de emoções: limites, mapa de semanas, pares e efeito no dia seguinte
+    achievements.ts      Anúncio de conquista: compara antes/depois (nunca anuncia 2x)
   components/            ui.tsx (design system), charts.tsx + StatsCharts.tsx (svg), sheets, cartões
 scripts/
-  run-logic-tests.mjs    testes das funções puras (385 asserções)
-  audited-store.mjs      testes das ações do Zustand com stub de persistência (46 asserções)
+  run-logic-tests.mjs    testes das funções puras (422 asserções)
+  audited-store.mjs      testes das ações do Zustand com stub de persistência (52 asserções)
   render-charts-smoke.mjs  render dos gráficos com e sem dado (42 montagens)
   render-screens-smoke.mjs montagem das telas com store de cenário (42 montagens)
 ```
@@ -246,6 +247,30 @@ com `NaN`.
 `assets/icon.png` (mipmap adaptativo) e `assets/splash.png` (splash nativa via `expo-splash-screen`)
 são gerados e referenciados no `app.json`. `assets/lottie/confetti.json` é o confetti local
 (60 peças, 2s, sem loop) usado ao fechar 100% do checklist.
+
+## Lembretes (notificações locais)
+
+Sete avisos, todos locais (sem servidor): bom dia, meio do dia (opcional), streak (30 min
+depois do bom dia), fechar o dia e revisão semanal (segunda, 20:00) — mais os avisos pontuais
+de ciclo do Pomodoro, descanso do treino e zona de perigo.
+
+O que importa para não mentir na tela:
+
+- **Permissão é pedida onde faz sentido**: no fim do onboarding (a pessoa acabou de escolher os
+  horários) e no botão *Ativar lembretes neste aparelho* do Perfil. O boot reagenda em silêncio se
+  a permissão já existe — nunca abre diálogo sozinho.
+- **O Perfil prova o agendamento**: mostra quantos lembretes estão agendados e a data/hora do
+  último agendamento (`@myprime:remindersAt`). Sem permissão, aparece *não agendado* em laranja,
+  não uma lista de horários que não toca.
+- **`scheduleReminders` devolve resultado** (`scheduled` / `denied` / `web` / `error` + contagem),
+  então erro do sistema vira mensagem, não `console.warn` perdido.
+
+## Conquistas anunciadas
+
+`lib/achievements.ts` compara os badges antes/depois de cada mudança de estado: quando um badge
+passa de bloqueado para desbloqueado, o store enfileira o anúncio em `freshUnlocks` e a faixa
+`UnlockBanner` (aba Hoje) mostra emoji, nome e **o critério cumprido** — com confetti. O anúncio
+nunca repete (o `unlockedAt` é a marca) e dispensar não apaga a conquista.
 
 ## Widget de tela inicial (Android)
 

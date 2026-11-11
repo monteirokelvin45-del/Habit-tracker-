@@ -153,6 +153,28 @@ Decisões declaradas:
 | Splash | ✅ | |
 | **Widget de home screen** | ✅ | `react-native-android-widget` + config plugin; validado por `expo prebuild` |
 
+## Fase 4 — o que estava no papel e não acontecia
+
+Mesma varredura cética da fase 3. Três itens marcados ✅ não funcionavam como a tabela dizia.
+
+| # | O que a auditoria dizia | O que o código fazia | Correção + prova |
+|---|---|---|---|
+| 1 | "6 lembretes locais + permissão ✅" | **Nenhum lembrete era agendado, nunca.** `scheduleReminders` chamava `getPermissionsAsync()` e saía com `return` se não houvesse permissão. E **nada no app chamava `requestPermissionsAsync`** nesse fluxo — o diálogo só existiria em `notifyNow`/restTimerAlarm, que ninguém dispara no boot. Logo: permissão nunca concedida ⇒ zero notificações, para sempre. O Perfil mostrava os horários como se valessem | `scheduleReminders` ganhou `options.askPermission`; o onboarding (depois de escolher horários) e o botão **Ativar lembretes neste aparelho** no Perfil pedem a permissão; o boot reagenda sem abrir diálogo. O Perfil agora mostra quantos lembretes estão agendados e quando, lendo `@myprime:remindersAt` | 17 asserções rodando o `notifications.ts` **real** com stub do `expo-notifications` (sem diálogo no boot, diálogo no toque, 5 agendados, toggles desligados, web, erro do sistema, horário inválido). Reintroduzir o bug derruba 5 |
+| 2 | "8 badges com critério real ✅" | O `unlockedAt` era gravado **em silêncio**. Nenhum componente comparava antes/depois: a pessoa conquistava e não sabia | `lib/achievements.ts` compara os dois estados e o store enfileira em `freshUnlocks`; `UnlockBanner` (aba Hoje) anuncia com confetti e o critério cumprido | 9 asserções de lógica + 6 de store (fila, idempotência, badge de versão antiga, dispensar sem apagar). Reintroduzir o `set()` antigo derruba 2 |
+| 3 | "Exportar PDF ✅" | Funcionava, mas **sem teste**: nenhum script cobria o HTML do relatório | Teste do `buildReportHtml` real (compilado com stubs de expo-print/sharing): mês com dados, mês vazio e mês com dia sem tarefa | 7 asserções: sem `NaN`/`undefined`, "Sem dado" honesto, área listada só quando há tarefa |
+
+Correções de higiene que saíram junto:
+
+- `scheduleReminders` devolve `{ status, count, message }` em vez de `void` — a UI não pode mais fingir que agendou.
+- Erro do sistema (AlarmManager, canal, etc.) agora vira `status: 'error'` visível, não `console.warn` silencioso.
+- O streak só entra na lista se existir (`streakDays > 0`), sem notificação com "0 dias seguidos".
+
+Limites que continuam valendo (declarados):
+
+1. **Permissão negada não tem contorno**: as notificações só tocam depois de liberar nos ajustes do sistema — o app agora diz isso em vez de esconder.
+2. **Alarme nativo** abre o Relógio do Android para confirmação manual (o app não cria alarme de sistema por conta própria); é o comportamento documentado, não um bug.
+3. **Badges continuam sem som/modal**: o anúncio é uma faixa no topo da aba Hoje, dispensável com um toque.
+
 ## Dados (AsyncStorage)
 
 Todas as chaves do briefing existem ✅ + extras declarados: `ayanokoji`, `weeklyFocus`,
@@ -203,9 +225,9 @@ Varredura feita em `src/lib`, `src/components` e `app/**`: cada defeito abaixo f
 
 Testes que guardam essas correções:
 
-- `npm run test:store` — **46 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
+- `npm run test:store` — **52 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
   dado antigo). Compila o store real com stub de persistência; é o teste que pega estado errado.
-- `npm run test:logic` — **385 asserções** (inclui as 45 novas do diário de emoções: teto de 3/dia,
+- `npm run test:logic` — **422 asserções** (inclui as 45 novas do diário de emoções: teto de 3/dia,
   sanitização de entrada, grade do mapa com dia sem registro, sequência, janela do ranking, gate do
   efeito no dia seguinte, pares e espelho no diário).
 - `npm run test:render` — **42 montagens** dos gráficos com e sem dado.
@@ -279,10 +301,10 @@ agora são reagendados 1× por dia, não a cada edição).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **385/385** (modos, score, streaks, cobrança, gate de 7 dias,
+- `node scripts/run-logic-tests.mjs` → **422/422** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
-- `node scripts/audited-store.mjs` → **46/46** (ações do store: dia fechado, reabrir, pomodoro, metas,
+- `node scripts/audited-store.mjs` → **52/52** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200
