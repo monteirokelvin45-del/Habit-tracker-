@@ -20,6 +20,7 @@ import { LineChart, RadarChart } from '../../src/components/charts';
 import { useStore, newId } from '../../src/lib/store';
 import {
   areaConsistency,
+  areaCorrelation,
   bestHour,
   closedDays,
   emotionCorrelation,
@@ -83,6 +84,7 @@ export default function IntelligenceScreen() {
     [selectedAreas, week, store.days, store.goals],
   );
 
+  const correlation = areaCorrelation(store);
   const consistency = areaConsistency(store, lastNDays(7));
   const radarData = consistency.map((c) => ({ label: c.area.slice(0, 9), value: c.score, color: areaColor(c.area) }));
 
@@ -206,6 +208,14 @@ export default function IntelligenceScreen() {
 
         <Card>
           <Txt variant="micro" color={colors.textSecondary}>Áreas que caem juntas</Txt>
+          {correlation.value ? (
+            <Txt variant="caption" color={colors.textPrimary} style={{ marginTop: 6, lineHeight: 20 }}>
+              Quando {correlation.value.a} falha, {correlation.value.b} falha {correlation.value.pct}% das vezes
+              ({correlation.value.samples} dia(s) com falha em {correlation.value.a}).
+            </Txt>
+          ) : (
+            <NoData label={correlation.label || 'Sem correlação com dados suficientes'} />
+          )}
           {failureMap(store).ready ? (
             failures.sequences.length ? (
               failures.sequences.map((s) => (

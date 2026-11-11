@@ -3,7 +3,7 @@ import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { areaColor, colors, MODES, spacing } from '../../src/theme';
-import { Badge, Card, Muted, PrimaryButton, Row, SecondaryButton, Txt } from '../../src/components/ui';
+import { Badge, Card, Muted, PrimaryButton, Row, SecondaryButton, Sheet, Txt } from '../../src/components/ui';
 import { EnergyCard } from '../../src/components/EnergyCard';
 import { ChecklistCard, modeHint } from '../../src/components/ChecklistCard';
 import { FailureSheet, type FailurePayload } from '../../src/components/FailureSheet';
@@ -13,7 +13,8 @@ import { MiddaySheet, type MiddayPayload } from '../../src/components/MiddayShee
 import { Confetti } from '../../src/lib/anim';
 import { useStore } from '../../src/lib/store';
 import { addDays, greeting, longDate, nowHHmm, todayKey } from '../../src/lib/date';
-import { buildChecklist, generalStreak, goalStreak, priorityTasksUndone, scoreOf } from '../../src/lib/score';
+import { buildChecklist, detectDanger, generalStreak, goalStreak, priorityTasksUndone, scoreOf } from '../../src/lib/score';
+import { nextReward } from '../../src/lib/insights';
 import { haptic } from '../../src/lib/haptics';
 import type { Day, DayMode, Goal } from '../../src/lib/types';
 
@@ -65,12 +66,15 @@ export default function TodayScreen() {
   const [confetti, setConfetti] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [middayOpen, setMiddayOpen] = useState(false);
+  const [honestyNote, setHonestyNote] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const activeGoals = store.goals.filter((g) => g.active && !g.archived);
   const highPriority = activeGoals.filter((g) => g.priority === 'high');
   const highUndone = priorityTasksUndone(day, store.goals);
   const streak = generalStreak(store.days, today);
+  const alerts = detectDanger(store.days, store.goals, store.settings);
+  const reward = nextReward(store);
   const bestArea = useMemo(() => {
     const scored = store.goals
       .filter((g) => g.active)
@@ -106,6 +110,15 @@ export default function TodayScreen() {
     if (allDone) {
       setConfetti(true);
       haptic('success');
+    }
+
+    // Regra 11: se energia média < 3 e a tarefa é prioridade alta, questiona sem acusar.
+    const goal = store.goals.find((g) => g.id === goalId);
+    const avgEnergy = (day.energy.physical + day.energy.mental) / 2;
+    if (goal?.priority === 'high' && avgEnergy < 3) {
+      setHonestyNote(
+        `Energia ${avgEnergy.toFixed(1)}/10 hoje e prioridade alta concluída. Foi completo ou parcial? O registro honesto vale mais que o número.`,
+      );
     }
   };
 
@@ -154,6 +167,34 @@ export default function TodayScreen() {
           </View>
           <Badge label={`${MODES[day.mode].emoji} ${MODES[day.mode].label}`} color={MODES[day.mode].color} />
         </Row>
+
+        {/* ALERTA + PRÓXIMA RECOMPENSA */}
+        {alerts.length ? (
+          <Card accent={alerts[0]!.level === 'red' ? colors.red : colors.yellow} pulse={alerts[0]!.level === 'red'}>
+            <Row style={{ justifyContent: 'space-between' }}>
+              <Txt variant="caption" color={alerts[0]!.level === 'red' ? colors.red : colors.yellow} style={{ fontWeight: '700' }}>
+                {alerts[0]!.title}
+              </Txt>
+              <Txt variant="micro" color={colors.textSecondary} onPress={() => router.push('/(tabs)/inteligencia')}>
+                ver
+              </Txt>
+            </Row>
+            <Muted style={{ marginTop: 2 }}>{alerts[0]!.detail}</Muted>
+          </Card>
+        ) : null}
+
+        {reward ? (
+          <Pressable onPress={() => router.push('/modulo/recompensas')}>
+            <Card>
+              <Row style={{ justifyContent: 'space-between' }}>
+                <Txt variant="caption" color={colors.textSecondary}>
+                  Você está a {reward.remaining} dia(s) de desbloquear
+                </Txt>
+                <Txt variant="caption" color={colors.green} style={{ fontWeight: '700' }}>{reward.name} 🔒</Txt>
+              </Row>
+            </Card>
+          </Pressable>
+        ) : null}
 
         {/* STREAKS */}
         <Row gap={spacing.sm}>
@@ -253,6 +294,15 @@ export default function TodayScreen() {
         {/* RESULTADO */}
         {day.score ? <DayResult day={day} goals={store.goals} animate={showResult} /> : null}
 
+        {day.closedAt && day.middayCheckin ? (
+          <Card>
+            <Txt variant="micro" color={colors.textSecondary}>Ponto de virada</Txt>
+            <Txt variant="caption" color={colors.textPrimary} style={{ marginTop: 4 }}>
+              {day.middayCheckin.at} · prioridade {day.middayCheckin.priorityDone ? 'feita' : 'não feita'} · energia {day.middayCheckin.energy}/10
+            </Txt>
+          </Card>
+        ) : null}
+
         {day.closedAt ? (
           <>
             <Row gap={spacing.sm}>
@@ -300,6 +350,21 @@ export default function TodayScreen() {
         onClose={() => setFailFor(null)}
         onSave={onFailureSave}
       />
+
+      <Sheet
+        visible={!!honestyNote}
+        onClose={() => setHonestyNote(null)}
+        title="🤔 Confere comigo"
+        footer={
+          <Row gap={spacing.sm}>
+            <SecondaryButton label="Ajustar registro" color={colors.yellow} style={{ flex: 1 }} onPress={() => setHonestyNote(null)} />
+            <PrimaryButton label="Confirmar como feito" style={{ flex: 1 }} onPress={() => setHonestyNote(null)} />
+          </Row>
+        }
+      >
+        <Txt variant="caption" color={colors.textPrimary} style={{ lineHeight: 20 }}>{honestyNote}</Txt>
+        <Muted>Não é acusação: é o sistema pedindo consistência entre o que você marca e o que aconteceu.</Muted>
+      </Sheet>
 
       <MiddaySheet
         visible={middayOpen}

@@ -12,19 +12,57 @@
       "package": "com.myprime.app",
       "versionCode": 1,
       "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#0A0A0A"
       },
-      "permissions": ["RECEIVE_BOOT_COMPLETED", "SCHEDULE_EXACT_ALARM", "VIBRATE"],
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "SCHEDULE_EXACT_ALARM",
+        "VIBRATE"
+      ],
       "edgeToEdgeEnabled": true
     },
-    "web": { "bundler": "metro", "output": "single" },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
     "plugins": [
       "expo-router",
-      ["expo-splash-screen", { "backgroundColor": "#0A0A0A", "resizeMode": "contain" }],
-      ["expo-notifications", { "color": "#00FF88" }],
-      ["expo-image-picker", { "photosPermission": "O MY PRIME usa fotos apenas para confirmação opcional e progresso." }]
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0A0A0A",
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "imageWidth": 220
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#00FF88"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O MY PRIME usa fotos apenas para confirmação opcional e progresso."
+        }
+      ]
     ],
-    "experiments": { "typedRoutes": false },
-    "extra": { "router": { "origin": false } }
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    },
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0A"
+    }
   }
 }

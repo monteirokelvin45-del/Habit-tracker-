@@ -110,6 +110,12 @@ src/
 | 14 | Zona de perigo automática | `score.ts › detectDanger` |
 | 15 | Regras SE-ENTÃO rastreadas | `store.ts › markRuleActivated` |
 
+## Assets
+
+`assets/icon.png` (mipmap adaptativo) e `assets/splash.png` (splash nativa via `expo-splash-screen`)
+são gerados e referenciados no `app.json`. `assets/lottie/confetti.json` é o confetti local
+(60 peças, 2s, sem loop) usado ao fechar 100% do checklist.
+
 ## Limites honestos
 
 - **Widget de home screen** não é suportado pelo Expo managed sem código nativo customizado
@@ -118,3 +124,5 @@ src/
 - PDF aceito no seletor de upload não é lido (é binário); o app avisa em vez de fingir importação.
 - Notificações exigem permissão do usuário e não funcionam na web (apenas no APK).
 - Relatórios anuais com menos de 6 meses mostram o aviso e o maior período disponível.
+- Desmarcar uma tarefa sempre exige o registro de falha (tipo + legitimidade). Sem isso, não há dado para
+  a análise — é uma escolha de produto, não uma limitação técnica.

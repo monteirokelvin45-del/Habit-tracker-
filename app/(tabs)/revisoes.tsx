@@ -19,7 +19,7 @@ import {
 import { BarChart, Heatmap, LineChart, RadarChart } from '../../src/components/charts';
 import { useStore } from '../../src/lib/store';
 import { addDays, daysInMonth, monthLabel, quarterOf, shortDate, todayKey, weekKeys, weekStart, weekdayShort, MONTHS } from '../../src/lib/date';
-import { areaConsistency, closedDays, failureMap, sleepCorrelation, topExcuse, triggerMap } from '../../src/lib/insights';
+import { areaConsistency, closedDays, excuseRanking, failureMap, sleepCorrelation, topExcuse, triggerMap } from '../../src/lib/insights';
 import { avg, round1 } from '../../src/lib/score';
 import { haptic } from '../../src/lib/haptics';
 
@@ -466,15 +466,23 @@ function MonthlyReview({ route, onEditRoute }: { route: string[]; onEditRoute: (
 
       <SectionTitle>Top padrões de falha</SectionTitle>
       <Card>
-        {failures.ready && failures.sequences.length ? (
-          failures.sequences.slice(0, 3).map((s) => (
-            <Txt key={s.label} variant="caption" color={colors.textPrimary} style={{ marginBottom: 4 }}>
-              • {s.label} — {s.count}x
+        {excuseRanking(store, 3).length ? (
+          excuseRanking(store, 3).map((e) => (
+            <Txt key={`${e.type}-${e.legitimacy}`} variant="caption" color={colors.textPrimary} style={{ marginBottom: 4 }}>
+              • {e.type} / {e.legitimacy} — {e.count}x ({e.pct}%)
             </Txt>
           ))
         ) : (
-          <NoData label={failures.ready ? 'Nenhuma sequência de falha' : 'Coletando dados...'} />
+          <NoData label="Sem desculpas registradas" />
         )}
+        {failures.ready && failures.sequences.length ? (
+          <>
+            <Muted style={{ marginTop: spacing.sm }}>Sequências:</Muted>
+            {failures.sequences.slice(0, 3).map((s) => (
+              <Muted key={s.label}>• {s.label} — {s.count}x</Muted>
+            ))}
+          </>
+        ) : null}
       </Card>
 
       <Row gap={spacing.sm} style={{ alignItems: 'stretch' }}>

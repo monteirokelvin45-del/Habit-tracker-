@@ -99,6 +99,26 @@ export function topExcuse(data: AppData) {
   });
 }
 
+/** Ranking de desculpas (top N) por tipo e legitimidade. */
+export function excuseRanking(data: AppData, limit = 3) {
+  const counts = new Map<string, { type: string; legitimacy: string; count: number }>();
+  let total = 0;
+  for (const d of closedDays(data.days)) {
+    for (const t of d.tasks) {
+      if (!t.excuse?.type) continue;
+      total += 1;
+      const key = `${t.excuse.type}/${t.excuse.legitimacy}`;
+      const item = counts.get(key) ?? { type: t.excuse.type, legitimacy: t.excuse.legitimacy, count: 0 };
+      item.count += 1;
+      counts.set(key, item);
+    }
+  }
+  return Array.from(counts.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
+    .map((i) => ({ ...i, pct: percent(i.count, total) }));
+}
+
 /** Áreas que caem juntas (correlação simples). */
 export function areaCorrelation(data: AppData) {
   return guard(data, () => {

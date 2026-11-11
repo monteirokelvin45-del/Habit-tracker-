@@ -7,6 +7,7 @@ import { colors } from '../src/theme';
 import { useStore } from '../src/lib/store';
 import { configureNotifications, scheduleReminders } from '../src/lib/notifications';
 import { generalStreak } from '../src/lib/score';
+import { AppShell } from '../src/components/AppShell';
 
 export default function RootLayout() {
   const load = useStore((s) => s.load);
@@ -32,7 +33,8 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="light" backgroundColor={colors.bgPrimary} />
       <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
-        <Stack
+        <AppShell>
+          <Stack
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: colors.bgPrimary },
@@ -43,7 +45,8 @@ export default function RootLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
           <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-        </Stack>
+          </Stack>
+        </AppShell>
       </View>
     </SafeAreaProvider>
   );
