@@ -12,7 +12,7 @@ import { todayKey } from '../lib/date';
 export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: AppData; date?: string; width?: number }) {
   const w = widgetData(data, date);
   // A barra de progresso é desenhada em dp (widgets Android não aceitam %).
-  const barWidth = Math.max(6, Math.round(Math.max(0.02, Math.min(1, w.ratio)) * (width - 28)));
+  const barWidth = Math.max(6, Math.round(Math.max(0.02, Math.min(1, w.ratio)) * (width - 20)));
 
   return (
     <FlexWidget
@@ -22,9 +22,13 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
         width: 'match_parent',
         backgroundColor: '#051F20',
         borderRadius: 20,
-        padding: 14,
+        // Compacto de propósito: 4×2 células dão ~124dp de altura útil e o
+        // conteúdo anterior pedia ~142dp — o excedente era cortado e o widget
+        // parecia vazio. `flexGap` no lugar de `space-between` mantém tudo
+        // ancorado no topo, sem esticar para fora da área segura do launcher.
+        padding: 9,
         flexDirection: 'column',
-        justifyContent: 'space-between',
+        flexGap: 4,
       }}
     >
       {/* linha 1: marca + streak */}
@@ -36,10 +40,8 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
           alignItems: 'center',
         }}
       >
-        <TextWidget text="MY PRIME" style={{ fontSize: 11, color: '#DAF1DE', fontWeight: '700', letterSpacing: 1.5 }} />
-        <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TextWidget text={`🔥 ${w.streak}`} style={{ fontSize: 13, color: '#E8A838', fontWeight: '700' }} />
-        </FlexWidget>
+        <TextWidget text="MY PRIME" style={{ fontSize: 10, color: '#DAF1DE', fontWeight: '700', letterSpacing: 1.5 }} />
+        <TextWidget text={`🔥 ${w.streak}`} style={{ fontSize: 12, color: '#E8A838', fontWeight: '700' }} />
       </FlexWidget>
 
       {/* linha 2: modo do dia */}
@@ -53,11 +55,13 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
       >
         <TextWidget
           text={`${w.modeEmoji} ${w.modeLabel}`}
-          style={{ fontSize: 20, color: w.modeColor, fontWeight: '800' }}
+          style={{ fontSize: 15, color: w.modeColor, fontWeight: '800' }}
+          maxLines={1}
+          truncate="END"
         />
         <TextWidget
           text={`${w.done}/${w.total}`}
-          style={{ fontSize: 14, color: w.ratio >= 1 ? '#DAF1DE' : '#8EB69B', fontWeight: '700' }}
+          style={{ fontSize: 13, color: w.ratio >= 1 ? '#DAF1DE' : '#8EB69B', fontWeight: '700' }}
         />
       </FlexWidget>
 
@@ -65,18 +69,16 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
       <FlexWidget
         style={{
           width: 'match_parent',
-          height: 6,
+          height: 5,
           backgroundColor: '#163832',
           borderRadius: 3,
           flexDirection: 'row',
-          marginTop: 2,
-          marginBottom: 2,
         }}
       >
         <FlexWidget
           style={{
             width: barWidth,
-            height: 6,
+            height: 5,
             backgroundColor: w.allDone ? '#DAF1DE' : w.modeColor,
             borderRadius: 3,
           }}
@@ -86,29 +88,40 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
       {/* próxima tarefa */}
       <FlexWidget style={{ flexDirection: 'column', width: 'match_parent' }}>
         {w.nextTask ? (
-          <>
+          // Sem Fragment: `buildWidgetTree` do react-native-android-widget NÃO
+          // entende `<>...</>` (tenta chamar `jsxTree.type()` e estoura com
+          // "jsxTree.type is not a function"). Cada filho é um TextWidget direto.
+          [
             <TextWidget
+              key="task-label"
               text={`${w.nextTask.priority} ${w.nextTask.label}`}
-              style={{ fontSize: 14, color: '#FFFFFF', fontWeight: '600' }}
+              style={{ fontSize: 13, color: '#FFFFFF', fontWeight: '600' }}
               maxLines={1}
               truncate="END"
-            />
+            />,
             <TextWidget
+              key="task-meta"
               text={`${w.nextTask.area} · ${w.nextTask.target}`}
-              style={{ fontSize: 11, color: '#8EB69B' }}
+              style={{ fontSize: 10, color: '#8EB69B' }}
               maxLines={1}
               truncate="END"
-            />
-          </>
+            />,
+          ]
         ) : (
-          <>
-            <TextWidget text={w.hasGoals ? w.hint : 'Sem dado'} style={{ fontSize: 14, color: '#FFFFFF', fontWeight: '600' }} />
+          [
             <TextWidget
-              text={w.hasGoals ? 'Nada em aberto neste modo' : 'Nenhuma meta ativa'}
-              style={{ fontSize: 11, color: '#8EB69B' }}
+              key="hint"
+              text={w.hasGoals ? w.hint : 'Sem dado'}
+              style={{ fontSize: 13, color: '#FFFFFF', fontWeight: '600' }}
               maxLines={1}
-            />
-          </>
+            />,
+            <TextWidget
+              key="hint-sub"
+              text={w.hasGoals ? 'Nada em aberto neste modo' : 'Nenhuma meta ativa'}
+              style={{ fontSize: 10, color: '#8EB69B' }}
+              maxLines={1}
+            />,
+          ]
         )}
       </FlexWidget>
 
@@ -119,26 +132,25 @@ export function PrimeWidget({ data, date = todayKey(), width = 320 }: { data: Ap
           width: 'match_parent',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginTop: 4,
         }}
       >
         {w.nextTask ? (
           <FlexWidget
             clickAction="COMPLETE_NEXT"
             style={{
-              paddingHorizontal: 10,
-              paddingVertical: 6,
+              paddingHorizontal: 9,
+              paddingVertical: 4,
               backgroundColor: '#DAF1DE',
               borderRadius: 10,
               flexDirection: 'row',
               alignItems: 'center',
             }}
           >
-            <TextWidget text="✓ Feito" style={{ fontSize: 12, color: '#000000', fontWeight: '800' }} />
+            <TextWidget text="✓ Feito" style={{ fontSize: 11, color: '#000000', fontWeight: '800' }} />
           </FlexWidget>
         ) : (
-          <FlexWidget style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#0B2B26', borderRadius: 10 }}>
-            <TextWidget text={w.hint} style={{ fontSize: 11, color: '#8EB69B' }} maxLines={1} />
+          <FlexWidget style={{ paddingHorizontal: 9, paddingVertical: 4, backgroundColor: '#0B2B26', borderRadius: 10 }}>
+            <TextWidget text={w.hint} style={{ fontSize: 10, color: '#8EB69B' }} maxLines={1} />
           </FlexWidget>
         )}
         <TextWidget text="ABRIR ›" style={{ fontSize: 10, color: '#5A7A6E', fontWeight: '600', letterSpacing: 1 }} />

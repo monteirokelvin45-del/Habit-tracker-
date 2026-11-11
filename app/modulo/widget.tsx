@@ -53,6 +53,9 @@ export default function WidgetScreen() {
             ? 'Um dos widgets foi atualizado. O outro ainda não está na tela inicial.'
             : 'Widgets atualizados com os dados de agora.',
       );
+      // Widget já estava na tela mas aparecia vazio: o redesenho acima costuma
+      // resolver. Se continuar vazio, remover e adicionar de novo força um
+      // WIDGET_ADDED novo (o launcher reaproveita RemoteViews antigo).
     } catch {
       setStatus('Widget disponível apenas no app Android instalado (fora do Expo Go).');
     }

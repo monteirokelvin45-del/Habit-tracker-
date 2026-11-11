@@ -38,7 +38,7 @@ for (const file of files) {
 
 // Componentes de widget: compilados à parte, com o módulo nativo trocado por um stub
 // que aponta para os componentes reais (funções puras) do pacote.
-const widgetTsx = ['ConstancyWidget', 'PrimeWidget'];
+const widgetTsx = ['ConstancyWidget', 'PrimeWidget', 'FallbackWidget'];
 for (const name of widgetTsx) {
   const file = path.join(root, 'src/widget', `${name}.tsx`);
   const out = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -99,7 +99,10 @@ fs.writeFileSync(
   `import { createRequire } from 'node:module';\n` +
     `const require_ = createRequire(import.meta.url);\n` +
     `export const { FlexWidget } = require_('${rnaw}/FlexWidget');\n` +
-    `export const { TextWidget } = require_('${rnaw}/TextWidget');\n`,
+    `export const { TextWidget } = require_('${rnaw}/TextWidget');\n` +
+    // O conversor REAL do pacote: é o que roda no Android para virar RemoteViews.
+    // Usá-lo aqui pega incompatibilidade de JSX que o React em memória aceita.
+    `export const { buildWidgetTree } = require_('${path.join(root, 'node_modules/react-native-android-widget/lib/commonjs/api/build-widget-tree.js')}');\n`,
 );
 
 // Stub de AsyncStorage (storage.ts é importado por store.ts, que não testamos).
@@ -474,6 +477,77 @@ const { PrimeWidget } = await import(path.join(outRoot, 'widget/PrimeWidget.mjs'
 const primeTree = flatten(PrimeWidget({ data: wData, date: today, width: 320 }));
 check('widget principal renderiza sem quebrar', primeTree.length > 3);
 check('widget principal nunca fica vazio', primeTree.some((n) => typeof n.props?.text === 'string' && n.props.text.length > 0));
+
+// O widget NÃO é renderizado por React no celular: `renderWidget` passa o elemento
+// pelo `buildWidgetTree` do pacote, que só entende FlexWidget/TextWidget/ListWidget.
+// Fragment (`<>`) ou View do RN estouram com "jsxTree.type is not a function" e o
+// launcher mostra o widget VAZIO. Por isso o teste roda o conversor de verdade.
+const widgetTree = await import(path.join(outRoot, 'widget', 'rnaw-stub.mjs'));
+
+function expectBuilds(name, element) {
+  try {
+    const tree = widgetTree.buildWidgetTree(element);
+    const flat = JSON.stringify(tree);
+    return flat.length > 100;
+  } catch (e) {
+    console.log(`     ↳ ${name}: ${e.message}`);
+    return false;
+  }
+}
+
+check('widget principal passa no buildWidgetTree (sem Fragment)', expectBuilds('Prime', React.createElement(PrimeWidget, { data: wData, date: today, width: 320 })));
+check('widget principal sem tarefa aberta também converte', expectBuilds('Prime vazio', React.createElement(PrimeWidget, { data: emptyData, date: today, width: 320 })));
+check('widget do mural passa no buildWidgetTree', expectBuilds('Constancia', React.createElement(ConstancyWidget, { data: muralData, date: today, width: 320 })));
+check('widget do mural sem dados também converte', expectBuilds('Constancia vazio', React.createElement(ConstancyWidget, { data: emptyData, date: today, width: 320 })));
+
+const { FallbackWidget } = await import(path.join(outRoot, 'widget/FallbackWidget.mjs'));
+// Altura estimada do conteúdo vs. célula do launcher (~70dp por célula, ~124dp
+// úteis em 4×2). Se o conteúdo passar disso, o Android corta e o widget "some".
+function contentHeight(tree) {
+  const px = (v) => (typeof v === 'number' ? v : 0);
+  const pad = (p) => px(p?.top) + px(p?.bottom);
+  const walk = (n) => {
+    if (!n || typeof n !== 'object') return 0;
+    const kids = n.children ?? [];
+    const isRow = n.props?.orientation === 'HORIZONTAL';
+    if (isRow) return Math.max(0, ...kids.map(walk));
+    const own = n.type === 'TextWidget'
+      ? (n.props?.fontSize ?? 12) * (n.props?.maxLines ?? 1) * 1.35
+      : px(n.props?.height);
+    const gap = n.props?.separator?.size ?? 0;
+    const inner = kids.reduce((sum, k) => sum + walk(k), 0) + gap * Math.max(0, kids.length - 1);
+    return own > 0 && kids.length ? Math.max(own, inner) + pad(n.props?.padding) : own + inner + pad(n.props?.padding);
+  };
+  return walk(tree);
+}
+
+const primeTreeBuilt = widgetTree.buildWidgetTree(
+  React.createElement(PrimeWidget, { data: wData, date: today, width: 250 }),
+);
+const alturaPrime = contentHeight(primeTreeBuilt);
+check('widget principal cabe em 4×2 células (~124dp)', alturaPrime <= 124, `${Math.round(alturaPrime)}dp`);
+
+check('cartão de emergência também converte', expectBuilds('Fallback', React.createElement(FallbackWidget, { widgetName: 'Prime' })));
+
+// Guarda-corpo de origem: nenhum widget pode usar `<>` (Fragment) nem View do RN.
+const widgetSources = ['PrimeWidget', 'ConstancyWidget', 'FallbackWidget'].map((n) => ({
+  name: n,
+  src: fs.readFileSync(path.join(root, 'src/widget', `${n}.tsx`), 'utf8'),
+}));
+check(
+  'nenhum widget usa Fragment (quebra o buildWidgetTree)',
+  widgetSources.every((w) => !/<React\.Fragment|<Fragment[\s>]|<><\//.test(w.src) && !/^\s*<>\s*$/m.test(w.src)),
+  widgetSources.filter((w) => /^\s*<>\s*$/m.test(w.src)).map((w) => w.name).join(', '),
+);
+check(
+  'nenhum widget importa View/Text do react-native',
+  widgetSources.every((w) => !/from 'react-native'/.test(w.src)),
+  widgetSources.filter((w) => /from 'react-native'/.test(w.src)).map((w) => w.name).join(', '),
+);
+check(
+  'widget só usa FlexWidget/TextWidget do pacote',
+  widgetSources.every((w) => /FlexWidget|TextWidget/.test(w.src) && !/IconWidget|ImageWidget/.test(w.src)),
+);
 
 console.log('\n── Handler do widget (contexto do launcher) ──');
 const { widgetTaskHandler } = await import(path.join(outRoot, 'widget/handler.mjs'));
