@@ -17,6 +17,8 @@ import {
   Txt,
 } from '../../src/components/ui';
 import { LineChart, RadarChart } from '../../src/components/charts';
+import { EnergyScatter, HourHeatmap, StackedBars } from '../../src/components/StatsCharts';
+import { hourHeatmap, scatterEnergy, stackedTasks } from '../../src/lib/stats';
 import { useStore, newId } from '../../src/lib/store';
 import {
   areaConsistency,
@@ -68,6 +70,9 @@ export default function IntelligenceScreen() {
     0,
   );
   const areas = Array.from(new Set(store.goals.map((g) => g.area)));
+  const hours = useMemo(() => hourHeatmap(store.days), [store.days]);
+  const scatter = useMemo(() => scatterEnergy(store.days, 'energy'), [store.days]);
+  const stacked = useMemo(() => stackedTasks(store.days, 14, todayKey()), [store.days]);
 
   const [selectedAreas, setSelectedAreas] = useState<string[]>(areas.slice(0, 4));
   const week = lastNDays(14);
@@ -301,6 +306,31 @@ export default function IntelligenceScreen() {
 
         {/* 4 · MAPAS */}
         <SectionTitle>Mapas de longo prazo</SectionTitle>
+
+        <Card>
+          <Txt variant="h3">Em que hora você cumpre</Txt>
+          <Muted style={{ marginBottom: spacing.sm }}>
+            Conclusões e falhas por hora do dia — a hora sai do registro da tarefa, não de estimativa.
+          </Muted>
+          <HourHeatmap data={hours} />
+        </Card>
+
+        <Card>
+          <Txt variant="h3">Energia do dia × execução</Txt>
+          <Muted style={{ marginBottom: spacing.sm }}>
+            Cada ponto é um dia fechado. Sem correlação com 7+ dias, o app não afirma nada.
+          </Muted>
+          <EnergyScatter
+            points={scatter.points}
+            correlation={scatter.correlation}
+            xLabel="energia média do dia (1-10)"
+          />
+        </Card>
+
+        <Card>
+          <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Concluído × pulado × falhou (14 dias)</Txt>
+          <StackedBars data={stacked} />
+        </Card>
 
         <Card>
           <Txt variant="h3" style={{ marginBottom: spacing.sm }}>Mapa de gatilhos</Txt>

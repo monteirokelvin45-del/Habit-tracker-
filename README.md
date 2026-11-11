@@ -132,6 +132,16 @@ diferentes na mesma tela.
 | `GroupedBars` | duas séries por mês (receita × despesa) | Finanças |
 | `ConstancyHeatmap` / `MiniHeatmap` | mural de constância (toque no dia abre o detalhe) | Constância, Hoje (6 semanas), Revisões (12 semanas) |
 
+As 21 visões novas (`StatsCharts.tsx` + `stats.ts`) também são reaproveitadas fora da central, onde fazem
+sentido no fluxo do dia:
+
+| Onde | Gráficos |
+|---|---|
+| Inteligência › Mapas de longo prazo | hora do dia, energia × execução, concluído/pulado/falhou |
+| Revisões › Mensal | gauge da meta do mês, waffle de 100 dias, donut por área |
+| Revisões › Semanal | atalho para a central de gráficos |
+| Perfil › Gamificação | atalho para a central de gráficos |
+
 Regras aplicadas em todos:
 
 - **Sem dado ≠ zero.** Ponto sem registro é `null`: a linha quebra, a barra fica em cinza e o texto diz

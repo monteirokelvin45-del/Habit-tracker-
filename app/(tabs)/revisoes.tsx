@@ -19,6 +19,8 @@ import {
 } from '../../src/components/ui';
 import { BarChart, Heatmap, LineChart, RadarChart } from '../../src/components/charts';
 import { ConstancyHeatmap } from '../../src/components/Heatmap';
+import { CategoryDonut, MonthlyGauge, WaffleChart } from '../../src/components/StatsCharts';
+import { categoryDistribution, monthlyGauge, waffle } from '../../src/lib/stats';
 import { useStore } from '../../src/lib/store';
 import { addDays, daysInMonth, monthLabel, quarterOf, shortDate, todayKey, weekKeys, weekStart, weekdayShort, MONTHS } from '../../src/lib/date';
 import { areaConsistency, closedDays, excuseRanking, failureMap, sleepCorrelation, topExcuse, triggerMap } from '../../src/lib/insights';
@@ -430,6 +432,10 @@ function MonthlyReview({ route, onEditRoute }: { route: string[]; onEditRoute: (
     .slice(0, 8)
     .map((c) => ({ label: c.area.slice(0, 9), value: c.score, color: areaColor(c.area) }));
 
+  const gauge = useMemo(() => monthlyGauge(store, todayKey()), [store]);
+  const waffleData = useMemo(() => waffle(store.days, 100, todayKey()), [store.days]);
+  const categories = useMemo(() => categoryDistribution(store, 30, todayKey()), [store]);
+
   return (
     <>
       <Card accent={colors.cyan + '44'}>
@@ -463,9 +469,28 @@ function MonthlyReview({ route, onEditRoute }: { route: string[]; onEditRoute: (
         )}
       </Card>
 
+      <SectionTitle>Meta do mês</SectionTitle>
+      <Card style={{ alignItems: 'center' }}>
+        <MonthlyGauge info={gauge} size={170} />
+        <Muted style={{ marginTop: spacing.sm, textAlign: 'center' }}>
+          Alvo = todos os dias do mês com score ≥ {store.settings.targetDailyScore}. Dias sem registro
+          continuam contando como não cumpridos — meta não se completa sozinha.
+        </Muted>
+      </Card>
+
+      <SectionTitle>Últimos 100 dias</SectionTitle>
+      <Card>
+        <WaffleChart cells={waffleData.cells} done={waffleData.done} partial={waffleData.partial} />
+      </Card>
+
       <SectionTitle>Equilíbrio entre áreas</SectionTitle>
       <Card>
         {radarData.length >= 3 ? <RadarChart data={radarData} /> : <NoData label="Dados insuficientes" />}
+      </Card>
+
+      <SectionTitle>Distribuição por área (30 dias)</SectionTitle>
+      <Card>
+        <CategoryDonut data={categories} centerLabel="tarefas feitas" unit=" tarefas" />
       </Card>
 
       <SectionTitle>Status das metas</SectionTitle>
