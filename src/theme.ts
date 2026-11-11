@@ -210,6 +210,48 @@ export const THEMES: Record<ThemeId, { label: string; swatch: string; palette: P
       scale: ['#0D1019', '#16203A', '#1B2F5C', '#22488F', '#2C64C9', '#3B82F6'],
     },
   },
+
+  /**
+   * "Soft Light Glass" — o claro translúcido da referência Management/Coders.
+   *
+   * É um tema CLARO: por isso `black` (a cor de texto sobre botão primário) vira
+   * branco aqui. Antes dela, todo tema tinha fundo escuro e `black` era sempre
+   * usado como "contraste do acento"; num tema claro isso apagaria o rótulo dos
+   * botões. `onNeon` faz o mesmo papel, e `accentText()` já respeita isso.
+   */
+  softGlass: {
+    label: 'Soft Light Glass',
+    swatch: '#1C1C1F',
+    palette: {
+      bgPrimary: '#EBECEC',
+      bgCard: 'rgba(255,255,255,0.80)',
+      bgElevated: '#FFFFFF',
+      bgInput: 'rgba(255,255,255,0.90)',
+      bgSubtle: '#F4F5F6',
+      green: '#2E7D5B',
+      greenNeon: '#34C08A',
+      red: '#B4453C',
+      yellow: '#A8792A',
+      purple: '#6157C4',
+      orange: '#B96A34',
+      blue: '#2F6FB0',
+      cyan: '#3A7C8C',
+      pink: '#B25A86',
+      textPrimary: '#1C1C1F',
+      textSecondary: '#5C5F63',
+      textMuted: '#8A8D91',
+      textFaint: '#C9CBD0',
+      border: 'rgba(28,28,31,0.10)',
+      borderAccent: 'rgba(28,28,31,0.22)',
+      interactive: '#1C1C1F',
+      track: 'rgba(28,28,31,0.08)',
+      black: '#FFFFFF',
+      neon: '#1C1C1F',
+      neonDeep: '#3A3A3E',
+      onNeon: '#FFFFFF',
+      scale: ['#EDEEEF', '#D8DADC', '#B9BCBF', '#909498', '#5F6265', '#1C1C1F'],
+    },
+  },
 };
 
 /** Paleta ativa. Objeto mutável: ver comentário no topo do arquivo. */

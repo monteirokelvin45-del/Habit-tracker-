@@ -14,7 +14,7 @@ import {
   type ViewStyle,
   type StyleProp,
 } from 'react-native';
-import { colors, radius, spacing, type, useTheme } from '../theme';
+import { colors, onAccent, radius, spacing, type, useTheme } from '../theme';
 import { haptic } from '../lib/haptics';
 
 /* ─────────────────────────────── Text ─────────────────────────────── */
@@ -204,9 +204,9 @@ export function PrimaryButton({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={colors.black} />
+        <ActivityIndicator color={onAccent()} />
       ) : (
-        <Txt variant="body" color={disabled ? colors.textMuted : colors.black} style={{ fontWeight: '800' }}>
+        <Txt variant="body" color={disabled ? colors.textMuted : onAccent()} style={{ fontWeight: '800' }}>
           {label}
         </Txt>
       )}

@@ -1631,6 +1631,48 @@ console.log('\n── Tema neonBlue (Dark Neon Blue Bento) ──');
   check('isThemeId aceita o tema novo e recusa lixo', theme.isThemeId('neonBlue') && !theme.isThemeId('hacker'));
 }
 
+/* ═══════════════ Design: tema Soft Light Glass (Home) ═══════════════ */
+
+console.log('\n── Tema softGlass (Soft Light Glass) ──');
+{
+  const theme = await import(path.join(outRoot, 'theme.mjs'));
+  const palette = theme.THEMES.softGlass?.palette;
+  check('tema softGlass existe', !!palette);
+  check('fundo cinza fumê #EBECEC', palette?.bgPrimary === '#EBECEC', String(palette?.bgPrimary));
+  check('card branco translúcido (vidro)', String(palette?.bgCard).startsWith('rgba(255,255,255'), String(palette?.bgCard));
+
+  // O tema é CLARO: a cor de "contraste do acento" tem que virar branca, senão o
+  // rótulo do botão primário fica preto sobre preto.
+  check('contraste do acento é claro (não preto sobre preto)', palette?.black === '#FFFFFF', String(palette?.black));
+
+  const lum = (hex) => {
+    const c = hex.replace('#', '');
+    const v = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
+    const lin = v.map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  };
+  const ratio = (a, b) => {
+    const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (l1 + 0.05) / (l2 + 0.05);
+  };
+  const r1 = ratio(palette.textPrimary, palette.bgPrimary);
+  check('texto principal sobre o fundo claro tem contraste >= 4.5', r1 >= 4.5, `${r1.toFixed(2)}:1`);
+  const r2 = ratio(palette.textSecondary, palette.bgElevated);
+  check('texto secundário sobre card branco tem contraste >= 4.5', r2 >= 4.5, `${r2.toFixed(2)}:1`);
+  const r3 = ratio(palette.textMuted, palette.bgElevated);
+  check('texto discreto é legível o bastante (>= 3)', r3 >= 3, `${r3.toFixed(2)}:1`);
+  const r4 = ratio(palette.onNeon, palette.neon);
+  check('texto sobre o acento escuro tem contraste >= 4.5', r4 >= 4.5, `${r4.toFixed(2)}:1`);
+
+  check('applyTheme veste o tema claro e volta', (() => {
+    theme.applyTheme('softGlass');
+    const ok = theme.colors.bgPrimary === '#EBECEC' && theme.onAccent() === '#FFFFFF';
+    theme.applyTheme('emerald');
+    return ok && theme.colors.bgPrimary === '#051F20';
+  })());
+  check('isThemeId aceita softGlass', theme.isThemeId('softGlass'));
+}
+
 /* ═══════════════ AUDITORIA: app.json e app.config.ts não podem divergir ═══════════════ */
 
 console.log('\n── Configuração: app.json x app.config.ts ──');

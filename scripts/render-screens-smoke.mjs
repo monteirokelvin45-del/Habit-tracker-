@@ -596,6 +596,43 @@ for (const [label, file] of screens) {
   }
 }
 
+/* ───────── Home (Soft Light Glass): nada inventado e contraste do tema claro ───────── */
+{
+  const renderHome = async (name, fixture, themeId) => {
+    const themeMod = await import(pathToFileURL(path.join(outRoot, 'src/theme.js')).href);
+    themeMod.applyTheme(themeId);
+    const copy = await withStore('app/(tabs)/index.js', name, fixture);
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const html = renderToStaticMarkup(React.createElement(Screen));
+    themeMod.applyTheme('emerald');
+    return html;
+  };
+  const homeGoals = [
+    { ...goal('h1', 'Treino', 'Treino A', 'high'), ideal: '1h' },
+    { ...goal('h2', 'Estudo', 'Estudar 2h', 'high'), ideal: '2h' },
+    { ...goal('h3', 'Leitura', 'Ler 20 páginas'), ideal: '20min' },
+  ];
+
+  // 1) App zerado: nenhum percentual e nenhum bloco fabricado.
+  const zero = await renderHome('home-zero', { ...vazio, goals: [], days: [], settings: { ...vazio.settings } }, 'softGlass');
+  log(/Sem dado|Sem registro|Sem meta/.test(zero), 'Home vazia não afirma percentual (Regra 1)');
+  log(!/NaN|Infinity/.test(zero), 'Home vazia sem NaN/Infinity');
+  log(/Timeline/.test(zero) && /Sem bloco para hoje/.test(zero), 'Home vazia: timeline diz que não há bloco');
+
+  // 2) Tema claro veste a tela; e o texto sobre o botão primário não fica preto.
+  log(/rgba\(255, 255, 255/.test(zero) || /rgba\(255,255,255/.test(zero), 'Home no tema claro usa card de vidro');
+  log(!/color:rgb\(0, 0, 0\)/.test(zero), 'Home no tema claro não escreve texto preto sobre botão escuro');
+
+  // 3) Com histórico: o dia de hoje tem registro, então conclusão é número real.
+  const cheia = await renderHome('home-cheia', { ...cheio, goals: homeGoals, days: [...cheio.days.filter((d) => d.date !== key(0)), { ...cheio.days[11], date: key(0), tasks: homeGoals.map((g) => ({ goalId: g.id, done: g.id !== 'h3', note: '' })) }] }, 'softGlass');
+  log(/66%|67%/.test(cheia), 'Home com 2 de 3 feitas mostra a conclusão real', (cheia.match(/\d+%/g) ?? []).slice(0, 4).join(' '));
+  log(!/68\.5%/.test(cheia), 'nenhum número da referência (68,5%) aparece');
+  log(!/43 tarefas|28 projetos|120%/.test(cheia), 'nenhum contador decorativo da referência aparece');
+  log(/Progresso por área/.test(cheia), 'painel escuro de áreas monta');
+  log(/Timeline de hoje/.test(cheia), 'timeline monta com dados');
+  log(!/NaN|Infinity/.test(cheia), 'Home com dados sem NaN/Infinity');
+}
+
 /* ───────── Finanças Bento: Regra 1 (nada inventado) e contraste ───────── */
 {
   const render = async (name, fixture) => {
@@ -827,6 +864,64 @@ if (process.env.PREVIEW_ESTUDO) {
     console.log('\npreview: docs/design/estudo-preview.html');
   } catch (e) {
     console.error('preview de estudos falhou:', e.message);
+  }
+}
+
+/* ─────── Preview opcional da Home (HTML para conferência visual) ───────
+ * `PREVIEW_HOME=1 npm run test:screens` grava `docs/design/home-preview.html`.
+ * Aplica o tema `softGlass` (o claro translúcido da referência) antes de renderizar.
+ */
+if (process.env.PREVIEW_HOME) {
+  try {
+    const themeMod = await import(pathToFileURL(path.join(outRoot, 'src/theme.js')).href);
+    themeMod.applyTheme('softGlass');
+    const copy = await withStore('app/(tabs)/index.js', 'preview', {
+      ...cheio,
+      user: { ...cheio.user, name: 'Kelvin', areas: ['Treino', 'Estudo', 'Leitura', 'Finanças'] },
+      goals: [
+        goal('g1', 'Treino', 'Treino A · peito e tríceps', 'high'),
+        goal('g2', 'Estudo', 'Estudar 2h de constitucional', 'high'),
+        goal('g3', 'Leitura', 'Ler 20 páginas do Mindset'),
+        goal('g4', 'Finanças', 'Registrar gastos do dia'),
+      ],
+      days: days.map((d, i) => ({
+        ...d,
+        tasks: [
+          { goalId: 'g1', done: i % 3 !== 0, note: '' },
+          { goalId: 'g2', done: i % 2 === 0, note: '' },
+          { goalId: 'g3', done: i > 8, note: '' },
+          { goalId: 'g4', done: i % 4 === 0, note: '' },
+        ],
+        diary: {
+          ...d.diary,
+          promised: 'treinar e estudar 2h',
+          done: 'treino completo, 1h40 de estudo',
+          avoided: 'não abri rede social antes das 18h',
+          blocked: 'cansaço depois do almoço',
+          correction: 'bloqueei o celular no período da tarde',
+          smallWin: 'terminei o capítulo 4',
+        },
+        closedAt: i === 11 ? undefined : d.closedAt,
+      })),
+    });
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const body = renderToStaticMarkup(React.createElement(Screen));
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MY PRIME · Home (preview)</title>
+<style>
+  html,body{margin:0;background:#D6D8DA;}
+  body{display:flex;justify-content:center;padding:24px 0;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;}
+  #app{width:412px;min-height:900px;background:#EBECEC;border-radius:36px;overflow:hidden;
+       border:1px solid rgba(28,28,31,.10);box-shadow:0 18px 50px rgba(20,20,22,.18);}
+  #app *{box-sizing:border-box;}
+</style></head><body><div id="app">${body}</div></body></html>`;
+    fs.mkdirSync(path.join(root, 'docs/design'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'docs/design/home-preview.html'), html);
+    console.log('\npreview: docs/design/home-preview.html');
+    themeMod.applyTheme('emerald');
+  } catch (e) {
+    console.error('preview da home falhou:', e.message);
   }
 }
 

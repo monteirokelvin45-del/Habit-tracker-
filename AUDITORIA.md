@@ -348,6 +348,49 @@ O que ficou de fora da referência, e por quê: **Inbox/"25 Unread Messages"** (
 - Preview fiel em `docs/design/financas-preview.html` (`PREVIEW_FINANCES=1 npm run test:screens`):
   é o DOM do react-native-web com os estilos reais, para conferir a composição sem emulador.
 
+## Home — "Soft Light Glass" (Management / Coders)
+
+A Tela Principal foi redesenhada na referência clara e translúcida. Diferente de Estudos
+(paleta fixa própria), a Home **segue o tema ativo** — e para isso entrou o tema
+**`softGlass`** ("Soft Light Glass", em Perfil → Aparência). Os outros temas continuam
+funcionando: a Home lê `useTheme()`, só a composição é nova (`src/components/SoftHome.tsx`).
+
+### Mapeamento referência → dado real
+
+| Referência | No app |
+|---|---|
+| Header com pílulas (＋, busca, sino, avatar) | ＋ abre as ações rápidas; ⌕ filtra metas/registros do dia; ◔ leva aos alertas reais; avatar abre o Perfil |
+| Filtros Dia/Semana/Mês/Ano | filtram a janela do gráfico e a média de conclusão (1, 7, 30, 365 dias) |
+| Timeline 9 AM → 6 PM com blocos | blocos **sugeridos** por área (mesmo `buildSchedule` do cronograma), 05h–23h, status real feito/aberto |
+| "Ongoing Habits 68.5%" + micro-gráfico | conclusão real: feitas ÷ checklist do dia, com tendência de 7 dias (linha quebra em dia sem registro) |
+| "File Preview" (card preto) | **próxima pendência real** do checklist (prioridade alta primeiro), com anel da área, mínimo e streak. Sem pendência, o card diz o que fazer |
+| "All Files" (registros do dia) | os 6 campos do diário que a pessoa escreveu (prometido/feito/evitado/travado/correção/vitória) |
+| "Team" (card preto inferior) | progresso por área do dia, com barra, meta em destaque e streak por área + anel da média do mês |
+
+### Duas decisões que mudaram o design system
+
+1. **`black` deixou de ser "preto"** — ele é a cor de texto *sobre* o acento, e num tema
+   claro isso precisa ser branco. O tema `softGlass` define `black: '#FFFFFF'` e
+   `onAccent()` já era o caminho correto: `PrimaryButton` passou a usá-lo (antes era
+   `colors.black` fixo, que apagaria o rótulo em fundo claro).
+2. **Status bar segue o tema**: `app/_layout.tsx` escolhe `dark`/`light` pela luminância do
+   fundo. Sem isso, no tema claro o relógio do sistema sumia no fundo branco.
+
+### O que ficou de fora (e por quê)
+
+Sidebar de navegação, busca global com atalho de teclado, painel de notificações e o
+gráfico "Sales Volume" (que na referência é de vendas). Os números da referência — 68.5%,
+43 tarefas, 28 projetos, 120%, "Anm Kowalski" — não existem em lugar nenhum da tela.
+
+### Verificação
+
+- Tema: fundo `#EBECEC`, card `rgba(255,255,255,0.80)`, contraste de texto ≥ 4.5:1 medido,
+  `onAccent()` branco, e volta para Emerald sem sobra de campo opcional.
+- Home: 9 checagens (vazio não afirma percentual, 2/3 feitas → 66%, nenhum número da
+  referência, painel de áreas, timeline, sem NaN, sem texto preto sobre botão escuro).
+- **116 telas** (21 × 4 cenários + 11 de Estudos + 7 de Finanças + 9 de Home), 513 lógica,
+  62 store, 42 renders. Preview: `docs/design/home-preview.html` (`PREVIEW_HOME=1 npm run test:screens`).
+
 ## Estudos — "iDraft Soft UI" (monocromático)
 
 Segundo redesenho por referência. Diferente de Finanças, este módulo ganhou **paleta própria e fixa**
@@ -520,7 +563,7 @@ agora são reagendados 1× por dia, não a cada edição).
 - `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
-- `node scripts/render-screens-smoke.mjs` → **105/105** (21 telas × 3 cenários: com histórico, primeiro uso
+- `node scripts/render-screens-smoke.mjs` → **116/116** (21 telas × 3 cenários: com histórico, primeiro uso
   e **dados corrompidos** — `null`/`NaN`/texto de backup antigo)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200
 - `npx expo prebuild -p android` → `Prime.java` + `Constancia.java`,
