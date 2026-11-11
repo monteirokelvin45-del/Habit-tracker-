@@ -118,13 +118,34 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk artifacts/my-prime-latest.apk
           ls -lh artifacts
 
+      # Prova que o APK é instalável e contém o que deveria (não só que o Gradle disse "ok").
+      - name: Verificar conteúdo do APK
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          python3 - <<'EOF'
+          import zipfile
+          apk = 'android/app/build/outputs/apk/release/app-release.apk'
+          z = zipfile.ZipFile(apk)
+          names = z.namelist()
+          print('entradas:', len(names))
+          for need in ['AndroidManifest.xml', 'classes.dex']:
+              assert need in names, f'faltando {need}'
+          libs = sorted({n.split('/')[1] for n in names if n.startswith('lib/')})
+          assert 'arm64-v8a' in libs, f'sem arm64-v8a: {libs}'
+          print('libs:', libs)
+          dex = [n for n in names if n.endswith('.dex')]
+          print('dex:', dex)
+          EOF
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
+          "$AAPT" dump badging "$APK" | grep -E "^package:|application-label:|sdkVersion|targetSdkVersion|native-code" || true
+
       # Sem isso o link do APK é um endereço de blob do Azure, que expira e não abre
       # para o usuário final. A release com `latest` sempre aponta para o APK atual.
       - name: Link fixo para o último APK
         run: |
           echo "### APK gerado" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [\`my-prime-latest.apk\`](${{ github.server_url }}/${{ github.repository }}/releases/latest/download/my-prime-latest.apk)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [\`my-prime-latest.apk\`](${{ github.server_url }}/${{ github.repository }}/releases/download/android-latest/my-prime-latest.apk)" >> "$GITHUB_STEP_SUMMARY"
           echo "- build #${{ github.run_number }} · commit \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publicar como artefato do workflow

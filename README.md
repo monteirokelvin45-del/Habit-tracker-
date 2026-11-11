@@ -352,8 +352,9 @@ O build do APK roda no GitHub Actions, sem EAS e sem conta Expo:
 2. O workflow instala as dependências, roda tipos + testes, faz
    `expo prebuild --platform android` e compila com Gradle (`assembleRelease`).
 3. O APK sai em dois lugares:
-   - **artifact** do run: aba *Actions* → run → `my-prime-apk`;
-   - **release** fixa `android-latest`: seção *Releases* do repositório, sempre com o último APK.
+   - **link direto (sempre o último build)**:
+     <https://github.com/monteirokelvin45-del/Habit-tracker-/releases/download/android-latest/my-prime-latest.apk>
+   - **artifact** do run: aba *Actions* → run → `my-prime-apk` (fica 30 dias).
 
 Assinatura: o APK **release** sai com a *debug keystore* gerada no próprio runner
 (`build.gradle` já aponta `release` para `signingConfigs.debug`). Isso instala normalmente em
