@@ -56,14 +56,36 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Checagem rápida (tipos + testes)
+        # Antes rodava só tipos + lógica + store: uma tela quebrada chegava
+        # intacta até o APK. Render e telas entram aqui — é o build que o
+        # usuário instala, não o `npm test` local.
         run: |
           npx tsc --noEmit
           npm run test:logic
           npm run test:store
+          npm run test:render
+          npm run test:screens
 
       - name: Gerar projeto Android (prebuild)
         # Widget nativo e plugin do expo config só existem depois do prebuild.
         run: npx expo prebuild --platform android --no-install
+
+      - name: Conferir versão que vai para o APK
+        # O APK já saiu sem versionCode crescente uma vez: duas builds
+        # diferentes pareciam o mesmo app. Aqui a config é lida DEPOIS do
+        # prebuild, no arquivo que o Gradle realmente usa.
+        run: |
+          node -e "
+            const cfg = require('./app.json').expo;
+            const gradle = require('fs').readFileSync('android/app/build.gradle', 'utf8');
+            const vn = /versionName\s+[\"']([^\"']+)[\"']/.exec(gradle)?.[1];
+            const vc = /versionCode\s+(\d+)/.exec(gradle)?.[1];
+            console.log('config:', cfg.version, '/', cfg.android.versionCode, '| gradle:', vn, '/', vc);
+            if (!vn || !vc) throw new Error('versionName/versionCode não encontrados no build.gradle');
+            if (vn !== cfg.version) throw new Error('versionName do gradle (' + vn + ') != app.json (' + cfg.version + ')');
+            if (String(vc) !== String(cfg.android.versionCode)) throw new Error('versionCode do gradle (' + vc + ') != app.json (' + cfg.android.versionCode + ')');
+            console.log('OK: o APK sai com ' + vn + ' (build ' + vc + ')');
+          "
 
       - name: Build do APK (release)
         working-directory: android
@@ -112,10 +134,17 @@ jobs:
           exit 1
 
       - name: Renomear APK
+        # O nome carrega versão + commit curto: baixar `my-prime-v1.1.0-06eb034.apk`
+        # diz exatamente o que é, coisa que `my-prime-latest.apk` não faz.
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/release/app-release.apk "artifacts/my-prime-v${{ github.run_number }}.apk"
+          VERSION="$(node -e "console.log(require('./app.json').expo.version)")"
+          SHA="$(echo '${{ github.sha }}' | cut -c1-7)"
+          NAME="my-prime-v${VERSION}-${SHA}"
+          echo "APK_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          cp android/app/build/outputs/apk/release/app-release.apk "artifacts/${NAME}.apk"
           cp android/app/build/outputs/apk/release/app-release.apk artifacts/my-prime-latest.apk
+          echo "APK_NAME=${NAME}" >> "$GITHUB_ENV"
           ls -lh artifacts
 
       # Prova que o APK é instalável e contém o que deveria (não só que o Gradle disse "ok").
@@ -138,6 +167,14 @@ jobs:
           EOF
           AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
           "$AAPT" dump badging "$APK" | grep -E "^package:|application-label:|sdkVersion|targetSdkVersion|native-code" || true
+          # Prova final: a versão que está DENTRO do APK tem que ser a da config.
+          EXPECTED="$(node -e "const c=require('./app.json').expo;console.log(c.version+' '+c.android.versionCode)")"
+          ACTUAL="$("$AAPT" dump badging "$APK" | sed -n "s/^package:.*versionCode='\([0-9]*\)'.*versionName='\([^']*\)'.*/\2 \1/p")"
+          echo "esperado: $EXPECTED | no APK: $ACTUAL"
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error title=Versão::o APK saiu com '$ACTUAL' mas a config diz '$EXPECTED'"
+            exit 1
+          fi
 
       # Sem isso o link do APK é um endereço de blob do Azure, que expira e não abre
       # para o usuário final. A release com `latest` sempre aponta para o APK atual.
@@ -164,10 +201,16 @@ jobs:
           body: |
             APK assinado com a debug keystore gerada no runner (instalável, não serve para a Play Store).
 
-            - commit: `${{ github.sha }}`
+            - versão: `v${{ env.APK_VERSION }}` (commit \`${{ github.sha }}\`)
             - workflow: #${{ github.run_number }}
             - gerado em: ${{ github.event.head_commit.timestamp }}
-          # Só o APK fixo: os builds antigos ficam nos artifacts do run, não na release.
-          files: artifacts/my-prime-latest.apk
+
+            Link estável (sempre o mais novo): `my-prime-latest.apk`.
+            Link identificado (este build exato): `${{ env.APK_NAME }}.apk`.
+          # Dois nomes: o fixo para o link de sempre, o identificado para não
+          # existir dúvida de qual build é qual (o nome fixo sobrescreve sempre).
+          files: |
+            artifacts/my-prime-latest.apk
+            artifacts/${{ env.APK_NAME }}.apk
           prerelease: true
           make_latest: false

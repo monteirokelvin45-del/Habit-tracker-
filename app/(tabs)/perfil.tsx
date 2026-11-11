@@ -33,7 +33,7 @@ import { haptic } from '../../src/lib/haptics';
 import { LIFE_AREAS } from '../../src/lib/types';
 import Constants from 'expo-constants';
 
-const APP_VERSION = (Constants.expoConfig?.version as string | undefined) ?? '1.1.0';
+const APP_VERSION = (Constants.expoConfig?.version as string | undefined) ?? '1.1.1';
 const BUILD_NUMBER = (Constants.expoConfig?.android as { versionCode?: number } | undefined)?.versionCode;
 
 /** Nomes, em português, das listas que a sanitização pode descartar. */
