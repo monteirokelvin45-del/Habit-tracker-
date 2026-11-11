@@ -18,6 +18,7 @@ const files = [
     .map((f) => path.join(root, 'src/lib', f)),
   path.join(root, 'src/widget/data.ts'),
   path.join(root, 'src/lib/importer.ts'),
+  path.join(root, 'src/lib/heatmap.ts'),
 ];
 
 for (const file of files) {
@@ -47,6 +48,7 @@ const { badgeState, BADGES } = await import(path.join(outRoot, 'lib/badges.mjs')
 const dates = await import(path.join(outRoot, 'lib/date.mjs'));
 const widget = await import(path.join(outRoot, 'widget/data.mjs'));
 const importer = await import(path.join(outRoot, 'lib/importer.mjs'));
+const heat = await import(path.join(outRoot, 'lib/heatmap.mjs'));
 
 let pass = 0;
 let fail = 0;
@@ -302,6 +304,31 @@ check('JSON de plano importado', jsonPlan.goals.length === 1 && jsonPlan.goals[0
 
 check('texto vazio não gera meta', importer.readPlan('', 'x.txt', stateBase).goals.length === 0);
 check('template é importável', importer.readPlan(importer.PLAN_TEMPLATE, 'modelo.md', stateBase).goals.length >= 5, String(importer.readPlan(importer.PLAN_TEMPLATE, 'modelo.md', stateBase).goals.length));
+
+console.log('\n── Mural de constância (heatmap) ──');
+check('níveis por faixa de score', heat.levelFor(null) === 0 && heat.levelFor(3.9) === 1 && heat.levelFor(4) === 2 && heat.levelFor(6) === 3 && heat.levelFor(8) === 4 && heat.levelFor(10) === 4);
+
+const heatDays = Array.from({ length: 20 }, (_, i) => {
+  const date = dates.addDays(today, -i);
+  const score = i === 0 ? 9 : i === 1 ? 6.5 : i === 2 ? 5 : i === 3 ? 3 : null;
+  return day(date, score == null ? [] : done, score == null ? {} : { score: { regularity: 8, continuity: 8, recovery: 8, honesty: 8, progress: 8, total: score } });
+});
+const model = heat.buildHeatmap(heatDays, { weeks: 4 });
+check('gera 4 semanas', model.weeks.length === 4);
+check('cada semana tem 7 dias (segunda→domingo)', model.weeks.every((w) => w.cells.length === 7));
+check('colunas começam na segunda', dates.weekdayIndex(model.weeks[0].cells[0].date) === 1);
+check('dias futuros marcados', model.weeks.flatMap((w) => w.cells).some((c) => c.isFuture));
+check('hoje marcado', model.weeks.flatMap((w) => w.cells).some((c) => c.isToday && c.date === today));
+check('conta dias cumpridos (score ≥ 6)', model.stats.fulfilled === 2, String(model.stats.fulfilled));
+check('conta nível máximo (≥ 8)', model.stats.perfect === 1, String(model.stats.perfect));
+check('melhor score do período', model.stats.best === 9, String(model.stats.best));
+check('média dos registrados', model.stats.avg === 5.9, String(model.stats.avg));
+check('respeita limite de semanas', heat.buildHeatmap(heatDays, { weeks: 100 }).weeks.length === 60);
+check('sem dados → tudo nível 0', heat.buildHeatmap([], { weeks: 2 }).weeks.flatMap((w) => w.cells).every((c) => c.level === 0));
+check('registro com score 0 não vira "sem dado"', heat.buildHeatmap([day(today, done, { score: { total: 0 } })], { weeks: 1 }).stats.recorded === 1);
+
+const monthGrid = heat.buildMonthGrid(heatDays, Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1);
+check('grade mensal só com semanas do mês', monthGrid.length >= 4 && monthGrid.every((w) => w.cells.length === 7));
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -17,6 +17,7 @@ import {
   Txt,
 } from '../../src/components/ui';
 import { BarChart, Heatmap, LineChart, RadarChart } from '../../src/components/charts';
+import { ConstancyHeatmap } from '../../src/components/Heatmap';
 import { useStore } from '../../src/lib/store';
 import { addDays, daysInMonth, monthLabel, quarterOf, shortDate, todayKey, weekKeys, weekStart, weekdayShort, MONTHS } from '../../src/lib/date';
 import { areaConsistency, closedDays, excuseRanking, failureMap, sleepCorrelation, topExcuse, triggerMap } from '../../src/lib/insights';
@@ -286,7 +287,10 @@ function WeeklyReview({
         )}
       </Card>
 
-      <SectionTitle>Calendário</SectionTitle>
+      <SectionTitle>Mural de constância (12 semanas)</SectionTitle>
+      <ConstancyHeatmap days={store.days} goals={store.goals} weeks={12} cellSize={13} />
+
+      <SectionTitle>Calendário da semana</SectionTitle>
       <Card>
         <Heatmap
           data={week.map((date) => ({

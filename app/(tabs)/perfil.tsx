@@ -158,6 +158,12 @@ export default function ProfileScreen() {
         {/* RECOMPENSAS / CONQUISTAS */}
         <SectionTitle>Gamificação</SectionTitle>
         <Row gap={spacing.sm} style={{ flexWrap: 'wrap' }}>
+          <Pressable style={{ flex: 1, minWidth: '45%' }} onPress={() => router.push('/modulo/constancia')}>
+            <Card style={{ gap: 2 }}>
+              <Txt variant="h3">🟩 Constância</Txt>
+              <Muted>Mural de dias cumpridos</Muted>
+            </Card>
+          </Pressable>
           <Pressable style={{ flex: 1, minWidth: '45%' }} onPress={() => router.push('/modulo/widget')}>
             <Card style={{ gap: 2 }}>
               <Txt variant="h3">📱 Widget</Txt>

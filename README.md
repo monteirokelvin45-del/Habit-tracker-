@@ -156,6 +156,22 @@ Validado localmente: `npx expo prebuild -p android` gera
 `res/xml/widgetprovider_prime.xml` (250×110dp, 4×2 células, resize horizontal|vertical,
 updatePeriodMillis 10800000) e o `<receiver>` no `AndroidManifest.xml`.
 
+## Mural de constância (estilo GitHub contributions)
+
+`Hoje → Constância` (mini, 6 semanas) e `Perfil → Constância` / revisão semanal (completo).
+
+- Cada quadrado é **um dia**; a cor é o **score** do dia, não uma métrica inventada:
+  `sem registro` · `score < 4` · `4–5,9` · `6–7,9` · `≥ 8` (verde neon)
+- Semana começa na **segunda**, rótulos de mês no topo, legenda "Menos → Mais"
+- **Toque em qualquer dia** → abre o registro daquele dia (score, 5 fatores, tarefas feitas com horário,
+  falhas com tipo/legitimidade/custo, vitória pequena e correção)
+- Três escopos na tela dedicada: **último ano (53 semanas)**, **últimos 5 meses** lado a lado, e **por área**
+  (aí o dia acende considerando só as metas daquela área)
+- Estatísticas: streak atual (score ≥ 6), melhor sequência, dias cumpridos, dias em nível máximo
+- Dia sem registro fica **apagado** — nada é interpolado (regra 1)
+
+Lógica em `src/lib/heatmap.ts` (pura, testada), UI em `src/components/Heatmap.tsx`.
+
 ## Importar plano completo (metas, protocolo, dados)
 
 `Perfil → Enviar meus planos e dados` (ou o botão "Já tenho um plano" na splash) abre `app/importar.tsx`.

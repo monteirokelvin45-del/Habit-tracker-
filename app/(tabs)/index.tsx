@@ -18,6 +18,7 @@ import { nextReward } from '../../src/lib/insights';
 import { haptic } from '../../src/lib/haptics';
 import { useWidgetSync } from '../../src/widget/sync';
 import { FadeInDown } from '../../src/components/FadeIn';
+import { MiniHeatmap } from '../../src/components/Heatmap';
 import type { Day, DayMode, Goal } from '../../src/lib/types';
 
 export default function TodayScreen() {
@@ -222,6 +223,22 @@ export default function TodayScreen() {
             </Card>
           </Pressable>
         </Row>
+
+        {/* MURAL DE CONSTÂNCIA (6 semanas) */}
+        <FadeInDown delay={20}>
+          <Pressable onPress={() => router.push('/modulo/constancia')}>
+            <Card>
+              <Row style={{ justifyContent: 'space-between', marginBottom: spacing.sm }}>
+                <View>
+                  <Txt variant="micro" color={colors.textSecondary}>Constância</Txt>
+                  <Muted>últimas 6 semanas · toque para o mural completo</Muted>
+                </View>
+                <Txt variant="caption" color={colors.green}>ver ano ›</Txt>
+              </Row>
+              <MiniHeatmap days={store.days} weeks={6} />
+            </Card>
+          </Pressable>
+        </FadeInDown>
 
         {/* CHECK-IN DE ENERGIA */}
         <FadeInDown delay={40}>
