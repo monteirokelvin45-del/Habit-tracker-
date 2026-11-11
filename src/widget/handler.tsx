@@ -1,7 +1,8 @@
 import React from 'react';
 import type { WidgetTaskHandlerProps } from 'react-native-android-widget';
 import { PrimeWidget } from './PrimeWidget';
-import { WIDGET_NAME, completeNextTask, widgetData } from './data';
+import { ConstancyWidget } from './ConstancyWidget';
+import { CONSTANCY_WIDGET_NAME, WIDGET_NAME, completeNextTask, widgetData } from './data';
 import { loadAll } from '../lib/storage';
 import { persistMany } from '../lib/storage';
 import { evaluateBadges } from '../lib/badges';
@@ -17,10 +18,16 @@ import type { AppData } from '../lib/types';
 export async function widgetTaskHandler(props: WidgetTaskHandlerProps): Promise<void> {
   const { widgetAction, widgetInfo, renderWidget, clickAction } = props;
 
-  if (widgetInfo.widgetName !== WIDGET_NAME) return;
+  const known = [WIDGET_NAME, CONSTANCY_WIDGET_NAME];
+  if (!known.includes(widgetInfo.widgetName)) return;
 
-  const render = (data: AppData) =>
+  const render = (data: AppData) => {
+    if (widgetInfo.widgetName === CONSTANCY_WIDGET_NAME) {
+      renderWidget(<ConstancyWidget data={data} date={todayKey()} width={widgetInfo.width} />);
+      return;
+    }
     renderWidget(<PrimeWidget data={data} date={todayKey()} width={widgetInfo.width} />);
+  };
 
   switch (widgetAction) {
     case 'WIDGET_ADDED':

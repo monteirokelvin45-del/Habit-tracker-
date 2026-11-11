@@ -330,5 +330,30 @@ check('registro com score 0 não vira "sem dado"', heat.buildHeatmap([day(today,
 const monthGrid = heat.buildMonthGrid(heatDays, Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1);
 check('grade mensal só com semanas do mês', monthGrid.length >= 4 && monthGrid.every((w) => w.cells.length === 7));
 
+console.log('\n── Widget do mural ──');
+check('nome do widget estável', widget.CONSTANCY_WIDGET_NAME === 'Constancia');
+check('largura pequena ainda tem 6 semanas', widget.muralColumnsForWidth(100) === 6);
+check('largura grande é limitada a 53 semanas', widget.muralColumnsForWidth(4000) === 53);
+check('mais largura → mais semanas', widget.muralColumnsForWidth(240) > widget.muralColumnsForWidth(180));
+check('largura 320 cai na faixa esperada', widget.muralColumnsForWidth(320) >= 20 && widget.muralColumnsForWidth(320) <= 30, String(widget.muralColumnsForWidth(320)));
+
+const muralData = { ...wData, days: heatDays };
+const mural = widget.muralData(muralData, { width: 320, end: today });
+check('mural gera as colunas pedidas', mural.columns.length === mural.weeks);
+check('cada coluna tem 7 células', mural.columns.every((c) => c.cells.length === 7));
+check('limite de views do widget (26 semanas)', widget.muralData(wData, { width: 4000, end: today }).columns.length === 26);
+check('última coluna termina no domingo da semana atual', dates.weekdayIndex(mural.columns.at(-1).cells[6].date) === 0);
+check('primeira célula é segunda-feira', dates.weekdayIndex(mural.columns[0].cells[0].date) === 1);
+check('hoje aparece marcado', mural.columns.some((c) => c.cells.some((x) => x.isToday && x.date === today)));
+check('dias futuros não têm cor de score', mural.columns.flatMap((c) => c.cells).filter((c) => c.isFuture).every((c) => c.level === 0));
+check('cor vem da paleta do mural', mural.columns.flatMap((c) => c.cells).every((c) => Object.values(widget.MURAL_COLORS).includes(c.color)));
+check('conta dias cumpridos (score ≥ 6)', mural.fulfilled === 2, String(mural.fulfilled));
+check('conta dias registrados do período', mural.recorded >= 4, String(mural.recorded));
+check('streak igual ao do app', mural.streak === widget.widgetData(muralData, today).streak);
+check('rótulos de mês em ordem crescente', mural.monthLabels.every((l, i, arr) => i === 0 || l.column > arr[i - 1].column));
+check('sem dados → nenhum dia cumprido', widget.muralData(emptyData, { width: 320, end: today }).fulfilled === 0);
+check('sem dados → todas as células nível 0', widget.muralData(emptyData, { width: 320, end: today }).columns.flatMap((c) => c.cells).every((c) => c.level === 0));
+check('widget do mural não inventa streak', widget.muralData(emptyData, { width: 320, end: today }).streak === 0);
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

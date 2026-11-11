@@ -21,6 +21,18 @@ const widgetConfig: WithAndroidWidgetsParams = {
       updatePeriodMillis: 3 * 60 * 60 * 1000,
       previewImage: './assets/widget-preview/prime.png',
     },
+    {
+      name: 'Constancia',
+      label: 'MY PRIME · Mural',
+      description: 'Mural de constância: os dias cumpridos em sequência',
+      minWidth: '250dp',
+      minHeight: '150dp',
+      targetCellWidth: 4,
+      targetCellHeight: 3,
+      resizeMode: 'horizontal|vertical',
+      updatePeriodMillis: 3 * 60 * 60 * 1000,
+      previewImage: './assets/widget-preview/constancia.png',
+    },
   ],
 };
 

@@ -120,6 +120,8 @@ são gerados e referenciados no `app.json`. `assets/lottie/confetti.json` é o c
 ## Widget de tela inicial (Android)
 
 Implementado com `react-native-android-widget` (o caminho suportado pelo Expo, via config plugin).
+São **dois** widgets: `Prime` (streak + próxima tarefa) e `Constancia` (mural de constância).
+
 O widget `Prime` mostra:
 
 - 🔥 streak geral (dias com score > 5)
@@ -128,17 +130,29 @@ O widget `Prime` mostra:
 - próxima tarefa em aberto (com área e alvo do modo)
 - botão **✓ Feito** que conclui a próxima tarefa direto da home screen e grava o horário
 
+O widget `Constancia` mostra:
+
+- o mural de constância em miniatura (7 linhas × N semanas, segunda→domingo)
+- cor por score do dia, exatamente a mesma escala do mural do app
+  (`#1F1F1F` sem registro · `#B32B2B` < 4 · `#A87300` 4–5,9 · `#00A85A` 6–7,9 · `#39FF14` ≥ 8)
+- dia de hoje com borda branca; dias futuros em preto (não inventam nível)
+- 🔥 streak e total de dias cumpridos no período visível
+- número de semanas calculado pela largura real do widget (`muralColumnsForWidth`, 6 a 53)
+
 Arquivos:
 
 ```
 app.config.ts               config plugin (nome, tamanhos, resizeMode, updatePeriodMillis 3h, preview)
 index.ts                    entry point próprio: expo-router/entry + registerWidgetTaskHandler
-src/widget/PrimeWidget.tsx  UI do widget (FlexWidget/TextWidget, dark only)
+src/widget/PrimeWidget.tsx  UI do widget principal (FlexWidget/TextWidget, dark only)
+src/widget/ConstancyWidget.tsx  UI do widget do mural (grade de quadrados + legenda)
 src/widget/data.ts          leitura PURA do AppData (testada) — sem dado => "Sem dado"
+                            + muralData()/muralColumnsForWidth()/MURAL_COLORS
 src/widget/handler.tsx      WIDGET_ADDED/UPDATE/RESIZED/CLICK, lê AsyncStorage, recalcula score
 src/widget/sync.tsx         sincroniza o widget após check-in (useWidgetSync no dashboard)
 app/modulo/widget.tsx       Perfil → Widget: prévia, "adicionar à tela inicial", "atualizar agora"
 assets/widget-preview/prime.png
+assets/widget-preview/constancia.png
 ```
 
 Detalhes de implementação:
@@ -155,6 +169,13 @@ Validado localmente: `npx expo prebuild -p android` gera
 `android/app/src/main/java/com/myprime/app/widget/Prime.java`,
 `res/xml/widgetprovider_prime.xml` (250×110dp, 4×2 células, resize horizontal|vertical,
 updatePeriodMillis 10800000) e o `<receiver>` no `AndroidManifest.xml`.
+Para o mural: `android/app/src/main/java/com/myprime/app/widget/Constancia.java`,
+`res/xml/widgetprovider_constancia.xml` (250×150dp, 4×3 células, resize horizontal|vertical) e
+o receiver `MY PRIME · Mural`. Os dois aparecem no seletor de widgets do launcher.
+
+Como fixar: Perfil → Widget → **Fixar widget do mural** (usa `requestPinWidget`; se o launcher
+não suportar, adicionar manualmente pelo seletor). O widget do mural é atualizado junto com o
+principal depois de cada check-in (`useWidgetSync`) e a cada 3h pelo launcher.
 
 ## Mural de constância (estilo GitHub contributions)
 

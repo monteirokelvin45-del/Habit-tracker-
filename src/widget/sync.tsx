@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { useStore } from '../lib/store';
-import { WIDGET_NAME } from './data';
+import { CONSTANCY_WIDGET_NAME, WIDGET_NAME } from './data';
 import type { AppData } from '../lib/types';
 
 /**
@@ -14,9 +14,14 @@ export async function syncWidget(data: AppData): Promise<void> {
   try {
     const { requestWidgetUpdate } = await import('react-native-android-widget');
     const { PrimeWidget } = await import('./PrimeWidget');
+    const { ConstancyWidget } = await import('./ConstancyWidget');
     await requestWidgetUpdate({
       widgetName: WIDGET_NAME,
       renderWidget: (info) => <PrimeWidget data={data} width={info.width} />,
+    });
+    await requestWidgetUpdate({
+      widgetName: CONSTANCY_WIDGET_NAME,
+      renderWidget: (info) => <ConstancyWidget data={data} width={info.width} />,
     });
   } catch {
     // widget não instalado / módulo indisponível: nada a fazer

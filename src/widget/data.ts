@@ -1,5 +1,6 @@
 import type { AppData, Day, DayMode, Goal } from '../lib/types';
-import { nowHHmm, todayKey } from '../lib/date';
+import { levelFor } from '../lib/heatmap';
+import { addDays as addDaysKey, keyToDate, nowHHmm, todayKey } from '../lib/date';
 import { buildChecklist, generalStreak } from '../lib/score';
 
 /**
@@ -8,6 +9,7 @@ import { buildChecklist, generalStreak } from '../lib/score';
  */
 
 export const WIDGET_NAME = 'Prime';
+export const CONSTANCY_WIDGET_NAME = 'Constancia';
 
 export interface WidgetTask {
   label: string;
@@ -126,5 +128,100 @@ export function completeNextTask(data: AppData, date = todayKey()): { data: AppD
   const days = data.days.map((d) => (d.date === date ? updated : d));
   return { data: { ...data, days }, completed: next.goal.name, skipped: false };
 }
+
+/* ────────────────── widget do mural de constância ────────────────── */
+
+export interface MuralCell {
+  date: string;
+  level: 0 | 1 | 2 | 3 | 4;
+  color: `#${string}`;
+  isToday: boolean;
+  isFuture: boolean;
+}
+
+export interface MuralColumn {
+  /** Índice da semana (0 = mais antiga). */
+  index: number;
+  cells: MuralCell[];
+}
+
+export const MURAL_COLORS: Record<0 | 1 | 2 | 3 | 4, `#${string}`> = {
+  0: '#1F1F1F',
+  1: '#B32B2B',
+  2: '#A87300',
+  3: '#00A85A',
+  4: '#39FF14',
+};
+
+/**
+ * Quantas semanas cabem na largura informada (dp) do widget.
+ * Sem tabelas mágicas: célula + gap medidos, descontando o rótulo dos dias.
+ */
+export function muralColumnsForWidth(width: number, cell = 9, gap = 2, labelWidth = 16): number {
+  const usable = Math.max(cell, width - labelWidth - 16);
+  const weeks = Math.floor(usable / (cell + gap));
+  return Math.max(6, Math.min(53, weeks));
+}
+
+/**
+ * Prepara as colunas do mural para o widget.
+ * Função pura sobre AppData — o widget nunca inventa dia: sem registro, nível 0.
+ */
+export function muralData(data: AppData, opts?: { width?: number; cell?: number; gap?: number; labelWidth?: number; end?: string }) {
+  const cell = opts?.cell ?? 9;
+  const gap = opts?.gap ?? 2;
+  // Limite de segurança: RemoteViews não gosta de centenas de views no mesmo widget.
+  const weeks = Math.min(26, muralColumnsForWidth(opts?.width ?? 300, cell, gap, opts?.labelWidth ?? 16));
+  const today = opts?.end ?? todayKey();
+  const byDate = new Map(data.days.map((d) => [d.date, d]));
+
+  // segunda-feira da semana atual
+  const dow = keyToDate(today).getDay();
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  const thisMonday = addDaysKey(today, mondayOffset);
+
+  const columns: MuralColumn[] = [];
+  let fulfilled = 0;
+  let recorded = 0;
+
+  for (let w = weeks - 1; w >= 0; w--) {
+    const weekStart = addDaysKey(thisMonday, -7 * w);
+    const cells: MuralCell[] = [];
+    for (let d = 0; d < 7; d++) {
+      const date = addDaysKey(weekStart, d);
+      const day = byDate.get(date);
+      const score = day?.score?.total ?? null;
+      const level = levelFor(score);
+      if (date <= today && (score != null || (day?.tasks.length ?? 0) > 0)) {
+        recorded += 1;
+        if ((score ?? 0) >= 6) fulfilled += 1;
+      }
+      cells.push({
+        date,
+        level,
+        color: MURAL_COLORS[level],
+        isToday: date === today,
+        isFuture: date > today,
+      });
+    }
+    columns.push({ index: weeks - 1 - w, cells });
+  }
+
+  const streak = generalStreak(data.days, today);
+  const monthOf = (date: string) => Number(date.slice(5, 7));
+  const monthLabels: { label: string; column: number }[] = [];
+  let lastMonth = -1;
+  columns.forEach((col) => {
+    const month = monthOf(col.cells[0]!.date);
+    if (month !== lastMonth) {
+      monthLabels.push({ label: MONTHS_ABBR[month - 1] ?? '', column: col.index });
+      lastMonth = month;
+    }
+  });
+
+  return { columns, weeks, fulfilled, recorded, streak, today, monthLabels };
+}
+
+const MONTHS_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 export type { Day, Goal };
