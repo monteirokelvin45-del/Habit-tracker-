@@ -342,3 +342,23 @@ e editável direto).
 - PDF no seletor de importação não é lido (é binário) — converta para .txt/.md.
 - Desmarcar uma tarefa sempre exige o registro de falha (tipo + legitimidade). Sem isso, não há dado para
   a análise — é uma escolha de produto, não uma limitação técnica.
+
+## APK pelo GitHub (sem EAS)
+
+O build do APK roda no GitHub Actions, sem EAS e sem conta Expo:
+
+1. Cada push na branch de trabalho dispara `.github/workflows/android-apk.yml`
+   (também dá para rodar na mão em **Actions → Android APK → Run workflow**).
+2. O workflow instala as dependências, roda tipos + testes, faz
+   `expo prebuild --platform android` e compila com Gradle (`assembleRelease`).
+3. O APK sai em dois lugares:
+   - **artifact** do run: aba *Actions* → run → `my-prime-apk`;
+   - **release** fixa `android-latest`: seção *Releases* do repositório, sempre com o último APK.
+
+Assinatura: o APK **release** sai com a *debug keystore* gerada no próprio runner
+(`build.gradle` já aponta `release` para `signingConfigs.debug`). Isso instala normalmente em
+qualquer Android, mas **não serve para a Play Store** — para publicar é preciso um keystore de
+produção nos secrets. Para distribuição interna, é o suficiente.
+
+O APK inclui os dois widgets nativos (`Prime` e `Constancia`), registrados pelo plugin
+`react-native-android-widget` no `app.json`. Widget não funciona no Expo Go: use este APK.

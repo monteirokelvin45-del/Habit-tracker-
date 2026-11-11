@@ -1,0 +1,93 @@
+name: Android APK
+
+# Build do APK sem EAS: prebuild + Gradle dentro do runner do GitHub.
+on:
+  push:
+    branches:
+      - arena/778ec580-habit-tracker
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write # publicar o APK no release "android-latest"
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      # Gradle e cache de build ficam fora do projeto para não sujar o diff do .gitignore.
+      - name: Cache do Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Instalar dependências
+        # O projeto usa --legacy-peer-deps (Expo 54 + Reanimated 4 + widget).
+        run: npm ci --legacy-peer-deps
+
+      - name: Checagem rápida (tipos + testes)
+        run: |
+          npx tsc --noEmit
+          npm run test:logic
+          npm run test:store
+
+      - name: Gerar projeto Android (prebuild)
+        # Widget nativo e plugin do expo config só existem depois do prebuild.
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build do APK (release)
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx4g
+
+      - name: Renomear APK
+        run: |
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/release/app-release.apk "artifacts/my-prime-v${{ github.run_number }}.apk"
+          ls -lh artifacts
+
+      - name: Publicar como artefato do workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-prime-apk
+          path: artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publicar no release "android-latest"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: MY PRIME — APK (build automático)
+          body: |
+            APK assinado com a debug keystore gerada no runner (instalável, não serve para a Play Store).
+
+            - commit: `${{ github.sha }}`
+            - workflow: #${{ github.run_number }}
+            - gerado em: ${{ github.event.head_commit.timestamp }}
+          files: artifacts/*.apk
+          prerelease: true
+          make_latest: false

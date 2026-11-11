@@ -2,14 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import * as SvgModule from 'react-native-svg';
 
-const LottieView = (() => {
+/**
+ * Lottie só onde o módulo nativo existe. No web, `lottie-react-native` resolve para
+ * a build de navegador, que exige um canvas WebGL inexistente no SSR — importar
+ * assim quebrava o export web. Por isso o require só roda em Android/iOS.
+ */
+function loadLottie(): React.ComponentType<any> | null {
+  if (Platform.OS === 'web') return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require('lottie-react-native').default as React.ComponentType<any>;
   } catch {
     return null;
   }
-})();
+}
+
+const LottieView = loadLottie();
 
 /** Confetti local (Lottie). Não repete, 2s. No web vira fallback estático. */
 export function Confetti({ visible, onDone }: { visible: boolean; onDone?: () => void }) {
@@ -31,7 +39,7 @@ export function Confetti({ visible, onDone }: { visible: boolean; onDone?: () =>
 
   return (
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity, zIndex: 999 }]}>
-      {LottieView && Platform.OS !== 'web' ? (
+      {LottieView ? (
         <LottieView
           source={require('../../assets/lottie/confetti.json')}
           autoPlay
@@ -40,7 +48,9 @@ export function Confetti({ visible, onDone }: { visible: boolean; onDone?: () =>
           style={{ width: '100%', height: '100%' }}
         />
       ) : (
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,255,136,0.05)' }} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,255,136,0.05)' }}>
+          <Animated.Text style={{ fontSize: 34, opacity }}>🎉</Animated.Text>
+        </View>
       )}
     </Animated.View>
   );

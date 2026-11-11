@@ -16,6 +16,7 @@
         "backgroundColor": "#0A0A0A"
       },
       "permissions": [
+        "POST_NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
         "SCHEDULE_EXACT_ALARM",
         "VIBRATE"
@@ -48,7 +49,39 @@
         {
           "photosPermission": "O MY PRIME usa fotos apenas para confirmação opcional e progresso."
         }
-      ]
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Prime",
+              "label": "MY PRIME",
+              "description": "Score de hoje, top 3 tarefas e streak.",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000,
+              "previewImage": "./assets/widget-preview/prime.png"
+            },
+            {
+              "name": "Constancia",
+              "label": "Constância",
+              "description": "Mural de constância do mês.",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000,
+              "previewImage": "./assets/widget-preview/constancia.png"
+            }
+          ]
+        }
+      ],
+      "expo-system-ui"
     ],
     "experiments": {
       "typedRoutes": false
