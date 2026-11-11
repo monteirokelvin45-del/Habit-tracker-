@@ -12,9 +12,10 @@ A disciplina vem do sistema, não do humor do usuário. Tudo é local (AsyncStor
 
 ## Stack
 
-React Native + Expo SDK 53 (managed) · TypeScript strict · Expo Router · Zustand · AsyncStorage ·
+React Native + Expo SDK 54 (managed) · TypeScript strict · Expo Router 6 · Zustand · AsyncStorage ·
 react-native-svg (gráficos) · Lottie (confetti) · expo-notifications / haptics / image-picker /
-document-picker / print / sharing / file-system · react-native-reanimated · date-fns.
+document-picker / print / sharing / file-system · react-native-reanimated 4 · date-fns ·
+**react-native-android-widget** (widget de tela inicial).
 
 ## Rodando
 
@@ -116,11 +117,51 @@ src/
 são gerados e referenciados no `app.json`. `assets/lottie/confetti.json` é o confetti local
 (60 peças, 2s, sem loop) usado ao fechar 100% do checklist.
 
+## Widget de tela inicial (Android)
+
+Implementado com `react-native-android-widget` (o caminho suportado pelo Expo, via config plugin).
+O widget `Prime` mostra:
+
+- 🔥 streak geral (dias com score > 5)
+- modo do dia (🟢 normal / 🟡 mínimo / 🟣 ataque / 🔴 recuperação)
+- progresso do checklist (`3/7` + barra)
+- próxima tarefa em aberto (com área e alvo do modo)
+- botão **✓ Feito** que conclui a próxima tarefa direto da home screen e grava o horário
+
+Arquivos:
+
+```
+app.config.ts               config plugin (nome, tamanhos, resizeMode, updatePeriodMillis 3h, preview)
+index.ts                    entry point próprio: expo-router/entry + registerWidgetTaskHandler
+src/widget/PrimeWidget.tsx  UI do widget (FlexWidget/TextWidget, dark only)
+src/widget/data.ts          leitura PURA do AppData (testada) — sem dado => "Sem dado"
+src/widget/handler.tsx      WIDGET_ADDED/UPDATE/RESIZED/CLICK, lê AsyncStorage, recalcula score
+src/widget/sync.tsx         sincroniza o widget após check-in (useWidgetSync no dashboard)
+app/modulo/widget.tsx       Perfil → Widget: prévia, "adicionar à tela inicial", "atualizar agora"
+assets/widget-preview/prime.png
+```
+
+Detalhes de implementação:
+
+- O `package.json` agora tem `"main": "index.ts"` (necessário para registrar o WidgetTaskHandler
+  fora do contexto do Expo Router).
+- O widget **não** usa estado em memória: o handler lê o AsyncStorage a cada evento, porque roda em
+  um contexto separado do app.
+- O widget nunca inventa número: sem metas/sem dia registrado mostra "Sem dado".
+- A barra de progresso é desenhada em dp (widgets Android não aceitam `%`).
+- No web/Expo Go o módulo nativo não existe: o import é sob demanda e a tela explica a limitação.
+
+Validado localmente: `npx expo prebuild -p android` gera
+`android/app/src/main/java/com/myprime/app/widget/Prime.java`,
+`res/xml/widgetprovider_prime.xml` (250×110dp, 4×2 células, resize horizontal|vertical,
+updatePeriodMillis 10800000) e o `<receiver>` no `AndroidManifest.xml`.
+
 ## Limites honestos
 
-- **Widget de home screen** não é suportado pelo Expo managed sem código nativo customizado
-  (`react-native-android-widget` exige config plugin/prebuild). Ficou fora do escopo para manter o
-  workflow managed funcionando.
+- O widget exige um **dev build/APK** (não roda no Expo Go, que não tem o módulo nativo).
+  Para testar: `npm run build:apk` ou `npx expo prebuild -p android && ./gradlew assembleRelease`.
+- A lib de widget exige Expo ≥ 54; por isso o projeto foi migrado de SDK 53 para **SDK 54**
+  (RN 0.81, Router 6, Reanimated 4) e o `expo-file-system` passou para a API `File`/`Paths`.
 - PDF aceito no seletor de upload não é lido (é binário); o app avisa em vez de fingir importação.
 - Notificações exigem permissão do usuário e não funcionam na web (apenas no APK).
 - Relatórios anuais com menos de 6 meses mostram o aviso e o maior período disponível.
