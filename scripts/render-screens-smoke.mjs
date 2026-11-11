@@ -640,6 +640,61 @@ for (const [label, file] of screens) {
   log(/R\$\s?30,00/.test(quebrado), 'o lançamento bom continua somando (R$ 30,00)');
 }
 
+/* ──────── Estudos (Soft UI): Regra 1 e Regra 4 no que a tela afirma ──────── */
+{
+  const renderEstudo = async (name, fixture) => {
+    const copy = await withStore('app/modulo/estudo.js', name, fixture);
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    return renderToStaticMarkup(React.createElement(Screen));
+  };
+  const estudoGoals = [
+    { ...goal('g1', 'Estudo', 'Resolver 20 questões', 'high'), ideal: '1h' },
+    { ...goal('g2', 'Estudo', 'Ler capítulo 3', 'normal'), ideal: '30min' },
+  ];
+
+  // 1) App zerado: nenhum percentual de desempenho inventado.
+  const vazioE = await renderEstudo('est-vazio', { ...vazio, goals: [], days: [], settings: { ...vazio.settings } });
+  log(!/\d+%\s*(de|da)\s*meta/i.test(vazioE) || /Sem dado/.test(vazioE), 'Estudos vazio não afirma desempenho');
+  log(/Sem dado/.test(vazioE), 'Estudos vazio escreve "Sem dado"');
+  log(!/NaN|Infinity/.test(vazioE), 'Estudos vazio sem NaN/Infinity');
+
+  // 2) Poucos dias de estudo: desempenho NÃO pode ser afirmado (Regra 4).
+  const doisDias = await renderEstudo('est-2dias', {
+    ...vazio,
+    goals: estudoGoals,
+    days: [
+      { ...days[0], date: key(0), tasks: estudoGoals.map((g) => ({ goalId: g.id, done: true, note: '' })), diary: { ...days[0].diary, study: [{ subject: 'Matemática', plannedMinutes: 60, doneMinutes: 45, material: 'Livro', doubts: [] }] } },
+      { ...days[1], date: key(-1), tasks: [], diary: { ...days[1].diary, study: [{ subject: 'Matemática', plannedMinutes: 60, doneMinutes: 30, material: 'Livro', doubts: [] }] } },
+    ],
+  });
+  log(/Sem dado suficiente/.test(doisDias), 'Estudos com 2 dias NÃO afirma desempenho (Regra 4)', (doisDias.match(/\d+%[^<]{0,20}/) ?? []).slice(0, 3).join(' | '));
+
+  // 3) Amostra suficiente: aí sim o percentual aparece.
+  const cincoDias = await renderEstudo('est-5dias', {
+    ...vazio,
+    goals: estudoGoals,
+    days: Array.from({ length: 5 }).map((_, i) => ({
+      ...days[0],
+      date: key(-i),
+      tasks: [],
+      diary: { ...days[0].diary, study: [{ subject: 'Matemática', plannedMinutes: 60, doneMinutes: 60, material: 'Livro', doubts: [] }] },
+    })),
+  });
+  log(!/Sem dado suficiente/.test(cincoDias), 'Estudos com 5 dias calcula desempenho');
+  log(/100%/.test(cincoDias), 'Estudos com 5 dias: 100% de 60/60 min aparece');
+
+  // 4) Meta do mês sem meta cadastrada não vira 0%.
+  log(/Sem meta|Sem dado/.test(vazioE), 'meta mensal sem alvo diz "Sem meta"/"Sem dado", não 0%');
+  log(!/>0%</.test(vazioE), 'meta mensal sem alvo não imprime 0%');
+
+  // 5) As metas reais de Estudo aparecem como checklist.
+  log(/Resolver 20 questões/.test(doisDias), 'checklist mostra as metas reais da área Estudo');
+  log(/Ler capítulo 3/.test(doisDias), 'checklist mostra a segunda meta');
+  // Meta de outra área não pode aparecer neste card.
+  const comOutraArea = await renderEstudo('est-outra', { ...vazio, goals: [...estudoGoals, goal('g9', 'Treino', 'Treino pesado', 'high')] });
+  log(!/Treino pesado/.test(comOutraArea), 'meta de outra área não entra no checklist de Estudos');
+}
+
 console.log('\n── Telas: tema Dark Neon Blue Bento aplicado ──');
 {
   const themeMod = await import(pathToFileURL(path.join(outRoot, 'src/theme.js')).href);
@@ -650,13 +705,15 @@ console.log('\n── Telas: tema Dark Neon Blue Bento aplicado ──');
         const copy = await withStore(file, 'neon', cheio);
         const Screen = (await import(pathToFileURL(copy).href)).default;
         const html = renderToStaticMarkup(React.createElement(Screen));
-        // O fundo do app tem que ser o #08090E do tema. Exceção legítima: o
-        // seletor de tema do Perfil mostra a amostra de TODAS as paletas.
+        // Estudos usa paleta PRÓPRIA (iDraft Soft UI, cinza fumê), de propósito:
+        // ele não deve seguir o tema. As outras telas, sim.
+        const ownPalette = label === 'Estudo';
         const greens = (html.match(/rgba\(5,31,32/g) ?? []).length;
         const allowed = label === 'Perfil' ? 1 : 0;
         if (html.length < 200) log(false, `${label} (tema neon): markup vazio`);
         else if (greens > allowed) log(false, `${label} (tema neon): ${greens} elemento(s) com a cor do Emerald`);
-        else if (!/rgba\(8,9,14/.test(html)) log(false, `${label} (tema neon): fundo #08090E não apareceu`);
+        else if (ownPalette && !/rgba\(243,244,246/.test(html)) log(false, `${label}: paleta própria (cinza fumê) não apareceu`);
+        else if (!ownPalette && !/rgba\(8,9,14/.test(html)) log(false, `${label} (tema neon): fundo #08090E não apareceu`);
         else log(true, `${label} (tema neon, ${html.length} chars)`);
       } catch (e) {
         log(false, `${label} (tema neon): ${e.message}`);
@@ -724,6 +781,52 @@ if (process.env.PREVIEW_FINANCES) {
 
   } catch (e) {
     console.error('preview falhou:', e.message);
+  }
+}
+
+/* ─────── Preview opcional de Estudos (HTML para conferência visual) ───────
+ * `PREVIEW_ESTUDO=1 npm run test:screens` grava `docs/design/estudo-preview.html`.
+ */
+if (process.env.PREVIEW_ESTUDO) {
+  try {
+    const estudoGoals = [
+      { ...goal('g1', 'Estudo', 'Resolver 20 questões', 'high'), ideal: '1h' },
+      { ...goal('g2', 'Estudo', 'Ler capítulo 3', 'normal'), ideal: '30min' },
+      { ...goal('g3', 'Estudo', 'Revisar anotações', 'normal'), ideal: '20min' },
+    ];
+    const copy = await withStore('app/modulo/estudo.js', 'preview', {
+      ...cheio,
+      goals: estudoGoals,
+      user: { ...cheio.user, name: 'Kelvin' },
+      days: Array.from({ length: 6 }).map((_, i) => ({
+        ...days[0],
+        date: key(-i),
+        tasks: i === 0 ? estudoGoals.map((g) => ({ goalId: g.id, done: g.id !== 'g3', note: '' })) : [],
+        diary: {
+          ...days[0].diary,
+          study: [
+            { subject: ['Matemática', 'Direito', 'Português'][i % 3], plannedMinutes: 90, doneMinutes: 45 + i * 8, material: 'Livro', doubts: i === 0 ? ['Como calcular porcentagem composta?'] : [] },
+          ],
+        },
+      })),
+    });
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const body = renderToStaticMarkup(React.createElement(Screen));
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MY PRIME · Estudos (preview)</title>
+<style>
+  html,body{margin:0;background:#DADCE0;}
+  body{display:flex;justify-content:center;padding:24px 0;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;}
+  #app{width:412px;min-height:900px;background:#F3F4F6;border-radius:36px;overflow:hidden;
+       border:1px solid #D9DAE0;box-shadow:0 18px 50px rgba(20,20,22,.18);}
+  #app *{box-sizing:border-box;}
+</style></head><body><div id="app">${body}</div></body></html>`;
+    fs.mkdirSync(path.join(root, 'docs/design'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'docs/design/estudo-preview.html'), html);
+    console.log('\npreview: docs/design/estudo-preview.html');
+  } catch (e) {
+    console.error('preview de estudos falhou:', e.message);
   }
 }
 

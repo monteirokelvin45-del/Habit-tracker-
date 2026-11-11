@@ -348,6 +348,45 @@ O que ficou de fora da referência, e por quê: **Inbox/"25 Unread Messages"** (
 - Preview fiel em `docs/design/financas-preview.html` (`PREVIEW_FINANCES=1 npm run test:screens`):
   é o DOM do react-native-web com os estilos reais, para conferir a composição sem emulador.
 
+## Estudos — "iDraft Soft UI" (monocromático)
+
+Segundo redesenho por referência. Diferente de Finanças, este módulo ganhou **paleta própria e fixa**
+(cinza fumê `#F3F4F6`, branco, grafite `#141416`) — ele **não segue** o tema ativo, e o teste de tema
+sabe disso. Componentes em `src/components/SoftStudy.tsx`: `SoftCard` (branco/preto/tracejado),
+`SoftButton` (pílula), `SoftRing`, `SoftWeekLine` (linha suavizada Catmull-Rom), `SoftCheck`,
+`SoftNote` (post-it com menu ⋯) e `SoftStat`.
+
+### Mapeamento referência → dado real
+
+| Referência | No app |
+|---|---|
+| "Overall Information" (43 tarefas, 28 projetos…) | horas estudadas hoje, tópicos do edital, dias com estudo em 7d, pomodoro, revisados |
+| Progresso semanal (linha suave) | minutos por dia, segunda→domingo, do `diary.study` — **dia futuro/sem registro é `null`** (a linha quebra) |
+| Meta mensal 120% + "Baixar Relatório" | horas do mês ÷ meta derivada do "ideal" das metas de Estudo; o botão gera o **PDF real** (`exportPdf`) |
+| Metas do mês (Ler 2 livros…) | metas reais da área **Estudo** com `toggleTask` (bloqueado se o dia está fechado) |
+| Post-its "Em andamento" | os **blocos de estudo**; ⋯ abre Fixar / Editar / Excluir (excluir desabilitado no último) |
+| "+ Adicionar tarefa" tracejado | cria bloco e abre o cadastro |
+| Cursos ativos com anel | minutos por matéria (14 dias) com anel proporcional ao topo |
+
+### Regra 4 é o ponto sensível aqui
+
+"Desempenho" era o card que a referência mostra como número sempre presente. No app ele **só aparece
+com ≥ 3 dias com estudo e minutos previstos**; com 2 dias a tela escreve: *"Sem dado suficiente: precisa
+de 3+ dias com estudo… Não vou afirmar desempenho com 2 dia(s)."* Há teste para os dois lados (2 dias e
+5 dias). A meta mensal sem alvo cadastrado diz "Sem meta", nunca 0%.
+
+### O que ficou de fora
+
+Sidebar de navegação, "Hi, Dilan!", busca global e notificações do topo (o app tem abas), e os números
+da referência. O card de clima/perfil/"Priorities" não são estudos.
+
+### Verificação
+
+- 11 checagens novas de tela só para Estudos: vazio não afirma desempenho, sem NaN, 2 dias → "Sem dado
+  suficiente", 5 dias → 100% real, meta sem alvo ≠ 0%, checklist só com metas da área Estudo.
+- 105 telas (21 × 4 cenários + 7 de Finanças + 11 de Estudos), 503 lógica, 62 store, 42 renders.
+- Preview fiel: `docs/design/estudo-preview.html` (`PREVIEW_ESTUDO=1 npm run test:screens`).
+
 ## Dados (AsyncStorage)
 
 Todas as chaves do briefing existem ✅ + extras declarados: `ayanokoji`, `weeklyFocus`,
@@ -481,7 +520,7 @@ agora são reagendados 1× por dia, não a cada edição).
 - `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
-- `node scripts/render-screens-smoke.mjs` → **94/94** (21 telas × 3 cenários: com histórico, primeiro uso
+- `node scripts/render-screens-smoke.mjs` → **105/105** (21 telas × 3 cenários: com histórico, primeiro uso
   e **dados corrompidos** — `null`/`NaN`/texto de backup antigo)
 - `npx expo export --platform web` → bundle OK; preview respondendo 200
 - `npx expo prebuild -p android` → `Prime.java` + `Constancia.java`,
