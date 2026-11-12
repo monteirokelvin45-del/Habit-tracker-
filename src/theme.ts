@@ -45,6 +45,11 @@ export interface Palette {
   neonDeep?: string;
   /** Cor de texto sobre o acento neon (contraste). */
   onNeon?: string;
+  /**
+   * Luz ambiente do rodapé (o "glow" da referência do Copilot). Só os temas
+   * novos declaram; os antigos ficam sem, e a tela usa `accent()`.
+   */
+  ambient?: string;
   /** 6 tons da escala de score (heatmap / anel / waffle). */
   scale: [string, string, string, string, string, string];
 }
@@ -293,6 +298,46 @@ export const THEMES: Record<ThemeId, { label: string; swatch: string; palette: P
       neonDeep: '#84CC16',
       onNeon: '#0D0E12',
       scale: ['#1B1F26', '#3F4A2E', '#5C6B33', '#7C8F33', '#A3E635', '#BEF264'],
+    },
+  },
+  /**
+   * LIX — a atmosfera do Copilot. Vem DEPOIS dos outros de propósito: a
+   * identidade da tela de IA é fixa (`components/Lix.tsx`), mas quem quiser o
+   * app inteiro no mesmo clima escuro com luz turquesa escolhe este tema no
+   * Perfil. Nenhum tema existente muda de valor.
+   */
+  copilot: {
+    label: 'LIX Ambient',
+    swatch: '#38BDF8',
+    palette: {
+      bgPrimary: '#070A10',
+      bgCard: '#0F1520',
+      bgElevated: '#151D2A',
+      bgInput: '#0B111B',
+      bgSubtle: '#0E141F',
+      green: '#34D399',
+      greenNeon: '#6EE7B7',
+      red: '#F87171',
+      yellow: '#FBBF24',
+      purple: '#8B5CF6',
+      orange: '#FB923C',
+      blue: '#38BDF8',
+      cyan: '#2DD4BF',
+      pink: '#F472B6',
+      textPrimary: '#FFFFFF',
+      textSecondary: '#C2CBD8',
+      textMuted: '#8A94A6',
+      textFaint: '#4A5464',
+      border: 'rgba(255,255,255,0.09)',
+      borderAccent: 'rgba(56,189,248,0.40)',
+      interactive: '#38BDF8',
+      track: '#1A2331',
+      black: '#05070C',
+      neon: '#38BDF8',
+      neonDeep: '#0EA5E9',
+      onNeon: '#05070C',
+      ambient: '#2DD4BF',
+      scale: ['#101722', '#16324A', '#1B4E6E', '#1E7BA0', '#22A6C9', '#7EE7F5'],
     },
   },
 };

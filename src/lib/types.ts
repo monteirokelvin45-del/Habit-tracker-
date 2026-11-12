@@ -191,7 +191,16 @@ export interface WeightEntry {
   };
 }
 
-export type ThemeId = 'emerald' | 'golden' | 'cyberpunk' | 'ocean' | 'neonBlue' | 'softGlass' | 'fitPulse';
+export type ThemeId =
+  | 'emerald'
+  | 'golden'
+  | 'cyberpunk'
+  | 'ocean'
+  | 'neonBlue'
+  | 'softGlass'
+  | 'fitPulse'
+  /** Atmosfera do AI Copilot (escuro com luz turquesa). */
+  | 'copilot';
 
 export interface Settings {
   /** Tema visual ativo (Perfil → Aparência). */
@@ -221,6 +230,15 @@ export interface Settings {
    * número completo, validade nem CVV, e não envia nada para servidor.
    */
   cardLast4?: string;
+  /**
+   * Meta de água em copos de 250 ml. O app NÃO calcula necessidade hídrica
+   * (depende de peso, clima e treino): sem este número, a tela mostra "Sem dado".
+   */
+  waterGoalCups?: number;
+  /** Distribuição de macros declarada (%) — referência da pessoa, não cálculo. */
+  proteinPct?: number;
+  carbsPct?: number;
+  fatPct?: number;
 }
 
 export interface BadgeState {

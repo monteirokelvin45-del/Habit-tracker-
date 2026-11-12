@@ -287,6 +287,52 @@ export default function ProfileScreen() {
             onPress={() => void openAppLimits().then((r) => setNote(r.message))}
           />
           <Field
+            label="Meta de água (copos de 250 ml)"
+            value={store.settings.waterGoalCups ? String(store.settings.waterGoalCups) : ''}
+            placeholder="ex.: 8"
+            onChangeText={(t) => {
+              const v = Number(t.replace(/\D/g, ''));
+              // Faixa plausível: 1–40 copos (250 ml–10 L). Fora disso é digitação,
+              // não meta — e o app não deve fixar valor por conta própria.
+              store.updateSettings({ waterGoalCups: v >= 1 && v <= 40 ? Math.round(v) : undefined });
+            }}
+            keyboardType="number-pad"
+          />
+          <Field
+            label="Proteína (%)"
+            value={store.settings.proteinPct ? String(store.settings.proteinPct) : ''}
+            placeholder="ex.: 30"
+            onChangeText={(t) => {
+              const v = Number(t.replace(/\D/g, ''));
+              store.updateSettings({ proteinPct: v >= 0 && v <= 100 ? Math.round(v) : undefined });
+            }}
+            keyboardType="number-pad"
+          />
+          <Field
+            label="Carboidrato (%)"
+            value={store.settings.carbsPct ? String(store.settings.carbsPct) : ''}
+            placeholder="ex.: 45"
+            onChangeText={(t) => {
+              const v = Number(t.replace(/\D/g, ''));
+              store.updateSettings({ carbsPct: v >= 0 && v <= 100 ? Math.round(v) : undefined });
+            }}
+            keyboardType="number-pad"
+          />
+          <Field
+            label="Gordura (%)"
+            value={store.settings.fatPct ? String(store.settings.fatPct) : ''}
+            placeholder="ex.: 25"
+            onChangeText={(t) => {
+              const v = Number(t.replace(/\D/g, ''));
+              store.updateSettings({ fatPct: v >= 0 && v <= 100 ? Math.round(v) : undefined });
+            }}
+            keyboardType="number-pad"
+          />
+          <Muted>
+            Água e macros são metas que VOCÊ declara. O app não calcula necessidade hídrica nem nutricional —
+            sem esses números, o Copilot pergunta em vez de chutar.
+          </Muted>
+          <Field
             label="Meta de sono (horas)"
             value={String(store.settings.sleepGoalHours)}
             onChangeText={(t) => {

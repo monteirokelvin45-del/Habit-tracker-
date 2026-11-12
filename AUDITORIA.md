@@ -3,7 +3,7 @@
 Verificação item por item do que foi pedido contra o que existe no repositório.
 Legenda: ✅ feito e verificado · 🟡 feito com desvio justificado · ❌ não feito (motivo).
 
-**Versão auditada: 1.5.1 (`versionCode` 9).** Suítes desta rodada: **622** de lógica, **62** de store,
+**Versão auditada: 1.6.0 (`versionCode` 10).** Suítes desta rodada: **688** de lógica, **62** de store,
 **42** de render e **154** de tela — todas verdes; `tsc` limpo com e sem `--noUnusedLocals`.
 
 ---
@@ -393,8 +393,8 @@ peças ficam em `src/components/FitPulse.tsx`. Como a Home, este módulo **segue
   volume 1160 kg de 10×60+8×70, e nenhum número da vitrine (128, 12.450, 78%, 22,4).
 - Tema `fitPulse`: fundo `#0D0E12`, card `#13151A`, contraste medido — **branco sobre o lima dá
   1.6:1**, por isso `onNeon` é escuro.
-- **154 telas** (21 × 4 cenários + 11 Estudos + 7 Finanças + 9 Home + 27 de Treino + telas descobertas
-  no disco), **622 lógica**, 62 store, 42 renders. Preview: `docs/design/treino-preview.html`
+- **154 telas** (21 × 4 cenários + 11 Estudos + 7 Finanças + 9 Home + 27 de Treino + Copilot e as telas
+  descobertas no disco), **688 lógica**, 62 store, 42 renders. Preview: `docs/design/treino-preview.html`
   (`PREVIEW_TREINO=1 npm run test:screens`).
 
 ## Home — "Soft Light Glass" (Management / Coders)
@@ -540,6 +540,55 @@ Testes que guardam essas correções:
   ficavam fora da lista (`importar`, `onboarding`, splash), agora descobertas no disco: pega crash em
   runtime, tela vazia e `NaN`/`undefined` visível.
 
+## AI Copilot / LIX AI — a tela central de assistência
+
+Tela nova (`app/(tabs)/copilot.tsx`), acessível pela barra de abas e pelo botão ✦ da Home.
+Desenho tirado da referência: coluna de navegação à esquerda, orbe no topo, saudação → título →
+subtítulo, caixa de entrada com Importar arquivo / Ferramentas / enviar, e três cards de ação rápida.
+
+### O que o assistente faz — e onde ele termina
+
+| Capacidade pedida | Como está implementado | Limite declarado na própria tela |
+|---|---|---|
+| Ler texto bruto e extrair hábitos, horários e metas | `parseRoutine` + `parseHour`/`parseMinutes` (`lib/copilot.ts`) | item **sem horário não é agendado**: aparece em "sem horário, não dá para colocar na timeline" |
+| Agendar na timeline do dia | horário entra como `scheduleOverrides` (ajuste de sugestão) | a timeline nunca é apresentada como registro de execução |
+| Sugestões diárias por desempenho/streak | `dailySuggestions` + `areaStreaks` (sequência **por área**, a partir das tarefas) | sem histórico suficiente a sugestão é "fechar o dia", não um elogio |
+| Ficha de treino (séries, reps, carga) | `buildWorkout` com biblioteca de exercícios + carga da última sessão | sem histórico a carga fica `null` e a tela escreve "carga a definir" |
+| Metas de água, calorias e macros | `waterCupsFor`/`macroSplit` leem o que a pessoa **declarou** no Perfil | sem declaração: `null` → pergunta o dado. **Kcal nunca é calculada** |
+| Cronograma de estudo por matéria | `buildStudyPlan` + leitura do edital (`topicsPerDayNeeded`, `nextTopic`) | sem data de prova, pede a data em vez de calcular tópicos/dia |
+| Categorizar gastos e recomendar economia | `buildFinancePlan` + `categorize` (categorias reais do app) | item sem valor fica `null` e é perguntado; nada é lançado sem número |
+| Upload de arquivo → dados | botão "Importar arquivo" leva ao `importar.tsx` existente (JSON/plano/backup) | PDF continua não sendo lido — o app diz isso em vez de fingir extração |
+| Conversa e comandos rápidos | `respond()` roteia por módulo (rotina, treino, estudo, finanças, dieta, resumo) | respostas usam só `AppData` + o texto colado |
+
+### Decisões de honestidade (as que dão trabalho)
+
+1. **Nada sai do aparelho.** Não existe API de IA no app e o motor é 100% local. Mandar os registros da
+   pessoa para um servidor sem ela pedir seria o oposto da promessa do MY PRIME — então o "copilot" é
+   um motor de regras + parser, e a tela diz "Roda no aparelho · seus dados não saem daqui".
+2. **Plano ≠ registro.** O assistente monta o plano e ele aparece em cartão com botão **Aplicar**. Só
+   depois a pessoa confirma é que `applyCopilot` chama as ações do store (que já barram dia fechado).
+3. **Quando falta dado, ele pergunta.** `gaps` é parte do contrato da resposta: sem meta de água, sem
+   macros, sem data de prova, sem exercício com histórico — cada um vira uma pergunta em âmbar na tela.
+4. **Meta de água declarada pelo plano é anunciada.** Se a pessoa aplica "8 copos" e ainda não tinha meta,
+   o app grava a meta **e avisa** ("você declarou; ajuste no Perfil"), em vez de mudar configuração em silêncio.
+5. **Nada da vitrine entra.** Um teste varre as respostas e reprova `Hendricks`, `Dilan`, `12.450`, `78%`,
+   `22.4`, `5kg`.
+
+### Verificação
+
+- **63 asserções novas** do Copilot: horário em 5 formatos (+ `null` quando não há e hora inválida 25h),
+  duração ("30 min", "1h30", "45 minutos"), roteamento de módulo, área, rotina com e sem horário, streak
+  por área (3 vs 1), ficha com e sem histórico (carga `null` vs 62 kg da sessão), finanças (categoriza
+  mercado/uber, item sem valor perguntado), estudo sem data de prova, recusas do "Aplicar" (meta
+  duplicada, dia fechado, gasto sem valor), limite de 40 copos e não-vazamento da vitrine.
+- **Contraste medido da identidade própria**: `Lix.tsx` é lido pelo teste, e 6 pares são medidos —
+  `ink` 17:1, `body` 11:1, `muted` 6,1:1 e `accent` 8,6:1 sobre o card sólido `#111926`; `faint` (rodapé)
+  3,5:1; branco sobre o fundo 18:1. O card começou como `rgba(...)` e foi trocado por cor sólida porque
+  alfa compõe com a luz ambiente e o contraste deixa de ser previsível.
+- **Tema novo `copilot`** ("LIX Ambient") em Perfil → Aparência: os 7 temas anteriores não mudaram de
+  valor, e o teste de contraste dos temas passa nos 8.
+- Preview: `docs/design/copilot-preview.html` (`PREVIEW_COPILOT=1 npm run test:screens`).
+
 ## Auditoria v1.5.1 — dado degradado, boot e acessibilidade
 
 Segunda varredura, feita com o app já em 1.5.0. Método igual: primeiro o defeito é **reproduzido**
@@ -649,7 +698,7 @@ agora são reagendados 1× por dia, não a cada edição).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals --noUnusedParameters`)
-- `node scripts/run-logic-tests.mjs` → **622/622** (modos, score, streaks, cobrança, gate de 7 dias,
+- `node scripts/run-logic-tests.mjs` → **688/688** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
 - `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,

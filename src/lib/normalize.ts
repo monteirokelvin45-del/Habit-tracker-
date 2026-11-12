@@ -75,7 +75,17 @@ export function timeOfDay(value: unknown, fallback: string): string {
 
 /* ───────────────────────────── modelos ───────────────────────────── */
 
-export const THEME_IDS = ['emerald', 'golden', 'cyberpunk', 'ocean', 'neonBlue', 'softGlass', 'fitPulse'] as const;
+export const THEME_IDS = [
+  'emerald',
+  'golden',
+  'cyberpunk',
+  'ocean',
+  'neonBlue',
+  'softGlass',
+  'fitPulse',
+  /** Atmosfera do AI Copilot. */
+  'copilot',
+] as const;
 
 /**
  * Settings: campo por campo, com faixa plausível.
@@ -106,6 +116,12 @@ export function normalizeSettings(raw: unknown, base: Settings): Settings {
     weightGoalKg: numOrNull(s.weightGoalKg, 20, 400) ?? base.weightGoalKg,
     // Altura fora da faixa é dado ilegível: some, e o IMC volta a "Sem dado".
     heightCm: heightRaw ?? undefined,
+    // Meta de água e macros são DECLARADAS pela pessoa: só entram em faixa
+    // plausível, senão a barra de hidratação vira ficção.
+    waterGoalCups: numOrNull(s.waterGoalCups, 1, 40) ?? undefined,
+    proteinPct: numOrNull(s.proteinPct, 0, 100) ?? undefined,
+    carbsPct: numOrNull(s.carbsPct, 0, 100) ?? undefined,
+    fatPct: numOrNull(s.fatPct, 0, 100) ?? undefined,
   };
 }
 

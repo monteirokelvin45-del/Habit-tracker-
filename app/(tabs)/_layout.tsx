@@ -78,6 +78,10 @@ export default function TabsLayout() {
         options={{ title: 'Inteligência', tabBarIcon: ({ focused }) => <TabIcon emoji="🧠" focused={focused} /> }}
       />
       <Tabs.Screen
+        name="copilot"
+        options={{ title: 'Copilot', tabBarIcon: ({ focused }) => <TabIcon emoji="🤖" focused={focused} /> }}
+      />
+      <Tabs.Screen
         name="perfil"
         options={{ title: 'Perfil', tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
       />

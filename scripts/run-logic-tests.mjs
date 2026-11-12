@@ -2101,5 +2101,287 @@ console.log('\n── Cartão de saldo: só 4 dígitos entram ──');
   check('Settings declara só cardLast4 entre os campos de cartão', /cardLast4\?:/.test(fields) && !/cvv|validade|expiry|cardNumber/i.test(fields));
 }
 
+/* ═══════════════ AI Copilot: contraste da identidade própria ═══════════════ */
+
+console.log('\n── AI Copilot: contraste medido (paleta própria) ──');
+{
+  const luminancia = (hex) => {
+    const c = hex.replace('#', '');
+    const v = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
+    const lin = v.map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  };
+  const ratio = (a, b) => {
+    const [l1, l2] = [luminancia(a), luminancia(b)].sort((x, y) => y - x);
+    return (l1 + 0.05) / (l2 + 0.05);
+  };
+  const src = fs.readFileSync(path.join(root, 'src/components/Lix.tsx'), 'utf8');
+  const get = (key) => new RegExp(`\\b${key}: '(#[0-9A-Fa-f]{6})'`).exec(src)?.[1] ?? null;
+  const bg = get('bg');
+  const glass = get('glass');
+
+  check('a paleta do Copilot usa cor sólida no card de vidro', !!glass, String(glass));
+  for (const [key, minimo] of [
+    ['ink', 4.5],
+    ['body', 4.5],
+    ['muted', 4.5],
+    ['accent', 4.5],
+  ]) {
+    const cor = get(key);
+    check(`Copilot: "${key}" sobre o card >= ${minimo}:1`, !!cor && ratio(cor, glass) >= minimo, cor ? `${ratio(cor, glass).toFixed(2)}:1` : 'cor não encontrada');
+  }
+  // O rodapé legal é texto pequeno mas não essencial: 3:1 é o piso aceitável.
+  const faint = get('faint');
+  check('Copilot: "faint" (rodapé) >= 3:1 no card', !!faint && ratio(faint, glass) >= 3, faint ? `${ratio(faint, glass).toFixed(2)}:1` : 'sem');
+  check('Copilot: texto principal sobre o fundo da tela >= 7:1', ratio(get('ink'), bg) >= 7, ratio(get('ink'), bg).toFixed(2) + ':1');
+}
+
+/* ═══════════════ AI Copilot / LIX AI ═══════════════ */
+
+console.log('\n── AI Copilot: streaks por área ──');
+{
+  const cp = await import(path.join(outRoot, 'lib/copilot.mjs'));
+  const day = (date, goalsDone) => ({
+    date,
+    energy: { physical: 5, mental: 5, stress: 5 },
+    mode: 'normal',
+    tasks: goalsDone.map((goalId) => ({ goalId, done: true, note: '' })),
+    diary: { promised: '', done: '', avoided: '', blocked: '', context: {}, correction: '', mood: '', sleep: { hours: 0, quality: 0, blockers: [] }, food: '', focus: 0, temptation: '', relapse: '', smallWin: '', impulseCost: 0, emotions: [] },
+  });
+  const data = {
+    ...{},
+    user: { name: 'X', identity: '', noMore: '', areas: ['Treino', 'Estudo'], createdAt: '2026-01-01' },
+    goals: [
+      { id: 'g-treino', name: 'Treinar', area: 'Treino', priority: 'high', min: '', ideal: '', excellent: '', active: true, createdAt: '2026-01-01' },
+      { id: 'g-estudo', name: 'Estudar', area: 'Estudo', priority: 'normal', min: '', ideal: '', excellent: '', active: true, createdAt: '2026-01-01' },
+    ],
+    days: [day('2026-11-07', ['g-treino']), day('2026-11-08', ['g-treino']), day('2026-11-09', ['g-treino', 'g-estudo'])],
+    settings: {}, badges: [], rules: [], rewards: [], books: [], finances: [], weight: [], emotions: [],
+    ayanokoji: { startDate: '2026-01-01', scores: [], tasksDone: {} }, weeklyFocus: {}, routeAdjustments: {}, onboarded: true,
+  };
+  const streaks = cp.areaStreaks(data);
+  const treino = streaks.find((s) => s.area === 'Treino');
+  const estudo = streaks.find((s) => s.area === 'Estudo');
+  check('sequência de treino conta os 3 dias seguidos', treino?.streak === 3, JSON.stringify(streaks));
+  // Estudo só fez o último dia: a sequência dele é 1, não a do treino.
+  check('sequência de estudo é própria da área (1, não 3)', estudo?.streak === 1, JSON.stringify(estudo));
+}
+
+console.log('\n── AI Copilot: leitura de texto livre ──');
+{
+  const cp = await import(path.join(outRoot, 'lib/copilot.mjs'));
+
+  // Horário: aceita as formas que a pessoa realmente escreve, e NUNCA chuta.
+  check('horário "7h"', cp.parseHour('acordar 7h') === '07:00', String(cp.parseHour('acordar 7h')));
+  check('horário "07:30"', cp.parseHour('07:30 meditar') === '07:30');
+  check('horário "às 19 horas"', cp.parseHour('treinar às 19 horas') === '19:00', String(cp.parseHour('treinar às 19 horas')));
+  check('horário "19h30"', cp.parseHour('treino 19h30') === '19:30', String(cp.parseHour('treino 19h30')));
+  check('sem horário devolve null (não inventa)', cp.parseHour('meditar todos os dias') === null);
+  check('hora inválida (25h) devolve null', cp.parseHour('acordar 25h') === null);
+
+  // Duração
+  check('duração "30 min"', cp.parseMinutes('ler 30 min') === 30);
+  check('duração "1h30"', cp.parseMinutes('estudar 1h30') === 90);
+  check('duração "45 minutos"', cp.parseMinutes('correr 45 minutos') === 45);
+  check('sem duração devolve null', cp.parseMinutes('meditar') === null);
+
+  // Módulo e área
+  check('"leg day" vai para treino', cp.guessModule('montar leg day') === 'treino');
+  check('"edital" vai para estudo', cp.guessModule('organizar edital do concurso') === 'estudo');
+  check('"mercado 300" vai para finanças', cp.guessModule('gastei no mercado') === 'financas');
+  check('área de "supino" é Treino', cp.guessArea('supino e remada') === 'Treino');
+  check('área de "capítulo do livro" é Leitura', cp.guessArea('ler um capítulo do livro') === 'Leitura');
+
+  // Rotina: item com hora entra, item sem hora é declarado (não some em silêncio)
+  const rot = cp.parseRoutine('Acordar 6h e meditar 10min, treinar às 19h, ler um pouco');
+  check('rotina com hora extrai 2 itens', rot.items.length === 2, JSON.stringify(rot.items.map((i) => i.title)));
+  check('rotina sem hora é declarada', rot.withoutHour.length >= 1, JSON.stringify(rot.withoutHour));
+  check('rotina preserva o horário', rot.items[0].hour === '06:00', JSON.stringify(rot.items[0]));
+  check('rotina tira a hora do título', !/6h|19h/.test(rot.items.map((i) => i.title).join(' ')), rot.items.map((i) => i.title).join(' | '));
+}
+
+console.log('\n── AI Copilot: nada de número inventado ──');
+{
+  const cp = await import(path.join(outRoot, 'lib/copilot.mjs'));
+  const base = {
+    onboarded: true,
+    user: { name: 'Dilan', identity: '', noMore: '', areas: ['Treino', 'Estudo'], createdAt: '2026-01-01' },
+    goals: [],
+    days: [],
+    rules: [],
+    rewards: [],
+    books: [],
+    finances: [],
+    weight: [],
+    settings: { morningReminder: '07:00', nightReminder: '22:00', middayCheckin: true, middayTime: '12:30', streakNotification: true, haptics: true, sleepGoalHours: 8, targetDailyScore: 7 },
+    badges: [],
+    ayanokoji: { startDate: '2026-01-01', scores: [], tasksDone: {} },
+    weeklyFocus: {},
+    routeAdjustments: {},
+    emotions: [],
+  };
+  const ctx = { name: 'Dilan', data: base, today: '2026-11-10' };
+
+  // Sem meta de água declarada: a resposta PEDE o dado, não escreve "8 copos".
+  const agua = cp.respond('como está minha hidratação?', ctx);
+  check('hidratação sem meta pede o dado', agua.gaps.some((g) => g.field === 'waterGoal'), JSON.stringify(agua.gaps));
+  check('hidratação sem meta não inventa litros', !/\d+\s*(L|litros)/i.test([agua.text, ...agua.lines, ...agua.notes].join(' ')), [agua.text, ...agua.lines, ...agua.notes].join(' '));
+
+  // Sem macros declarados: pede, não calcula.
+  const macro = cp.respond('quais meus macros?', ctx);
+  check('macros sem declaração pedem o dado', macro.gaps.some((g) => g.field === 'education'), JSON.stringify(macro.gaps));
+  check('macros não viram número calculado', !/\d+\s*g\b/.test([macro.text, ...macro.lines, ...macro.notes].join(' ')));
+
+  // Com meta declarada: aí sim o número aparece, e é o da pessoa.
+  const comMeta = { ...base, settings: { ...base.settings, waterGoalCups: 10, proteinPct: 30, carbsPct: 45, fatPct: 25 } };
+  const agua2 = cp.respond('como está minha hidratação e meus macros?', { name: 'Dilan', data: comMeta, today: '2026-11-10' });
+  check('meta declarada de água aparece', agua2.notes.join(' ').includes('10 copo') && agua2.notes.join(' ').includes('2.5 L'), agua2.notes.join(' | '));
+  check('macros declarados aparecem como declarados', agua2.notes.join(' ').includes('30% proteína'), agua2.notes.join(' | '));
+
+  // Resumo do dia sem registro: diz "sem registro", não zero.
+  const resumo = cp.respond('resumir meu dia', ctx);
+  const resumoTexto = [resumo.text, ...resumo.lines, ...resumo.notes].join(' ');
+  check('resumo sem dia diz que não há registro', /ainda não existe registro/i.test(resumoTexto), resumoTexto);
+  check('resumo não escreve score inventado', !/score.*\d/i.test(resumoTexto.replace(/sem registro/gi, '')), resumoTexto);
+
+  // Treino: sem histórico de carga, `weight` é null (a pessoa preenche).
+  const ficha = cp.respond('montar ficha de treino de pernas', ctx);
+  check('ficha de pernas gerada', ficha.action?.kind === 'workout' && ficha.action.workout.exercises.length >= 4);
+  check('sem histórico, carga é null (nunca 30 kg de exemplo)', ficha.action.workout.exercises.every((e) => e.weight === null));
+  check('ficha não promete kcal', ficha.notes.join(' ').includes('não calcula gasto calórico'), ficha.notes.join(' | '));
+
+  // Com histórico, a carga vem de lá.
+  const comHistorico = {
+    ...base,
+    days: [
+      {
+        date: '2026-11-09',
+        energy: { physical: 5, mental: 5, stress: 5 },
+        mode: 'normal',
+        tasks: [],
+        diary: {
+          promised: '', done: '', avoided: '', blocked: '', context: { where: '', when: '', distraction: '', trigger: '' },
+          correction: '', mood: '', sleep: { hours: 0, quality: 0, blockers: [] }, food: '', focus: 0, temptation: '',
+          relapse: '', smallWin: '', impulseCost: 0, emotions: [],
+          workout: { date: '2026-11-09', label: 'Pernas', exercises: [{ name: 'Agachamento livre', sets: [{ reps: 8, weight: 62, done: true }] }] },
+        },
+      },
+    ],
+  };
+  const ficha2 = cp.respond('ficha de treino de pernas', { name: 'Dilan', data: comHistorico, today: '2026-11-10' });
+  const agacho = ficha2.action.workout.exercises.find((e) => /agachamento livre/i.test(e.name));
+  check('carga vem da última sessão registrada', agacho?.weight === 62, JSON.stringify(agacho));
+
+  // Finanças: valor só entra se existir; item sem número é pedido.
+  const fin = cp.respond('mercado 320, uber 80, cinema', ctx);
+  check('finanças categoriza mercado', fin.action.items.some((i) => i.category === 'Alimentação'));
+  check('finanças categoriza uber', fin.action.items.some((i) => i.category === 'Transporte'));
+  check('item sem valor fica null e é perguntado', fin.action.items.some((i) => i.amount === null) && fin.gaps.length > 0, JSON.stringify(fin.action.items));
+
+  // Estudo: sem data de prova, pede a data em vez de calcular tópicos/dia.
+  const est = cp.respond('organizar estudo: Direito 40min, Português 30min', ctx);
+  check('estudo cria 2 matérias', est.action?.kind === 'study' && est.action.items.length === 2, JSON.stringify(est.action));
+  check('estudo sem data de prova pede a data', est.gaps.some((g) => g.field === 'examDate'), JSON.stringify(est.gaps));
+
+  // Nenhuma palavra da vitrine da referência pode aparecer.
+  const tudo = JSON.stringify([resumo, ficha, fin, est, agua2]).toLowerCase();
+  for (const banned of ['hendricks', 'dilan', '12.450', '78%', '22.4', '5kg']) {
+    check(`não vaza "${banned}" nas respostas`, !tudo.includes(banned.toLowerCase()), banned);
+  }
+}
+
+console.log('\n── AI Copilot: aplicar plano ──');
+{
+  const cp = await import(path.join(outRoot, 'lib/copilot.mjs'));
+  const apply = await import(path.join(outRoot, 'lib/copilotApply.mjs'));
+
+  const calls = [];
+  const store = {
+    user: { name: 'Dilan', identity: '', noMore: '', areas: [], createdAt: '2026-01-01' },
+    goals: [],
+    days: [],
+    upsertGoal: (g) => { calls.push(['goal', g.name]); store.goals = [...store.goals, g]; },
+    patchDiary: (date, patch) => { calls.push(['diary', date, Object.keys(patch)]); },
+    addFinance: (e) => calls.push(['fin', e.amount, e.category]),
+    settings: {},
+    ensureDay: (date) => ({ date, energy: { physical: 5, mental: 5, stress: 5 }, mode: 'normal', tasks: [], diary: {} }),
+    updateSettings: (patch) => { calls.push(['settings', patch]); Object.assign(store.settings, patch); },
+    setScheduleOverride: (date, key, hour) => { calls.push(['override', date, key, hour]); },
+  };
+
+  const metas = apply.applyCopilot(
+    { kind: 'goals', items: [{ name: 'Meditar', area: 'Espiritualidade', priority: 'normal', min: '5min', ideal: '10min', excellent: '15min' }] },
+    store,
+  );
+  check('aplicar meta grava a meta', metas.applied.length === 1 && calls.some((c) => c[0] === 'goal'), JSON.stringify(metas));
+
+  // Meta duplicada não duplica.
+  const again = apply.applyCopilot(
+    { kind: 'goals', items: [{ name: 'meditar', area: 'Espiritualidade', priority: 'normal', min: '5min', ideal: '10min', excellent: '15min' }] },
+    store,
+  );
+  check('meta repetida é recusada com motivo', again.applied.length === 0 && again.skipped[0].includes('já existe'), JSON.stringify(again));
+
+  // Treino aplicado preserva carga null.
+  let patch = null;
+  const store2 = { ...store, patchDiary: (d, p) => { patch = p; } };
+  apply.applyCopilot(
+    { kind: 'workout', workout: { label: 'Treino Pernas', exercises: [{ name: 'Agachamento livre', sets: 4, reps: 8, weight: null, restSec: 90 }] } },
+    store2,
+    '2026-11-10',
+  );
+  check('aplicar ficha preserva carga desconhecida como null', patch?.workout.exercises[0].sets.every((s) => s.weight === null), JSON.stringify(patch?.workout?.exercises?.[0]));
+  check('aplicar ficha cria o número de séries pedido', patch?.workout.exercises[0].sets.length === 4);
+
+  // Dia fechado recusa.
+  const fechado = { ...store, ensureDay: (date) => ({ date, closedAt: '2026-11-10T22:00:00', energy: {}, mode: 'normal', tasks: [], diary: {} }) };
+  const rec = apply.applyCopilot(
+    { kind: 'water', water: { cups: 8 } },
+    fechado,
+    '2026-11-10',
+  );
+  check('dia fechado recusa escrita', rec.applied.length === 0 && rec.skipped[0].includes('fechado'), JSON.stringify(rec));
+
+  // Finança sem valor não é lançada.
+  const semValor = apply.applyCopilot(
+    { kind: 'finance', items: [{ category: 'Lazer', amount: null, type: 'expense' }], split: null },
+    { ...store, addFinance: () => { throw new Error('não devia gravar'); } },
+  );
+  check('gasto sem valor não é lançado', semValor.applied.length === 0 && semValor.skipped[0].includes('sem valor'), JSON.stringify(semValor));
+
+  // Meta de água sem declaração: vira declaração e a tela é avisada.
+  const storeAgua = {
+    ...store,
+    settings: {},
+    patchDiary: () => {},
+    updateSettings: (p) => Object.assign(storeAgua.settings, p),
+  };
+  const decl = apply.applyCopilot({ kind: 'water', water: { cups: 7 } }, storeAgua);
+  check(
+    'plano de água declara a meta quando ela não existe',
+    decl.declared === true && storeAgua.settings.waterGoalCups === 7,
+    JSON.stringify([decl.declared, storeAgua.settings]),
+  );
+
+  // Rotina: horário declarado entra como AJUSTE de timeline, nunca como registro.
+  const overrides = [];
+  const storeRotina = { ...store, goals: [], patchDiary: () => {}, setScheduleOverride: (d, k, h) => overrides.push([d, k, h]) };
+  const rotina = apply.applyCopilot(
+    {
+      kind: 'goals',
+      items: [{ name: 'Meditar', area: 'Espiritualidade', priority: 'normal', min: '5min', ideal: '10min', excellent: '15min', hour: '07:00' }],
+    },
+    storeRotina,
+    '2026-11-10',
+  );
+  check('hábito com horário gera ajuste de timeline', overrides.length === 1 && overrides[0][2] === '07:00', JSON.stringify(overrides));
+  check('aplicar rotina relata o horário', rotina.applied.some((a) => a.includes('07:00')), JSON.stringify(rotina.applied));
+
+  // Água limitada a faixa plausível.
+  const agua = apply.applyCopilot({ kind: 'water', water: { cups: 999 } }, store2);
+  check('meta de água é limitada a 40 copos', patch?.waterCups === 40, String(patch?.waterCups));
+  void agua;
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passaram, ${fail} falharam\n`);
 process.exit(fail === 0 ? 0 : 1);

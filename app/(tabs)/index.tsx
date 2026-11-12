@@ -445,6 +445,12 @@ export default function TodayScreen() {
               </Txt>
             </View>
             <Row gap={8} style={{ alignItems: 'center' }}>
+              <GlassChip
+                label="✦"
+                round
+                accessibilityLabel="Pedir ao AI Copilot"
+                onPress={() => router.push('/(tabs)/copilot')}
+              />
               <GlassChip label="＋" round accessibilityLabel="Criar" onPress={() => setQuickOpen(true)} />
               <GlassChip
                 label="⌕"

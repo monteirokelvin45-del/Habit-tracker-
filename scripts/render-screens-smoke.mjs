@@ -1160,6 +1160,48 @@ if (process.env.PREVIEW_HOME) {
  * `PREVIEW_TREINO=1 npm run test:screens` grava `docs/design/treino-preview.html`.
  * Aplica o tema `fitPulse` (preto + verde lima) antes de renderizar.
  */
+/* ─────── Preview opcional do Copilot ───────
+ * `PREVIEW_COPILOT=1 npm run test:screens` grava `docs/design/copilot-preview.html`.
+ */
+if (process.env.PREVIEW_COPILOT) {
+  try {
+    const copy = await withStore('app/(tabs)/copilot.js', 'preview-copilot', {
+      ...cheio,
+      user: { ...cheio.user, name: 'Kelvin' },
+      settings: { ...cheio.settings, waterGoalCups: 9 },
+      days: [
+        ...cheio.days.slice(0, 4),
+        {
+          ...cheio.days[4],
+          date: key(0),
+          tasks: [
+            { goalId: 'g1', done: true, note: '' },
+            { goalId: 'g2', done: false, note: '' },
+          ],
+          diary: { ...cheio.days[4].diary, waterCups: 5 },
+        },
+      ],
+    });
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const body = renderToStaticMarkup(React.createElement(Screen));
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MY PRIME · AI Copilot (preview)</title>
+<style>
+  html,body{margin:0;background:#03050A;}
+  body{display:flex;justify-content:center;padding:24px 0;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;}
+  #app{width:412px;min-height:900px;background:#070A10;border-radius:36px;overflow:hidden;
+       border:1px solid rgba(255,255,255,.09);box-shadow:0 0 90px rgba(45,212,191,.20);}
+  #app *{box-sizing:border-box;}
+</style></head><body><div id="app">${body}</div></body></html>`;
+    fs.mkdirSync(path.join(root, 'docs/design'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'docs/design/copilot-preview.html'), html);
+    console.log('\npreview: docs/design/copilot-preview.html');
+  } catch (e) {
+    console.error('preview falhou:', e.message);
+  }
+}
+
 if (process.env.PREVIEW_TREINO) {
   try {
     const themeMod = await import(pathToFileURL(path.join(outRoot, 'src/theme.js')).href);
