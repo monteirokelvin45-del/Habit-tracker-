@@ -81,6 +81,33 @@ export function bucketOf(category: string): BucketKey {
  * `income` é a soma das receitas do mês. Sem receita, todo alvo é `null` — a
  * tela mostra "Sem dado", nunca zero silencioso.
  */
+/** Soma segura de um lançamento (texto/nulo não viram NaN). */
+export function amountOf(entry: { amount?: unknown }): number {
+  const raw = entry?.amount;
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.replace(',', '.').trim()) : Number.NaN;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Receita do período — SÓ `type: 'income'`.
+ *
+ * Existia uma versão local na tela que somava todos os lançamentos e alimentava
+ * um cartão chamado "Renda {ano}": receita de 1.000 com despesa de 400 aparecia
+ * como 1.400. Aqui a regra é única e testada.
+ */
+export function incomeOf(entries: FinanceEntry[]): number {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((e) => e && e.type === 'income')
+    .reduce((sum, e) => sum + amountOf(e), 0);
+}
+
+/** Despesa do período — SÓ `type: 'expense'`. */
+export function expenseOf(entries: FinanceEntry[]): number {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((e) => e && e.type === 'expense')
+    .reduce((sum, e) => sum + amountOf(e), 0);
+}
+
 export function bucketTargets(
   entries: FinanceEntry[],
   monthKey: string,

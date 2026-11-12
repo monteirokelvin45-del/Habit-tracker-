@@ -48,6 +48,8 @@ import {
   DEFAULT_SPLIT,
   bucketOf,
   bucketTargets,
+  expenseOf,
+  incomeOf,
   daysUntilFirstWant,
   impulseCostInFutureDays,
   paydayCheck,
@@ -99,11 +101,8 @@ export default function FinanceScreen() {
 
   /* ───────────────────────────── números do mês ───────────────────────────── */
 
-  const incomeOf = (list: typeof monthEntries) =>
-    list.filter((f) => f.type === 'income').reduce((a, b) => a + money(b.amount), 0);
-  const expenseOf = (list: typeof monthEntries) =>
-    list.filter((f) => f.type === 'expense').reduce((a, b) => a + money(b.amount), 0);
-
+  // Regra de receita/despesa mora na lib (`incomeOf`/`expenseOf`), testada lá.
+  // A versão local desta tela somava TUDO no cartão "Renda {ano}".
   const monthIncome = incomeOf(monthEntries);
   const monthExpense = expenseOf(monthEntries);
 
@@ -170,16 +169,20 @@ export default function FinanceScreen() {
     },
   ];
 
-  // Barras anuais: 12 meses do ano corrente. O destaque é o mês visto.
+  /**
+   * Barras anuais: 12 meses do ano corrente, só de RECEITA.
+   *
+   * O card se chama "Renda {ano}", então somar receita + despesa (o que a versão
+   * anterior fazia, com todos os lançamentos) imprime um número que não é renda.
+   * Mês sem lançamento é `null` (barra oca), não R$ 0.
+   */
   const yearBars = useMemo(() => {
     const year = todayKey().slice(0, 4);
     return Array.from({ length: 12 }).map((_, i) => {
       const key = `${year}-${String(i + 1).padStart(2, '0')}`;
-      const total = store.finances
-        .filter((f) => f.date.startsWith(key))
-        .reduce((a, b) => a + money(b.amount), 0);
-      const count = store.finances.filter((f) => f.date.startsWith(key)).length;
-      return { month: MONTHS_SHORT[i] ?? key, value: count === 0 ? null : total, key };
+      const entries = store.finances.filter((f) => f.date.startsWith(key));
+      const income = incomeOf(entries);
+      return { month: MONTHS_SHORT[i] ?? key, value: entries.length === 0 || income <= 0 ? null : income, key };
     });
   }, [store.finances]);
   const yearTotal = yearBars.reduce((a, b) => a + (b.value ?? 0), 0);

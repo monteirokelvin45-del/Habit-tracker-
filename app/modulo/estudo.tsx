@@ -146,16 +146,27 @@ export default function EstudoScreen() {
 
   /* ─────────────────────────── dados derivados ─────────────────────────── */
 
+  /**
+   * Minutos por matéria nos últimos 14 dias.
+   *
+   * Janela por DATA: `slice(-14)` pegava os 14 últimos REGISTROS, que num
+   * histórico com buracos pode ser o mês passado. Dia sem bloco de estudo fica
+   * fora (não vira 0 min).
+   */
   const bySubject = useMemo(() => {
     const map = new Map<string, number>();
-    for (const d of store.days.slice(-14)) {
-      for (const b of (d.diary.study ?? []) as StudyBlock[]) {
-        if (!b.subject.trim()) continue;
-        map.set(b.subject, (map.get(b.subject) ?? 0) + b.doneMinutes);
+    const from = addDays(today, -13);
+    for (const d of store.days) {
+      if (d.date < from || d.date > today) continue;
+      const blocks = Array.isArray(d.diary.study) ? (d.diary.study as StudyBlock[]) : [];
+      for (const b of blocks) {
+        if (!b || typeof b.subject !== 'string' || !b.subject.trim()) continue;
+        const minutes = Number.isFinite(Number(b.doneMinutes)) ? Number(b.doneMinutes) : 0;
+        map.set(b.subject, (map.get(b.subject) ?? 0) + minutes);
       }
     }
     return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [store.days]);
+  }, [store.days, today]);
 
   /** Minutos por dia da semana atual (segunda → domingo). */
   const weekSeries = useMemo(() => {

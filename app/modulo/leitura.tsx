@@ -33,12 +33,21 @@ export default function LeituraScreen() {
   const day = store.days.find((d) => d.date === today);
   const diary = (day?.diary ?? {}) as { book?: BookProgress };
 
+  /**
+   * Livro em andamento.
+   *
+   * O padrão é o livro que já existe na biblioteca da pessoa (com o total de
+   * páginas DELA). Antes o fallback criava um livro com `totalPages: 350` — um
+   * número inventado que aparecia como "pág. 0 de 350" e "0%" para quem nunca
+   * cadastrou livro nenhum.
+   */
+  const firstBook = store.books.find((b) => !b.finished);
   const [book, setBook] = useState<BookProgress>(
     diary.book ?? {
-      title: store.books.find((b) => !b.finished)?.title ?? '',
-      author: '',
-      totalPages: 350,
-      currentPage: 0,
+      title: firstBook?.title ?? '',
+      author: firstBook?.author ?? '',
+      totalPages: firstBook?.totalPages ?? 0,
+      currentPage: firstBook?.currentPage ?? 0,
       todayPages: 0,
     },
   );
@@ -113,16 +122,19 @@ export default function LeituraScreen() {
                 placeholderTextColor={colors.textMuted}
                 style={{ color: colors.textSecondary, fontSize: 13 }}
               />
-              <Badge label={`pág. ${book.currentPage} de ${book.totalPages}`} color={colors.cyan} />
+              <Badge
+                label={book.totalPages > 0 ? `pág. ${book.currentPage} de ${book.totalPages}` : 'total de páginas não informado'}
+                color={colors.cyan}
+              />
             </View>
           </Row>
 
           <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.track, overflow: 'hidden' }}>
-            <View style={{ height: 6, width: `${percent * 100}%`, backgroundColor: colors.cyan }} />
+            <View style={{ height: 6, width: `${(percent ?? 0) * 100}%`, backgroundColor: colors.cyan }} />
           </View>
           <Row style={{ justifyContent: 'space-between' }}>
             <Txt variant="caption" color={colors.cyan}>
-              {Math.round(percent * 100)}%
+              {percent == null ? 'Sem dado' : `${Math.round(percent * 100)}%`}
             </Txt>
             <Txt variant="micro" color={colors.textMuted} style={{ letterSpacing: 0 }}>
               {estimate.label}
@@ -146,7 +158,7 @@ export default function LeituraScreen() {
                 {speed == null ? 'velocidade: sem dado' : `${speed} pág/dia`}
               </Txt>
               <Txt variant="micro" color={colors.textMuted} style={{ letterSpacing: 0 }}>
-                {book.totalPages - book.currentPage} páginas restantes
+                {book.totalPages > 0 ? `${Math.max(0, book.totalPages - book.currentPage)} páginas restantes` : 'páginas restantes: sem dado'}
               </Txt>
             </View>
           </Row>

@@ -173,6 +173,31 @@ export function goalStreak(days: Day[], goalId: string, end: string | null = tod
   return streak;
 }
 
+/**
+ * O que conta como "DIA CUMPRIDO" em todo o app.
+ *
+ * Antes havia duas réguas: Home e Constância usavam `>= 6`, enquanto
+ * Recorde/sequência em Gráficos e Revisões usavam `> 5`. O resultado era a mesma
+ * base de dados produzindo "recorde 5d" numa tela e "recorde 8" noutra. Agora a
+ * régua tem nome, mora aqui e os dashboards importam — quem lê o app não vê dois
+ * números diferentes para a mesma pergunta.
+ *
+ * `6` é o piso de "Consistente" no rótulo do score (`scoreLabel`), então é o
+ * valor que corresponde ao texto que a própria tela mostra.
+ */
+export const DAY_FULFILLED_SCORE = 6;
+
+/** `true` quando o dia fechado conta como cumprido (score >= 6). */
+export function isFulfilledDay(day: Pick<Day, 'score'> | undefined): boolean {
+  return (day?.score?.total ?? 0) >= DAY_FULFILLED_SCORE;
+}
+
+/** Score do dia normalizado para 0..1 (usado em barras e anéis). `null` sem score. */
+export function scoreRatio(score: number | null | undefined): number | null {
+  if (score == null || !Number.isFinite(score)) return null;
+  return Math.max(0, Math.min(1, score / 10));
+}
+
 export function generalStreak(days: Day[], end: string | null = todayKey()): number {
   const map = new Map(days.map((d) => [d.date, d]));
   if (!end) return 0;
@@ -189,7 +214,7 @@ export function generalStreak(days: Day[], end: string | null = todayKey()): num
       }
       break;
     }
-    if (day.score.total > 5) streak++;
+    if (isFulfilledDay(day)) streak++;
     else break;
     cursor = addDays(cursor, -1);
   }
@@ -285,6 +310,37 @@ export function computeScore({ day, goals, previousDays }: ScoreInput): ScoreBre
     progress: r1(progress),
     total: r1(Math.max(0, Math.min(10, total))),
   };
+}
+
+/**
+ * Resumo de score por DATA — o que os dashboards mostram no topo do dia.
+ *
+ * `days` é filtrado pelo calendário (últimos N dias a partir de `end`), não por
+ * posição no array: um backup importado pode ter o histórico fora de ordem e
+ * buracos, e `slice(-7)` nesse array mistura julho com novembro.
+ *
+ * Dia sem fechamento não entra na média (não é 0); se nenhum dia da janela foi
+ * fechado, `avgN` é `null` e a tela escreve "Sem dado".
+ */
+export function scoreSummary(
+  days: Day[],
+  end = todayKey(),
+  window = 7,
+): { avg7: number | null; days7: number; avgMonth: number | null; daysMonth: number } {
+  const start = addDays(end, -(window - 1));
+  const inWindow = days.filter((d) => d.score && d.date >= start && d.date <= end);
+  const values = inWindow.map((d) => d.score?.total ?? 0);
+  const avg7 = values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10 : null;
+
+  const monthKey = end.slice(0, 7);
+  const monthValues = days
+    .filter((d) => d.score && d.date.startsWith(monthKey))
+    .map((d) => d.score?.total ?? 0);
+  const avgMonth = monthValues.length
+    ? Math.round((monthValues.reduce((a, b) => a + b, 0) / monthValues.length) * 10) / 10
+    : null;
+
+  return { avg7, days7: values.length, avgMonth, daysMonth: monthValues.length };
 }
 
 /* ────────────────────────────── Recompensas / narrativa ────────────────────────────── */

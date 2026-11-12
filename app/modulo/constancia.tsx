@@ -7,6 +7,7 @@ import { ConstancyHeatmap, heatColor } from '../../src/components/Heatmap';
 import { useStore } from '../../src/lib/store';
 import { buildHeatmap, buildMonthGrid, HEAT_LEGEND, type HeatLevel } from '../../src/lib/heatmap';
 import { addDays, monthLabel, todayKey } from '../../src/lib/date';
+import { isFulfilledDay } from '../../src/lib/score';
 import { haptic } from '../../src/lib/haptics';
 
 type Scope = 'ano' | 'mes' | 'area';
@@ -63,7 +64,7 @@ export default function ConstancyScreen() {
         }
         break;
       }
-      if ((day.score?.total ?? 0) >= 6) streak += 1;
+      if (isFulfilledDay(day)) streak += 1;
       else break;
       cursor = addDays(cursor, -1);
     }
@@ -76,7 +77,7 @@ export default function ConstancyScreen() {
     let run = 0;
     let prev: string | null = null;
     for (const d of scored) {
-      const ok = (d.score?.total ?? 0) >= 6;
+      const ok = isFulfilledDay(d);
       if (ok && prev && addDays(prev, 1) === d.date) run += 1;
       else if (ok) run = 1;
       else run = 0;

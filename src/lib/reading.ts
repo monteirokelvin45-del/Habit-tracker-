@@ -18,9 +18,18 @@ export interface BookProgress {
   reflection?: string;
 }
 
-export function bookPercent(book: BookProgress): number {
-  if (book.totalPages <= 0) return 0;
-  return Math.min(1, Math.max(0, book.currentPage / book.totalPages));
+/**
+ * Fração lida do livro.
+ *
+ * `null` quando o total de páginas é desconhecido (0/ausente): "0%" afirmaria
+ * que a pessoa não leu nada, quando na verdade o app não sabe o tamanho do
+ * livro. Quem exibe deve escrever "Sem dado".
+ */
+export function bookPercent(book: BookProgress): number | null {
+  const total = Number(book?.totalPages);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const current = Number.isFinite(Number(book?.currentPage)) ? Number(book.currentPage) : 0;
+  return Math.min(1, Math.max(0, current / total));
 }
 
 export function pagesLeft(book: BookProgress): number {

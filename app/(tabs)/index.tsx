@@ -41,7 +41,16 @@ import { UnlockBanner } from '../../src/components/UnlockBanner';
 import { AreaDot, GLASS, GlassBar, GlassCard, GlassChip, GlassLabel, GlassRing, SmoothLine } from '../../src/components/SoftHome';
 import { useStore } from '../../src/lib/store';
 import { addDays, formatMinutes, monthLabel, nowHHmm, todayKey } from '../../src/lib/date';
-import { buildChecklist, detectDanger, generalStreak, goalStreak, priorityTasksUndone, scoreOf } from '../../src/lib/score';
+import {
+  buildChecklist,
+  detectDanger,
+  generalStreak,
+  goalStreak,
+  isFulfilledDay,
+  priorityTasksUndone,
+  scoreOf,
+  scoreSummary,
+} from '../../src/lib/score';
 import { nextReward } from '../../src/lib/insights';
 import { averageFocusMinutes, focusMinutes } from '../../src/lib/stats';
 import { areaHeadline, areaProgress, buildSchedule, nextSlot, parseHHmm, slotsToSync } from '../../src/lib/schedule';
@@ -201,7 +210,7 @@ export default function TodayScreen() {
     const closed = store.closeDay(today, diary);
     setDiaryOpen(false);
     setShowResult(true);
-    if ((closed.score?.total ?? 0) >= 6) setConfetti(true);
+    if (isFulfilledDay(closed)) setConfetti(true);
   };
 
   /* ─────────────────────────── métricas reais ─────────────────────────── */
@@ -210,18 +219,26 @@ export default function TodayScreen() {
   const avgFocus = averageFocusMinutes(store.days, 7);
   const focusTarget = store.settings.focusGoalMinutes ?? 240;
   const score = day.score?.total ?? null;
-  const recent = store.days.filter((d) => d.score).slice(-7);
-  const avgScore = recent.length
-    ? Math.round((recent.reduce((sum, d) => sum + (d.score?.total ?? 0), 0) / recent.length) * 10) / 10
-    : null;
+  // Janela por DATA (não por posição no array): backup importado pode vir fora
+  // de ordem, e `slice(-7)` trazia julho para a "média de 7 dias" de novembro.
+  const scoreStats = useMemo(() => scoreSummary(store.days, today), [store.days, today]);
+  const avgScore = scoreStats.avg7;
   const bestStreakEver = useMemo(() => {
+    // Sequência só anda se o dia anterior também passou E é o dia imediatamente
+    // anterior — antes, um buraco no meio mantinha o contador vivo.
     let best = 0;
     let run = 0;
+    let prev: string | null = null;
     for (const d of [...store.days].sort((a, b) => (a.date < b.date ? -1 : 1))) {
-      if ((d.score?.total ?? 0) >= 6) {
-        run += 1;
-        best = Math.max(best, run);
-      } else run = 0;
+      const ok = isFulfilledDay(d);
+      if (ok) {
+        run = prev && addDays(prev, 1) === d.date ? run + 1 : 1;
+        prev = d.date;
+      } else {
+        run = 0;
+        prev = null;
+      }
+      best = Math.max(best, run);
     }
     return best;
   }, [store.days]);
@@ -980,7 +997,10 @@ export default function TodayScreen() {
                               {areaHeadline(activeGoals, area)}
                             </Txt>
                             <Txt variant="micro" upper={false} color={GLASS.onInkSoft} style={{ fontSize: 8.5 }}>
-                              {areaStreak > 0 ? `${areaStreak}d seguidos` : 'sem sequência'}
+                              {/* Sequência por HÁBITO (dias com a tarefa marcada).
+                               * A de Gráficos é por DIA FECHADO com score ≥ 6: são
+                               * perguntas diferentes, por isso o rótulo diz qual é. */}
+                              {areaStreak > 0 ? `${areaStreak}d seguidos no hábito` : 'sem sequência'}
                             </Txt>
                           </Row>
                         </View>

@@ -188,6 +188,9 @@ function WeeklyReview({
 }) {
   const store = useStore();
   const router = useRouter();
+  const today = todayKey();
+  // Dias da semana que já aconteceram: denominador honesto do "N/7".
+  const elapsed = Math.min(7, week.filter((d) => d <= today).length);
   const weekDays = store.days.filter((d) => week.includes(d.date));
   const weekClosed = weekDays.filter((d) => d.score);
   const consistency = areaConsistency(store, week);
@@ -225,7 +228,13 @@ function WeeklyReview({
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Muted>{shortDate(week[0] ?? weekStartKey)} → {shortDate(week[6] ?? '')}</Muted>
-            <Muted>{weekClosed.length}/7 dias encerrados</Muted>
+            {/* Denominador = dias da semana que JÁ ACONTECERAM. Com "N/7" no meio
+                da semana, um domingo futuro aparecia como dia perdido. */}
+            <Muted>
+              {elapsed === 0
+                ? 'Semana futura — nada a encerrar ainda'
+                : `${weekClosed.length}/${elapsed} dias encerrados${elapsed < 7 ? ' · dias futuros não contam' : ''}`}
+            </Muted>
           </View>
         </Row>
       </Card>
@@ -295,7 +304,8 @@ function WeeklyReview({
         <Card style={{ gap: 2, borderColor: colors.cyan + '55' }}>
           <Row style={{ justifyContent: 'space-between' }}>
             <Txt variant="h3">📈 Central de gráficos</Txt>
-            <Txt variant="caption" color={colors.cyan}>21 gráficos ›</Txt>
+            {/* Contagem real: antes dizia "21 gráficos" e a tela tinha 19. */}
+            <Txt variant="caption" color={colors.cyan}>19 gráficos ›</Txt>
           </Row>
           <Muted>Calendário, streak, média móvel, tendência, hora do dia, radar e mais</Muted>
         </Card>

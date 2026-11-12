@@ -42,7 +42,7 @@ import { useStore } from '../../src/lib/store';
 import { addDays, formatMinutes, longDate, shortDate, todayKey } from '../../src/lib/date';
 import { haptic } from '../../src/lib/haptics';
 import { restTimerAlarm } from '../../src/lib/native';
-import { parseMeals, WATER_CUP_ML } from '../../src/lib/diet';
+import { parseMeals, waterGoalCups, WATER_CUP_ML } from '../../src/lib/diet';
 import {
   formatClock,
   isRecorded,
@@ -231,6 +231,8 @@ export default function TreinoScreen() {
 
   const meals = useMemo(() => parseMeals(day?.diary.food), [day?.diary.food]);
   const waterCups = day?.diary.waterCups;
+  // Meta declarada pela pessoa (Perfil). Sem ela, o card não desenha alvo.
+  const waterGoal = waterGoalCups(store.settings);
   const weightNow = useMemo(() => {
     const sorted = [...store.weight].filter((w) => Number.isFinite(w.kg)).sort((a, b) => (a.date < b.date ? -1 : 1));
     return sorted.length ? sorted[sorted.length - 1]! : null;
@@ -768,17 +770,23 @@ export default function TreinoScreen() {
           <Txt variant="h1" upper={false} color={t.textPrimary} style={{ fontSize: 20, letterSpacing: -0.5, marginTop: 2 }}>
             {waterCups == null ? '—' : `${((waterCups * WATER_CUP_ML) / 1000).toFixed(1)}L`}
             <Txt variant="micro" upper={false} color={t.textMuted} style={{ fontSize: 10 }}>
-              {' '}
-              de 2,0L
+              {waterGoal == null ? ' · meta não definida' : ` de ${((waterGoal * WATER_CUP_ML) / 1000).toFixed(1)}L`}
             </Txt>
           </Txt>
           <View style={{ marginTop: 6 }}>
-            <FitBar ratio={waterCups == null ? null : waterCups / 8} height={7} label="Hidratação do dia" />
+            {/* Sem meta declarada não há barra: "de 2,0L" era um alvo inventado. */}
+            <FitBar
+              ratio={waterCups == null || waterGoal == null ? null : waterCups / waterGoal}
+              height={7}
+              label="Hidratação do dia"
+            />
           </View>
           <Txt variant="micro" upper={false} color={t.textMuted} style={{ fontSize: 8.5, marginTop: 4 }}>
             {waterCups == null
               ? 'Sem registro de água hoje — toque no + para começar.'
-              : `${waterCups} copo(s) de 250 ml · ${Math.max(0, 8 - waterCups)} para a meta de 8`}
+              : waterGoal == null
+                ? `${waterCups} copo(s) de 250 ml · defina sua meta no Perfil`
+                : `${waterCups} copo(s) de 250 ml · ${Math.max(0, waterGoal - waterCups)} para a meta de ${waterGoal}`}
           </Txt>
         </FitCard>
 

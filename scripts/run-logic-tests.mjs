@@ -1051,8 +1051,12 @@ console.log('\n── Auditoria: checklist do modo e anel do dia ──');
 console.log('\n── Auditoria: gauge do mês ──');
 {
   const vazio = stats.monthlyGauge({ ...wData, days: [] }, today);
-  check('gauge de mês sem registro projeta 0 (não esconde o vazio)', vazio.projection === 0 && vazio.current === 0);
-  check('gauge nunca projeta acima do alvo', vazio.projection <= vazio.target);
+  // Regra revista nesta auditoria: projeção sem ritmo é `null`. Antes a função
+  // devolvia 0 e a tela escrevia "Projeção: 0/30" — um resultado que ainda não
+  // aconteceu, apresentado como previsão.
+  check('gauge de mês sem registro não projeta (null, não 0)', vazio.projection === null && vazio.current === 0, String(vazio.projection));
+  const comDois = stats.monthlyGauge({ ...wData, days: [{ ...wData.days[0], date: today, score: { ...wData.days[0].score, total: 9 } }] }, today);
+  check('gauge nunca projeta acima do alvo', (comDois.projection ?? 0) <= comDois.target, String(comDois.projection));
 }
 
 console.log('\n── Auditoria: cronograma e métricas do dashboard ──');
@@ -1152,9 +1156,14 @@ console.log('\n── Auditoria: cronograma e métricas do dashboard ──');
   // 16:00 (antes das 22h) → jantar ainda no prazo; 22h → já passou.
   check('refeição atrasada sem registro é apontada', diet.missingMeals(refeicoes, 22).join(',') === 'Jantar', diet.missingMeals(refeicoes, 22).join(','));
   check('jantar não é cobrado antes do horário', diet.missingMeals(refeicoes, 16).length === 0);
-  check('sem água registrada o progresso é null', diet.waterProgress(undefined) === null);
-  check('zero copo é um registro válido (0%)', diet.waterProgress(0) === 0);
-  check('meta de água bate em 8 copos', diet.waterProgress(8) === 1);
+  check('sem água registrada o progresso é null', diet.waterProgress(undefined, 8) === null);
+  check('zero copo é um registro válido (0%)', diet.waterProgress(0, 8) === 0);
+  check('meta de água bate em 8 copos', diet.waterProgress(8, 8) === 1);
+  // Sem meta declarada não existe percentual: "50% da meta" seria afirmação sem meta.
+  check('sem meta declarada o progresso é null', diet.waterProgress(4, null) === null);
+  check('meta fora de faixa (999 copos) é ignorada', diet.waterGoalCups({ waterGoalCups: 999 }) === null);
+  check('meta declarada (10 copos) é respeitada', diet.waterGoalCups({ waterGoalCups: 10 }) === 10);
+  check('settings sem meta devolve null (não 8)', diet.waterGoalCups({}) === null);
 
   /* ── Timer de foco: estado puro ── */
   const cfg = { focus: 25, rest: 5 };
@@ -2099,6 +2108,305 @@ console.log('\n── Cartão de saldo: só 4 dígitos entram ──');
     .filter((line) => /^\s{2}[a-zA-Z][a-zA-Z0-9]*\??:/.test(line))
     .join('\n');
   check('Settings declara só cardLast4 entre os campos de cartão', /cardLast4\?:/.test(fields) && !/cvv|validade|expiry|cardNumber/i.test(fields));
+}
+
+/* ═══════════════ Dashboards: janelas de tempo e "Sem dado" ═══════════════ */
+
+console.log('\n── Dashboards: janela por DATA, não por posição no array ──');
+{
+  const scoreMod = await import(path.join(outRoot, 'lib/score.mjs'));
+
+  // Histórico com buraco: 12 dias gravados, mas espalhados em 4 meses.
+  // `slice(-7)` pegaria os 7 últimos REGISTROS (que podem ser de meses atrás);
+  // a média de 7 dias tem de olhar os últimos 7 dias do CALENDÁRIO.
+  const fechado = (date, total) => ({
+    date,
+    energy: { physical: 5, mental: 5, stress: 5 },
+    mode: 'normal',
+    tasks: [{ goalId: 'g1', done: total >= 6, note: '' }],
+    diary: { promised: '', done: '', avoided: '', blocked: '', context: {}, correction: '', mood: '', sleep: { hours: 0, quality: 0, blockers: [] }, food: '', focus: 0, temptation: '', relapse: '', smallWin: '', impulseCost: 0, emotions: [] },
+    score: { regularity: total, continuity: total, recovery: total, honesty: total, progress: total, total },
+  });
+  const espalhado = [
+    fechado('2026-07-10', 9),
+    fechado('2026-07-11', 9),
+    fechado('2026-07-12', 9),
+    fechado('2026-07-13', 9),
+    fechado('2026-07-14', 9),
+    fechado('2026-07-15', 9),
+    fechado('2026-07-16', 9),
+    fechado('2026-08-20', 2),
+    fechado('2026-11-05', 3),
+    fechado('2026-11-09', 5),
+    fechado('2026-11-10', 7),
+  ];
+  const resumo = scoreMod.scoreSummary(espalhado, '2026-11-10');
+  // Últimos 7 dias do calendário: 11-04..11-10 → dias 05 (3), 09 (5), 10 (7) → média 5,0
+  check(
+    'média de 7 dias ignora registro de julho (média 5,0, não 7,4)',
+    resumo.avg7 != null && Math.abs(resumo.avg7 - 5) < 0.05,
+    String(resumo.avg7),
+  );
+  check('média de 7 dias conta só 3 dias registrados na janela', resumo.days7 === 3, String(resumo.days7));
+}
+
+{
+  const statsMod = await import(path.join(outRoot, 'lib/stats.mjs'));
+  // Foco médio: 3 dias de pomodoro em julho + 1 dia em novembro não podem virar
+  // "média dos últimos 7 dias" só porque são os últimos do array.
+  const pomodoros = (date, minutes) => ({ date, pomodoros: [{ goalId: 'g1', minutes, at: '10:00' }] });
+  const media = statsMod.averageFocusMinutes(
+    [pomodoros('2026-07-01', 300), pomodoros('2026-07-02', 300), pomodoros('2026-07-03', 300), pomodoros('2026-11-10', 25)],
+    7,
+    '2026-11-10',
+  );
+  check('foco médio de 7 dias ignora julho (25 min, não 231)', media === 25, String(media));
+  check('foco médio sem registro na janela é null', statsMod.averageFocusMinutes([pomodoros('2026-07-01', 60)], 7, '2026-11-10') === null);
+}
+
+console.log('\n── Dashboards: uma régua só para "dia cumprido" ──');
+{
+  const scoreMod = await import(path.join(outRoot, 'lib/score.mjs'));
+  const statsMod = await import(path.join(outRoot, 'lib/stats.mjs'));
+
+  const fechado = (date, total) => ({
+    date,
+    energy: { physical: 5, mental: 5, stress: 5 },
+    mode: 'normal',
+    tasks: [],
+    diary: { promised: '', done: '', avoided: '', blocked: '', context: {}, correction: '', mood: '', sleep: { hours: 0, quality: 0, blockers: [] }, food: '', focus: 0, temptation: '', relapse: '', smallWin: '', impulseCost: 0, emotions: [] },
+    score: { regularity: total, continuity: total, recovery: total, honesty: total, progress: total, total },
+  });
+  // 5,9 é "Abaixo do padrão" (não cumprido); 6,0 é "Consistente".
+  check('score 5,9 não é dia cumprido', scoreMod.isFulfilledDay(fechado('2026-11-09', 5.9)) === false);
+  check('score 6,0 é dia cumprido', scoreMod.isFulfilledDay(fechado('2026-11-10', 6)) === true);
+  check('dia sem score não é cumprido', scoreMod.isFulfilledDay({}) === false);
+
+  // Recorde e sequência atual têm de usar a MESMA régua (era > 5 vs >= 6).
+  const dias = [
+    fechado('2026-11-05', 5.5),
+    fechado('2026-11-06', 5.5),
+    fechado('2026-11-07', 5.5),
+    fechado('2026-11-08', 7),
+    fechado('2026-11-09', 8),
+    fechado('2026-11-10', 9),
+  ];
+  const info = statsMod.streakInfo(dias, { end: '2026-11-10' });
+  check('recorde não conta dia com score 5,5', info.best === 3, JSON.stringify([info.best, info.current]));
+  check('recorde e atual concordam (3 e 3)', info.current === 3, JSON.stringify([info.current, info.best]));
+
+  // E a régua é a mesma do rótulo: 6 é o piso de "Consistente".
+  const { scoreLabel } = await import(path.join(outRoot, 'theme.mjs'));
+  check('rótulo de 6,0 é "Consistente" (o piso do dia cumprido)', scoreLabel(6) === 'Consistente', scoreLabel(6));
+}
+
+{
+  const statsMod = await import(path.join(outRoot, 'lib/stats.mjs'));
+  const dia = (date, tasks) => ({
+    date,
+    energy: { physical: 5, mental: 5, stress: 5 },
+    mode: 'normal',
+    tasks,
+    diary: { promised: '', done: '', avoided: '', blocked: '', context: {}, correction: '', mood: '', sleep: { hours: 0, quality: 0, blockers: [] }, food: '', focus: 0, temptation: '', relapse: '', smallWin: '', impulseCost: 0, emotions: [] },
+    score: { regularity: 5, continuity: 5, recovery: 5, honesty: 5, progress: 5, total: 5 },
+  });
+  const empilhado = statsMod.stackedTasks(
+    [
+      dia('2026-11-09', [{ goalId: 'g1', done: true, note: '' }, { goalId: 'g2', done: false, note: '' }]),
+      // 2026-11-10 não existe: dia sem registro
+    ],
+    2,
+    '2026-11-10',
+  );
+  const vazio = empilhado.find((d) => d.date === '2026-11-10');
+  const comDados = empilhado.find((d) => d.date === '2026-11-09');
+  check('dia sem registro vem marcado como noData', vazio?.noData === true, JSON.stringify(vazio));
+  check('dia sem registro NÃO vira "pulado"', vazio?.skipped === 0 && vazio?.failed === 0 && vazio?.done === 0, JSON.stringify(vazio));
+  check('dia com checklist não é noData', comDados?.noData === false, JSON.stringify(comDados));
+  check('não feita sem motivo é "pulado"', comDados?.skipped === 1, JSON.stringify(comDados));
+}
+
+console.log('\n── Dashboards: streak por hábito (Home) × geral (Gráficos) ──');
+{
+  const scoreMod = await import(path.join(outRoot, 'lib/score.mjs'));
+  const day = (date, done) => ({
+    date,
+    energy: { physical: 5, mental: 5, stress: 5 },
+    mode: 'normal',
+    tasks: [{ goalId: 'g1', done, note: '' }],
+    diary: { promised: '', done: '', avoided: '', blocked: '', context: {}, correction: '', mood: '', sleep: { hours: 7, quality: 7, blockers: [] }, food: '', focus: 0, temptation: '', relapse: '', smallWin: '', impulseCost: 0, emotions: [] },
+    score: { regularity: 5, continuity: 5, recovery: 5, honesty: 5, progress: 5, total: 5 },
+  });
+  // Hábito feito 3 dias seguidos, mas com o APP fechado nesses dias (sem score).
+  const soHabito = [day('2026-11-08', true), day('2026-11-09', true), day('2026-11-10', true)].map((d) => ({ ...d, score: undefined }));
+  check('streak do hábito conta 3 dias marcados', scoreMod.goalStreak(soHabito, 'g1', '2026-11-10') === 3);
+  check('streak geral é 0 (dia não fechado não conta)', scoreMod.generalStreak(soHabito, '2026-11-10') === 0);
+  // Os dois números medem coisas diferentes — e as telas dizem isso nas legendas.
+  check('dia cumprido exige score, não só tarefa marcada', scoreMod.isFulfilledDay({ score: undefined }) === false);
+}
+
+console.log('\n── Dashboards: correlação entre áreas exige amostra ──');
+{
+  const insights = await import(path.join(outRoot, 'lib/insights.mjs'));
+  check('limiar de amostra é 4 dias', insights.MIN_SAMPLES_FOR_CORRELATION === 4, String(insights.MIN_SAMPLES_FOR_CORRELATION));
+
+  const mkDay = (date, tasks) => ({
+    date,
+    energy: { physical: 5, mental: 5, stress: 5 },
+    mode: 'normal',
+    tasks,
+    diary: { promised: '', done: '', avoided: '', blocked: '', context: {}, correction: '', mood: '', sleep: { hours: 7, quality: 7, blockers: [] }, food: '', focus: 0, temptation: '', relapse: '', smallWin: '', impulseCost: 0, emotions: [] },
+    score: { regularity: 5, continuity: 5, recovery: 5, honesty: 5, progress: 5, total: 5 },
+  });
+  const goals = [
+    { id: 'g1', name: 'T', area: 'Treino', priority: 'normal', min: '', ideal: '', excellent: '', active: true, createdAt: '' },
+    { id: 'g2', name: 'E', area: 'Estudo', priority: 'normal', min: '', ideal: '', excellent: '', active: true, createdAt: '' },
+  ];
+  const base = {
+    user: { name: 'X', identity: '', noMore: '', areas: [], createdAt: '' },
+    goals,
+    settings: {}, rules: [], rewards: [], books: [], finances: [], weight: [], badges: [], emotions: [],
+    ayanokoji: { startDate: '', scores: [], tasksDone: {} }, weeklyFocus: {}, routeAdjustments: {}, onboarded: true,
+  };
+  // Só 2 dias em que Treino falha: NÃO pode afirmar correlação.
+  const doisDias = insights.areaCorrelation({
+    ...base,
+    days: Array.from({ length: 7 }, (_, i) =>
+      mkDay(`2026-11-0${i + 1}`, [
+        { goalId: 'g1', done: i < 5, note: '' },
+        { goalId: 'g2', done: i < 5, note: '' },
+      ]),
+    ),
+  });
+  check('2 dias com falha não geram "área que cai junto"', doisDias.value === null, JSON.stringify(doisDias.value));
+
+  // 5 dias com falha nas duas áreas: aí sim, com n visível.
+  const cincoDias = insights.areaCorrelation({
+    ...base,
+    days: Array.from({ length: 10 }, (_, i) =>
+      mkDay(`2026-11-${String(i + 1).padStart(2, '0')}`, [
+        { goalId: 'g1', done: i < 5, note: '' },
+        { goalId: 'g2', done: i < 5, note: '' },
+      ]),
+    ),
+  });
+  check('5 dias com falha geram correlação com n=5', cincoDias.value?.samples === 5 && cincoDias.value?.pct === 100, JSON.stringify(cincoDias.value));
+}
+
+console.log('\n── Dashboards: projeção sem ritmo é null, não 0 ──');
+{
+  const statsMod = await import(path.join(outRoot, 'lib/stats.mjs'));
+  const mkData = (days, target = 7) => ({
+    user: { name: 'X', identity: '', noMore: '', areas: [], createdAt: '' },
+    goals: [],
+    days,
+    settings: { targetDailyScore: target },
+    rules: [], rewards: [], books: [], finances: [], weight: [], badges: [], emotions: [],
+    ayanokoji: { startDate: '', scores: [], tasksDone: {} }, weeklyFocus: {}, routeAdjustments: {}, onboarded: true,
+  });
+  const dia = (date, total) => ({
+    date,
+    energy: { physical: 5, mental: 5, stress: 5 },
+    mode: 'normal',
+    tasks: [],
+    diary: { promised: '', done: '', avoided: '', blocked: '', context: {}, correction: '', mood: '', sleep: { hours: 0, quality: 0, blockers: [] }, food: '', focus: 0, temptation: '', relapse: '', smallWin: '', impulseCost: 0, emotions: [] },
+    score: { regularity: total, continuity: total, recovery: total, honesty: total, progress: total, total },
+  });
+
+  const semNada = statsMod.monthlyGauge(mkData([], 7), '2026-11-10');
+  check('mês sem dia na meta não projeta 0 (projeção é null)', semNada.projection === null, String(semNada.projection));
+  check('alvo do mês é o número de dias do mês (30)', semNada.target === 30, String(semNada.target));
+
+  // 2 dias na meta no dia 10 → ritmo 0,2/dia × 30 = 6
+  const comRitmo = statsMod.monthlyGauge(mkData([dia('2026-11-08', 9), dia('2026-11-09', 8)], 7), '2026-11-10');
+  check('projeção usa o ritmo observado (6/30)', comRitmo.projection === 6, JSON.stringify(comRitmo));
+
+  // Gauge também não pode dizer "no ritmo" sem nenhum dia cumprido.
+  check('mês sem cumprimento não está "no ritmo"', semNada.onTrack === false, String(semNada.onTrack));
+}
+
+console.log('\n── Dashboards: correlação de sono respeita o SINAL ──');
+{
+  const insights = await import(path.join(outRoot, 'lib/insights.mjs'));
+  const dia = (date, hours, total) => ({
+    date,
+    energy: { physical: 5, mental: 5, stress: 5 },
+    mode: 'normal',
+    tasks: [{ goalId: 'g1', done: total >= 6, note: '' }],
+    diary: { promised: '', done: '', avoided: '', blocked: '', context: {}, correction: '', mood: '', sleep: { hours, quality: 7, blockers: [] }, food: '', focus: 0, temptation: '', relapse: '', smallWin: '', impulseCost: 0, emotions: [] },
+    score: { regularity: total, continuity: total, recovery: total, honesty: total, progress: total, total },
+  });
+  // Base em que dormir POUCO rende MAIS (diff negativo): a tela não pode dizer "cai".
+  const invertido = [
+    ...Array.from({ length: 5 }, (_, i) => dia(`2026-11-0${i + 1}`, 5, 9)),
+    ...Array.from({ length: 5 }, (_, i) => dia(`2026-11-0${i + 6}`, 8, 4)),
+  ];
+  const corr = insights.sleepCorrelation({ days: invertido });
+  check('correlação existe com 10 dias', corr != null, JSON.stringify(corr));
+  check('diff é NEGATIVO quando dormir pouco rende mais (não perde o sinal)', corr.diff < 0, JSON.stringify(corr));
+  check('lowAvg = 9 e okAvg = 4 (números reais)', corr.lowAvg === 9 && corr.okAvg === 4, JSON.stringify(corr));
+
+  // E com dado insuficiente continua null (não 0 de diferença).
+  check('menos de 7 dias com sono não afirma correlação', insights.sleepCorrelation({ days: invertido.slice(0, 5) }) === null);
+}
+
+console.log('\n── Dashboards: a mesma pergunta, o mesmo número em toda tela ──');
+{
+  // Consistência entre telas é um requisito testável: as três telas que falam de
+  // água precisam concordar, e as três que falam de "dia cumprido" também.
+  const diet = await import(path.join(outRoot, 'lib/diet.mjs'));
+  const copilot = await import(path.join(outRoot, 'lib/copilot.mjs'));
+  const settingsVazio = {};
+  const settingsComMeta = { waterGoalCups: 9 };
+  check(
+    'Dieta e Copilot usam a MESMA meta de água',
+    diet.waterGoalCups(settingsComMeta) === copilot.waterCupsFor({ settings: settingsComMeta }) &&
+      diet.waterGoalCups(settingsVazio) === copilot.waterCupsFor({ settings: settingsVazio }),
+    JSON.stringify([diet.waterGoalCups(settingsComMeta), copilot.waterCupsFor({ settings: settingsComMeta })]),
+  );
+  check('sem meta, nenhuma das duas inventa 8 copos', diet.waterGoalCups(settingsVazio) === null && copilot.waterCupsFor({ settings: settingsVazio }) === null);
+
+  // Percentual de hidratação tem de ser null quando não há meta (nada de 5/8).
+  check('progresso de água sem meta é null', diet.waterProgress(5, diet.waterGoalCups(settingsVazio)) === null);
+  check('progresso de água com meta 9 e 5 copos ≈ 56%', Math.round((diet.waterProgress(5, 9) ?? 0) * 100) === 56);
+}
+
+console.log('\n── Dashboards: leitura não inventa total de páginas ──');
+{
+  const reading = await import(path.join(outRoot, 'lib/reading.mjs'));
+  // Sem total de páginas o progresso é DESCONHECIDO, não 0%.
+  check('livro sem total de páginas não vira 0%', reading.bookPercent({ title: 'x', author: '', totalPages: 0, currentPage: 0, todayPages: 0 }) === null);
+  check('livro com total 0 e página 40 não vira 100%', reading.bookPercent({ title: 'x', author: '', totalPages: 0, currentPage: 40, todayPages: 0 }) === null);
+  check('livro 142/350 dá 41%', Math.round((reading.bookPercent({ title: 'x', author: '', totalPages: 350, currentPage: 142, todayPages: 0 }) ?? 0) * 100) === 41);
+  check('páginas restantes de livro sem total é 0 (não negativo)', reading.pagesLeft({ title: 'x', author: '', totalPages: 0, currentPage: 40, todayPages: 0 }) === 0);
+}
+
+console.log('\n── Dashboards: finanças não misturam receita com despesa ──');
+{
+  const fin = await import(path.join(outRoot, 'lib/finance.mjs'));
+  // Receita 1.000 e despesa 400 no mês: o alvo por balde tem de sair da RECEITA.
+  const entradas = [
+    { id: 'a', date: '2026-11-05', type: 'income', amount: 1000, category: 'Fixo', isImpulse: false, note: '' },
+    { id: 'b', date: '2026-11-06', type: 'expense', amount: 400, category: 'Alimentação', isImpulse: false, note: '' },
+  ];
+  const renda = fin.incomeOf(entradas);
+  check('renda do mês ignora despesa (1.000, não 1.400 nem 600)', renda === 1000, String(renda));
+  const alvos = fin.bucketTargets(entradas, '2026-11', fin.DEFAULT_SPLIT);
+  const necessidade = alvos.find((b) => b.key === 'necessidade');
+  check('alvo do balde sai da receita (50% de 1.000 = 500)', necessidade?.target === 500, JSON.stringify(necessidade));
+  const semRenda = fin.bucketTargets([entradas[1]], '2026-11', fin.DEFAULT_SPLIT);
+  check('mês sem receita não calcula alvo (null, não 0)', semRenda.every((b) => b.target === null), JSON.stringify(semRenda));
+}
+
+console.log('\n── Dashboards: média nunca transforma ausência em zero ──');
+{
+  // `avg(x.score?.total ?? 0)` numa lista que já foi filtrada por score não é
+  // errado, mas repetir o padrão ao largo foi o que criou "0,0 de score".
+  // A regra agora tem nome e teste: média de lista vazia é `null`, não 0.
+  const scoreMod = await import(path.join(outRoot, 'lib/score.mjs'));
+  check('avg([]) é null (não 0)', scoreMod.avg([]) === null);
+  check('avg([0]) é 0 (zero registrado é zero)', scoreMod.avg([0]) === 0);
+  check('round1(7,45) = 7,5', scoreMod.round1(7.45) === 7.5, String(scoreMod.round1(7.45)));
 }
 
 /* ═══════════════ AI Copilot: contraste da identidade própria ═══════════════ */

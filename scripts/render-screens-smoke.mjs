@@ -720,6 +720,136 @@ for (const [label, file] of screens) {
   }
 }
 
+/* ───────── Dashboards: nenhum número pode contradizer o dado ─────────
+ * Um número errado não quebra a tela — por isso o smoke antigo não pegava. Aqui
+ * cada tela é renderizada com um fixture conhecido e o TEXTO VISÍVEL é comparado
+ * com o valor que a conta deveria dar. Zero no lugar de "sem registro" aparece
+ * como "0" onde não deveria haver número nenhum.
+ */
+{
+  const themeMod = await import(pathToFileURL(path.join(outRoot, 'src/theme.js')).href);
+  themeMod.applyTheme('emerald');
+  const renderCom = async (name, fixture) => {
+    const copy = await withStore('app/(tabs)/index.js', name, fixture);
+    const Screen = (await import(pathToFileURL(copy).href)).default;
+    const html = renderToStaticMarkup(React.createElement(Screen));
+    return { html, text: html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ') };
+  };
+  const dayOf = (date, scoreTotal, opts = {}) => ({
+    date,
+    energy: { physical: 6, mental: 6, stress: 4 },
+    mode: 'normal',
+    tasks: [
+      { goalId: 'g1', done: scoreTotal >= 6, note: '' },
+      { goalId: 'g2', done: scoreTotal >= 8, note: '' },
+    ],
+    diary: {
+      promised: '', done: '', avoided: '', blocked: '', context: { where: '', when: '', distraction: '', trigger: '' },
+      correction: '', mood: '', sleep: { hours: 7, quality: 7, blockers: [] }, food: '', focus: 0, temptation: '',
+      relapse: '', smallWin: '', impulseCost: 0, emotions: [],
+      ...(opts.diary ?? {}),
+    },
+    score: { regularity: scoreTotal, continuity: scoreTotal, recovery: scoreTotal, honesty: scoreTotal, progress: scoreTotal, total: scoreTotal },
+    closedAt: `${date}T22:00:00`,
+    ...(opts.extra ?? {}),
+  });
+  const doisGoals = [
+    { id: 'g1', name: 'Treinar', area: 'Treino', priority: 'high', min: '15min', ideal: '30min', excellent: '1h', active: true, createdAt: '2026-01-01' },
+    { id: 'g2', name: 'Estudar', area: 'Estudo', priority: 'normal', min: '15min', ideal: '30min', excellent: '1h', active: true, createdAt: '2026-01-01' },
+  ];
+
+  // 1) Histórico espalhado: a "média 7d" tem de ser dos últimos 7 DIAS.
+  const espalhado = {
+    ...cheio,
+    goals: doisGoals,
+    days: [
+      ...Array.from({ length: 6 }, (_, i) => dayOf(key(-(i + 60)), 9.8)),
+      dayOf(key(-2), 4),
+      dayOf(key(-1), 6),
+      { ...dayOf(key(0), 0), closedAt: undefined, score: undefined, tasks: [{ goalId: 'g1', done: true, note: '' }, { goalId: 'g2', done: false, note: '' }] },
+    ],
+    settings: { ...cheio.settings, theme: 'emerald' },
+  };
+  const home = await renderCom('dash-janela', espalhado);
+  // Dias fechados na janela: -2 (4,0) e -1 (6,0) → média 5,0. Se a tela usasse os
+  // 6 registros antigos de 9,8, imprimiria ~9,7.
+  const mediaVisivel = /média 7d (\d+[.,]\d)/.exec(home.text)?.[1] ?? null;
+  log(mediaVisivel === '5.0' || mediaVisivel === '5,0', 'Hoje: média 7d usa a janela de calendário (5,0 — não a média de julho)', String(mediaVisivel));
+  log(!/9[.,][5-9]/.test(home.text), 'Hoje: nenhum número herdado dos registros antigos (9,8)', (home.text.match(/9[.,]\d/g) ?? []).join(' '));
+
+  // 2) App zerado: nenhum número de score, nenhuma barra "0%".
+  const zerado = { ...cheio, goals: doisGoals, days: [], finances: [], weight: [], books: [], rules: [], rewards: [] };
+  const homeZero = await renderCom('dash-zero', zerado);
+  log(!/NaN|Infinity/.test(homeZero.html), 'Hoje vazia: sem NaN/Infinity');
+  log(!/\b0[.,]0\b/.test(homeZero.text), 'Hoje vazia: nenhum "0,0" de score inventado', (homeZero.text.match(/\b0[.,]0\b/g) ?? []).join(' '));
+  log(/Sem dado|—/.test(homeZero.text), 'Hoje vazia: escreve "Sem dado"/—');
+
+  // 3) Água sem meta declarada: não existe "% da meta" (antes a tela fixava 8 copos).
+  const semMetaAgua = await renderCom('dash-agua', {
+    ...zerado,
+    days: [{ ...dayOf(key(0), 0), closedAt: undefined, score: undefined, diary: { ...dayOf(key(0), 0).diary, waterCups: 3 } }],
+  });
+  log(!/3\/8 copos/.test(semMetaAgua.text), 'Hoje: não afirma "/8 copos" sem meta declarada', semMetaAgua.text.match(/\d+\/\d+ copos/)?.[0] ?? 'sem linha de copos');
+
+  // 4) Dieta: mesma regra (a tela tinha 8 copos fixos enquanto o Copilot recusava).
+  const copyDieta = await withStore('app/modulo/dieta.js', 'dash-dieta', {
+    ...zerado,
+    days: [{ ...dayOf(key(0), 0), closedAt: undefined, score: undefined, diary: { ...dayOf(key(0), 0).diary, waterCups: 3 } }],
+  });
+  const Dieta = (await import(pathToFileURL(copyDieta).href)).default;
+  const dietaText = renderToStaticMarkup(React.createElement(Dieta)).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+  log(!/3\/8/.test(dietaText), 'Dieta: sem meta declarada não escreve 3/8', dietaText.match(/\d+\/\d+/)?.[0] ?? 'sem fração');
+  log(/meta não definida|Defina sua meta/.test(dietaText), 'Dieta: pede a meta em vez de supor 8 copos');
+
+  // 5) Dieta COM meta declarada: aí o número aparece e é o da pessoa.
+  const copyDieta2 = await withStore('app/modulo/dieta.js', 'dash-dieta-meta', {
+    ...zerado,
+    settings: { ...zerado.settings, waterGoalCups: 10 },
+    days: [{ ...dayOf(key(0), 0), closedAt: undefined, score: undefined, diary: { ...dayOf(key(0), 0).diary, waterCups: 3 } }],
+  });
+  const Dieta2 = (await import(pathToFileURL(copyDieta2).href)).default;
+  const dietaText2 = renderToStaticMarkup(React.createElement(Dieta2)).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+  log(/3\/10 copos/.test(dietaText2), 'Dieta: meta declarada (10) aparece como 3/10', dietaText2.match(/\d+\/\d+ copos/)?.[0] ?? 'sem');
+}
+
+/* ─────── DUMP opcional do texto visível (para auditar número por número) ───────
+ * `DUMP_DASH=1 npm run test:screens` imprime o texto de cada dashboard. Não é
+ * asserção: é o que permite LER o que a tela afirma antes de escrever a regra.
+ */
+if (process.env.DUMP_DASH) {
+  const alvo = (process.env.DUMP_DASH === '1' ? ['Hoje', 'Revisões', 'Gráficos', 'Constância', 'Dieta', 'Finanças', 'Treino', 'Estudo'] : process.env.DUMP_DASH.split(','));
+  for (const label of alvo) {
+    const file = screens.find(([l]) => l === label)?.[1];
+    if (!file) continue;
+    for (const [cenario, fixture] of [['cheio', cheio], ['vazio', vazio]]) {
+      try {
+        const copy = await withStore(file, `dump-${cenario}`, fixture);
+        const Screen = (await import(pathToFileURL(copy).href)).default;
+        const html = renderToStaticMarkup(React.createElement(Screen));
+        const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        console.log(`\n===== ${label} / ${cenario} (${text.length} chars) =====\n${text}\n`);
+      } catch (e) {
+        console.log(`\n===== ${label} / ${cenario} QUEBROU: ${e.message}`);
+      }
+    }
+  }
+}
+
+/* ───────── Revisões: denominador da semana não conta dia futuro ───────── */
+{
+  const copy = await withStore('app/(tabs)/revisoes.js', 'dash-semana', cheio);
+  const Screen = (await import(pathToFileURL(copy).href)).default;
+  const text = renderToStaticMarkup(React.createElement(Screen)).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+  // A semana corrente termina no domingo (futuro em relação a hoje).
+  const fracao = /(\d+)\/(\d+) dias encerrados/.exec(text);
+  log(fracao != null, 'Revisões: mostra quantos dias da semana encerraram', text.match(/\d+\/\d+ dias encerrados/)?.[0] ?? 'sem fração');
+  if (fracao) {
+    const [done, total] = [Number(fracao[1]), Number(fracao[2])];
+    log(total <= 7 && done <= total, 'Revisões: dias encerrados não passa do total da semana', `${done}/${total}`);
+    log(!/\/7 dias encerrados/.test(text), 'Revisões: não usa 7 como denominador com a semana em curso', text.match(/\d+\/7 dias encerrados/)?.[0] ?? 'ok');
+  }
+}
+
 /* ───────── Treino (FITPULSE): Regra 1 em cada card da referência ───────── */
 {
   const renderTreino = async (name, fixture, themeId = 'fitPulse') => {

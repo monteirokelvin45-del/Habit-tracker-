@@ -24,6 +24,7 @@ import { hourHeatmap, scatterEnergy, stackedTasks } from '../../src/lib/stats';
 import { useStore, newId } from '../../src/lib/store';
 import {
   areaConsistency,
+  MIN_SAMPLES_FOR_CORRELATION,
   areaCorrelation,
   bestHour,
   closedDays,
@@ -281,9 +282,15 @@ export default function IntelligenceScreen() {
             <Txt variant="caption" color={colors.textPrimary} style={{ marginTop: 6, lineHeight: 20 }}>
               Quando {correlation.value.a} falha, {correlation.value.b} falha {correlation.value.pct}% das vezes
               ({correlation.value.samples} dia(s) com falha em {correlation.value.a}).
+              {correlation.value.samples < 7 ? ' Amostra pequena: trate como pista, não como padrão.' : ''}
             </Txt>
           ) : (
-            <NoData label={correlation.label || 'Sem correlação com dados suficientes'} />
+            <NoData
+              label={
+                correlation.label ||
+                `Sem correlação: são necessários ${MIN_SAMPLES_FOR_CORRELATION}+ dias em que a mesma área falhe`
+              }
+            />
           )}
           {failureMap(store).ready ? (
             failures.sequences.length ? (

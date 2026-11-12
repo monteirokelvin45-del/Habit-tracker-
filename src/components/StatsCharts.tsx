@@ -134,7 +134,9 @@ export function StreakCompare({ info }: { info: StreakInfo }) {
           />
         ))}
       </View>
-      <Muted>Últimos 30 dias · barra cheia = dia com score acima de 5</Muted>
+      <Muted>
+        Últimos 30 dias · barra cheia = dia fechado com score ≥ 6 (mesma régua das outras telas)
+      </Muted>
     </View>
   );
 }
@@ -745,7 +747,8 @@ export function StackedBars({
   height?: number;
 }) {
   const max = Math.max(1, ...data.map((d) => d.done + d.skipped + d.failed));
-  const hasAny = data.some((d) => d.done + d.skipped + d.failed > 0);
+  // Só dia com checklist conta como dado. Dia sem registro não é "pulado".
+  const hasAny = data.some((d) => !d.noData);
   if (!hasAny) return <Muted>Sem dado no período</Muted>;
   return (
     <View style={{ gap: 6 }}>
@@ -759,7 +762,10 @@ export function StackedBars({
                 {d.failed ? <View style={{ height: seg(d.failed), backgroundColor: colors.red }} /> : null}
                 {d.skipped ? <View style={{ height: seg(d.skipped), backgroundColor: colors.track }} /> : null}
                 {d.done ? <View style={{ height: seg(d.done), backgroundColor: colors.green }} /> : null}
-                {total === 0 ? <View style={{ height: 3, backgroundColor: colors.border }} /> : null}
+                {d.noData ? (
+                  // Marca fina e apagada: "não houve registro", não "pulou".
+                  <View style={{ height: 3, backgroundColor: colors.border }} />
+                ) : null}
               </View>
             </View>
           );
@@ -774,8 +780,9 @@ export function StackedBars({
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
         <LegendDot color={colors.green} label="concluído" />
-        <LegendDot color={colors.track} label="pulado (sem registro de falha)" />
+        <LegendDot color={colors.track} label="não feita (sem motivo registrado)" />
         <LegendDot color={colors.red} label="falhou (com motivo)" />
+        <LegendDot color={colors.border} label="dia sem registro" />
       </View>
     </View>
   );
@@ -1001,7 +1008,9 @@ export function MonthlyGauge({ info, size = 190 }: { info: GaugeInfo; size?: num
         </G>
       </Svg>
       <Muted>
-        Projeção de fechamento: {info.projection}/{info.target} dias · faltam {info.daysLeft} dia(s) no mês
+        {info.projection == null
+          ? `Sem projeção: nenhum dia na meta ainda · faltam ${info.daysLeft} dia(s) no mês`
+          : `Projeção de fechamento: ${info.projection}/${info.target} dias · faltam ${info.daysLeft} dia(s) no mês`}
       </Muted>
     </View>
   );

@@ -66,7 +66,9 @@ export default function SleepScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60, gap: spacing.md }}>
         <Row gap={spacing.sm}>
           <Card style={{ flex: 1 }}>
-            <Txt variant="micro" color={colors.textSecondary}>Média 14 noites</Txt>
+            <Txt variant="micro" color={colors.textSecondary}>
+              {nights.length === 14 ? 'Média 14 noites' : `Média ${nights.length} noite(s)`}
+            </Txt>
             <Txt variant="h2" color={colors.blue}>{avgHours ? `${avgHours.toFixed(1)}h` : '—'}</Txt>
             <Muted>{nights.length} noite(s) com registro</Muted>
           </Card>
@@ -101,9 +103,16 @@ export default function SleepScreen() {
         <Card>
           <Txt variant="h3">Correlação automática</Txt>
           <Txt variant="caption" color={colors.textPrimary} style={{ marginTop: 4 }}>
-            {corr
-              ? `Sono < 6h → score cai ${Math.abs(corr.diff)} pts em média (${corr.lowAvg} vs ${corr.okAvg}).`
-              : 'Sem dado suficiente para correlação (mínimo 7 dias com sono registrado).'}
+            {/* A direção vem do SINAL do diff. Antes a frase dizia "cai" sempre e
+                usava `Math.abs`, então uma base onde dormir pouco rendia MAIS
+                aparecia como "cai 0,8 pontos". */}
+            {corr == null
+              ? 'Sem dado suficiente para correlação (mínimo 7 dias com sono registrado).'
+              : corr.diff === 0
+                ? `Sem diferença entre dormir < 6h e ≥ 6h (${corr.lowAvg} vs ${corr.okAvg}, ${corr.sample} noites).`
+                : corr.diff > 0
+                  ? `Sono < 6h → score ${corr.diff} pts MENOR em média (${corr.lowAvg} vs ${corr.okAvg}, ${corr.sample} noites).`
+                  : `Sono < 6h → score ${Math.abs(corr.diff)} pts MAIOR em média (${corr.lowAvg} vs ${corr.okAvg}, ${corr.sample} noites). Leia com desconfiança: pode ser outra coisa.`}
           </Txt>
         </Card>
 

@@ -20,7 +20,7 @@
  */
 import type { AppData, Day } from './types';
 import { addDays, todayKey } from './date';
-import { dayDiet, WATER_CUP_ML } from './diet';
+import { dayDiet, waterGoalCups, WATER_CUP_ML } from './diet';
 import { formatBRL } from './date';
 import { sessionVolume, type WorkoutSession } from './training';
 import { planProgress, workloadBySubject, type EditalTopic } from './studies';
@@ -283,11 +283,8 @@ export function areaStreaks(data: AppData): { area: string; streak: number }[] {
  * resposta diz o que falta, em vez de fixar 8 copos como se fosse ciência.
  */
 export function waterCupsFor(data: AppData): number | null {
-  const declared = data.settings.waterGoalCups;
-  if (typeof declared === 'number' && Number.isFinite(declared) && declared > 0 && declared <= 40) {
-    return Math.round(declared);
-  }
-  return null;
+  // Mesma fonte que a Dieta usa (`waterGoalCups`): uma meta só, sem duplicar regra.
+  return waterGoalCups(data.settings);
 }
 
 /**

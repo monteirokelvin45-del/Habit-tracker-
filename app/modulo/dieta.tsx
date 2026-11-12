@@ -22,12 +22,12 @@ import { haptic } from '../../src/lib/haptics';
 import {
   MEAL_KINDS,
   MEAL_TRIGGERS,
-  WATER_GOAL_CUPS,
   dayDiet,
   dietTrend,
   missingMeals,
   serializeMeals,
   waterProgress,
+  waterGoalCups,
 } from '../../src/lib/diet';
 import type { Meal, MealKind } from '../../src/lib/diet';
 
@@ -70,7 +70,9 @@ export default function DietScreen() {
 
   const hours = new Date().getHours();
   const missing = missingMeals(info.meals, hours);
-  const water = waterProgress(day?.diary.waterCups);
+  // Meta vem do que a pessoa declarou no Perfil — nunca de um padrão inventado.
+  const goal = waterGoalCups(store.settings);
+  const water = waterProgress(day?.diary.waterCups, goal);
   const cups = day?.diary.waterCups;
 
   return (
@@ -145,7 +147,7 @@ export default function DietScreen() {
           <Row style={{ justifyContent: 'space-between' }}>
             <Txt variant="h3">Água</Txt>
             <Txt variant="caption" color={water == null ? colors.textMuted : water >= 1 ? colors.green : colors.cyan}>
-              {cups == null ? 'Sem dado' : `${cups}/${WATER_GOAL_CUPS} copos`}
+              {goal == null ? (cups == null ? 'Sem dado' : `${cups} copo(s) · meta não definida`) : cups == null ? 'Sem dado' : `${cups}/${goal} copos`}
             </Txt>
           </Row>
           <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.bgElevated, overflow: 'hidden', marginTop: spacing.sm }}>
@@ -184,7 +186,9 @@ export default function DietScreen() {
               ? 'Sem registro de água hoje — o anel fica vazio, não em 0%.'
               : water != null && water >= 1
                 ? 'Meta de hidratação batida.'
-                : `Faltam ${Math.max(0, WATER_GOAL_CUPS - cups)} copo(s) para a meta.`}
+                : goal == null
+                  ? 'Defina sua meta de água no Perfil — o app não estima sua necessidade.'
+                  : `Faltam ${Math.max(0, goal - cups)} copo(s) para a meta.`}
           </Muted>
         </Card>
 

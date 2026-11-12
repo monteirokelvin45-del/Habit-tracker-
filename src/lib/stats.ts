@@ -1,6 +1,6 @@
 import type { AppData, Day, Goal } from './types';
 import { addDays, lastNDays, monthKey, todayKey, weekdayIndex, weekStart } from './date';
-import { buildChecklist, generalStreak, goalForTask, goalStreak, round1 } from './score';
+import { buildChecklist, generalStreak, goalForTask, goalStreak, isFulfilledDay, round1 } from './score';
 
 /**
  * Métricas dos gráficos — funções PURAS sobre AppData.
@@ -86,7 +86,7 @@ export function streakInfo(days: Day[], opts?: { end?: string; window?: number }
   let prev: string | null = null;
 
   for (const day of closed) {
-    const ok = (day.score?.total ?? 0) > 5;
+    const ok = isFulfilledDay(day);
     if (!ok) {
       run = 0;
       runStart = null;
@@ -114,7 +114,7 @@ export function streakInfo(days: Day[], opts?: { end?: string; window?: number }
     best,
     bestStart,
     bestEnd,
-    series: windowDays.map((date) => ({ date, ok: (map.get(date)?.score?.total ?? 0) > 5 })),
+    series: windowDays.map((date) => ({ date, ok: isFulfilledDay(map.get(date)) })),
   };
 }
 
@@ -544,13 +544,23 @@ export interface StackDay {
   date: string;
   label: string;
   done: number;
+  /** Não feita sem motivo registrado. */
   skipped: number;
+  /** Não feita COM motivo registrado (a pessoa assumiu a falha). */
   failed: number;
+  /**
+   * Dia sem checklist no app. É DIFERENTE de "pulado": pular é uma tarefa que
+   * existia e não foi feita; dia sem registro é ausência de dado. Contar os dois
+   * como "pulado" fazia o gráfico afirmar dezenas de pulos num histórico que só
+   * tinha 12 dias fechados.
+   */
+  noData: boolean;
 }
 
 /**
  * "Pulado" = tarefa não feita sem desculpa registrada (o dia passou).
  * "Falhou" = não feita COM desculpa registrada (o usuário assumiu a falha).
+ * "Sem dado" = o dia não tem checklist nenhum — não entra como pulado.
  * A distinção é justamente o que o app cobra: registrar a falha.
  */
 export function stackedTasks(days: Day[], n = 14, end = todayKey()): StackDay[] {
@@ -564,6 +574,7 @@ export function stackedTasks(days: Day[], n = 14, end = todayKey()): StackDay[] 
       done: tasks.filter((t) => t.done).length,
       skipped: tasks.filter((t) => !t.done && !t.excuse).length,
       failed: tasks.filter((t) => !t.done && !!t.excuse).length,
+      noData: tasks.length === 0,
     };
   });
 }
@@ -668,7 +679,7 @@ export function waffle(days: Day[], n = 100, end = todayKey()): { cells: WaffleC
     const day = map.get(date);
     if (date > end) return { index, date: null, state: 'future' };
     if (!day?.score) return { index, date, state: 'missed' };
-    if (day.score.total >= 6) {
+    if (isFulfilledDay(day)) {
       done += 1;
       return { index, date, state: 'done' };
     }
@@ -705,8 +716,11 @@ export interface GaugeInfo {
   onTrack: boolean;
   /** Dias restantes no mês (para saber se está no ritmo). */
   daysLeft: number;
-  /** Projeção simples de fechamento do mês. */
-  projection: number;
+  /**
+   * Projeção de fechamento do mês pelo ritmo observado.
+   * `null` quando não há nenhum dia na meta ainda — ritmo desconhecido não é 0.
+   */
+  projection: number | null;
 }
 
 /** Meta mensal = dias com score >= meta diária, no mês corrente. */
@@ -730,9 +744,10 @@ export function monthlyGauge(data: AppData, end = todayKey()): GaugeInfo {
     label: `${current}/${target} dias na meta`,
     onTrack: ratio >= expectedByNow - 0.05,
     daysLeft,
-    // Projeção = ritmo atual × dias do mês, limitada ao alvo. Mês sem nenhum dia
-    // cumprido projeta 0 (antes o texto caía em "sem projeção").
-    projection: dayOfMonth ? Math.min(target, Math.round((current / dayOfMonth) * daysInMonth)) : 0,
+    // Projeção só com RITMO OBSERVADO: sem nenhum dia na meta não existe ritmo,
+    // e projetar 0/30 seria afirmar um resultado que ainda não aconteceu. A tela
+    // escreve "sem ritmo" quando isto é `null`.
+    projection: current > 0 && dayOfMonth > 0 ? Math.min(target, Math.round((current / dayOfMonth) * daysInMonth)) : null,
   };
 }
 
@@ -771,12 +786,19 @@ export function focusMinutes(day: { pomodoros?: { minutes: number }[] } | undefi
 }
 
 /** Média diária de foco nos dias com registro (para comparar com hoje). */
-export function averageFocusMinutes(days: { pomodoros?: { minutes: number }[] }[], window = 7): number | null {
-  const withFocus = days
-    .filter((d) => Array.isArray(d.pomodoros))
+export function averageFocusMinutes(
+  days: { date?: string; pomodoros?: { minutes: number }[] }[],
+  window = 7,
+  end = todayKey(),
+): number | null {
+  // Janela por DATA quando o dia informa a data (é o caso no app). `slice(-window)`
+  // olhava posição no array: com histórico fora de ordem ou com buracos, a
+  // "média de 7 dias" podia ser de outro mês.
+  const start = addDays(end, -(window - 1));
+  const eligible = days.filter((d) => Array.isArray(d.pomodoros) && (!d.date || (d.date >= start && d.date <= end)));
+  const withFocus = eligible
     .map((d) => (d.pomodoros ?? []).reduce((s, p) => s + (p.minutes || 0), 0))
-    .filter((m) => m > 0)
-    .slice(-window);
+    .filter((m) => m > 0);
   if (!withFocus.length) return null;
   return Math.round(withFocus.reduce((a, b) => a + b, 0) / withFocus.length);
 }

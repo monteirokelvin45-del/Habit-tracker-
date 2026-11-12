@@ -3,8 +3,8 @@
 Verificação item por item do que foi pedido contra o que existe no repositório.
 Legenda: ✅ feito e verificado · 🟡 feito com desvio justificado · ❌ não feito (motivo).
 
-**Versão auditada: 1.6.0 (`versionCode` 10).** Suítes desta rodada: **688** de lógica, **62** de store,
-**42** de render e **154** de tela — todas verdes; `tsc` limpo com e sem `--noUnusedLocals`.
+**Versão auditada: 1.6.1 (`versionCode` 11).** Suítes desta rodada: **734** de lógica, **62** de store,
+**42** de render e **166** de tela — todas verdes; `tsc` limpo com e sem `--noUnusedLocals`.
 
 ---
 
@@ -393,8 +393,8 @@ peças ficam em `src/components/FitPulse.tsx`. Como a Home, este módulo **segue
   volume 1160 kg de 10×60+8×70, e nenhum número da vitrine (128, 12.450, 78%, 22,4).
 - Tema `fitPulse`: fundo `#0D0E12`, card `#13151A`, contraste medido — **branco sobre o lima dá
   1.6:1**, por isso `onNeon` é escuro.
-- **154 telas** (21 × 4 cenários + 11 Estudos + 7 Finanças + 9 Home + 27 de Treino + Copilot e as telas
-  descobertas no disco), **688 lógica**, 62 store, 42 renders. Preview: `docs/design/treino-preview.html`
+- **166 telas** (21 × 4 cenários + Estudos + Finanças + Home + Treino + Copilot + auditoria de número),
+  **734 lógica**, 62 store, 42 renders. Preview: `docs/design/treino-preview.html`
   (`PREVIEW_TREINO=1 npm run test:screens`).
 
 ## Home — "Soft Light Glass" (Management / Coders)
@@ -539,6 +539,45 @@ Testes que guardam essas correções:
 - `npm run test:screens` — **154 montagens de tela** com store trocado por cenário, mais as telas que
   ficavam fora da lista (`importar`, `onboarding`, splash), agora descobertas no disco: pega crash em
   runtime, tela vazia e `NaN`/`undefined` visível.
+
+## Auditoria v1.6.1 — todos os dashboards, número por número
+
+Método desta rodada: **ler o que a tela afirma**, não só se ela abre. Os 163 render passavam com
+números errados, porque número errado não quebra o HTML. Então:
+
+1. `DUMP_DASH=1 npm run test:screens` imprime o texto **visível** de cada dashboard (cheio e vazio);
+2. cada número do dump foi cruzado com o dado que o alimenta;
+3. achado o defeito, a correção veio com uma asserção que **falharia** antes dela.
+
+| # | Defeito | O que a tela afirmava | Correção |
+|---|---|---|---|
+| 42 | Duas réguas de "dia cumprido" | Home/Constância usavam `score ≥ 6`; Recorde e sequência em Gráficos/Revisões usavam `> 5` — **a mesma base dava "recorde 5d" numa tela e "recorde 8" noutra** | `DAY_FULFILLED_SCORE` + `isFulfilledDay()` em `score.ts`; todos os dashboards importam |
+| 43 | Média de 7 dias por posição no array | `slice(-7)` pegava os 7 últimos **registros**: com 6 dias fechados em julho, a "média 7d" de novembro mostrava 9,7 | `scoreSummary(days, end)` filtra por data; Home usa |
+| 44 | Foco médio idem | "média 25min" era média dos 7 últimos registros de pomodoro, possivelmente de outro mês | `averageFocusMinutes(days, window, end)` por data |
+| 45 | Minutos por matéria no Estudo | `slice(-14)` em 14 **registros**, não 14 dias | janela por data + bloco inválido ignorado |
+| 46 | Dia sem registro contado como "pulado" | gráfico empilhado afirmava dezenas de "pulos" onde havia **ausência de dado**; a legenda ainda dizia "pulado (sem registro de falha)" | `noData` no `StackDay` + legenda "dia sem registro" |
+| 47 | `waffle` com dias futuros | `lastNDays(100)` inclui datas futuras; a lenda dizia "o resto sem registro", mas o futuro era desenhado como falta | legenda separa futuro de sem registro |
+| 48 | Cartão "Renda {ano}" somava despesa | receita 1.000 com despesa 400 aparecia como **1.400** | `incomeOf`/`expenseOf` em `lib/finance.ts` (testados); o card usa só receita |
+| 49 | Leitura inventava livro | fallback criava `totalPages: 350` — "pág. 0 de 350" e **0%** para quem nunca cadastrou livro | usa o livro real da biblioteca; sem total, "total não informado" |
+| 50 | `bookPercent` devolvia 0 | livro sem total de páginas aparecia como **0% lido** (afirmação falsa) | devolve `null` → "Sem dado" |
+| 51 | Água fixa em 8 copos na Dieta e no Treino | o Copilot se recusava a chutar a meta, mas **Dieta dizia 3/8 e Treino "meta de 8"** | `waterGoalCups(settings)` único; sem meta declarada: "meta não definida" |
+| 52 | Correlação de sono com sinal perdido | frase fixa "score **cai** X pts" com `Math.abs` — quando dormir pouco rendia mais, a tela dizia o contrário | direção pelo sinal; `diff` 0 tem frase própria |
+| 53 | "Média 14 noites" com 3 noites | rótulo fixo | rótulo com a contagem real |
+| 54 | Projeção do mês sem ritmo | "Projeção de fechamento: **0/30**" num mês sem nenhum dia na meta (resultado que ainda não aconteceu) | `projection: null` → "Sem projeção: nenhum dia na meta ainda" |
+| 55 | "Áreas que caem juntas" com n=2 | "quando Treino falha, Leitura falha **100% das vezes**" com 2 dias — coincidência vendida como padrão | `MIN_SAMPLES_FOR_CORRELATION = 4` + aviso de amostra pequena (n < 7) |
+| 56 | "21 gráficos ›" | a Central de gráficos tem **19** | contagem corrigida (e o teste de cobertura impede a volta) |
+| 57 | Semana dizia "0/7 dias" | dias futuros da semana atual contavam como não encerrados | rótulo `N/7` só com dias já passados; futuro explícito |
+
+### Como isso passa a ser vigiado
+
+- **7 blocos de asserção** novos no `test:screens` (Janela, Água, Dieta sem/com meta, semana) e **11 blocos** no
+  `test:logic` cobrindo cada linha da tabela. Todos comparam **valor esperado × valor exibido**, não só
+  "não quebrou".
+- **`DUMP_DASH`** fica no repositório: é a ferramenta que permite ler os 163 renders. `DUMP_DASH=Dieta`
+  imprime só a Dieta, em app cheio e vazio.
+- A régua de "dia cumprido" e a fonte da meta de água têm nome e teste de **igualdade entre telas** — as
+  duas classes de erro que mais apareceram aqui (mesma palavra, número diferente; mesmo número, regra
+  diferente) agora falham o build.
 
 ## AI Copilot / LIX AI — a tela central de assistência
 
@@ -698,13 +737,13 @@ agora são reagendados 1× por dia, não a cada edição).
 ## Verificações executadas
 
 - `npx tsc --noEmit` → limpo (e com `--noUnusedLocals --noUnusedParameters`)
-- `node scripts/run-logic-tests.mjs` → **688/688** (modos, score, streaks, cobrança, gate de 7 dias,
+- `node scripts/run-logic-tests.mjs` → **734/734** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
 - `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
-- `node scripts/render-screens-smoke.mjs` → **154/154** (telas × cenários: com histórico, primeiro uso,
+- `node scripts/render-screens-smoke.mjs` → **166/166** (telas × cenários: com histórico, primeiro uso,
   tema alternativo e **dados corrompidos** — `null`/`NaN`/texto de backup antigo, passando pelo boot real
   do store) + 3 telas descobertas no disco
 - `npx expo export --platform web` → bundle OK; preview respondendo 200

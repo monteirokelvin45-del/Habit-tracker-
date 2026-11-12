@@ -120,6 +120,16 @@ export function excuseRanking(data: AppData, limit = 3) {
 }
 
 /** Áreas que caem juntas (correlação simples). */
+/**
+ * Áreas que falham juntas.
+ *
+ * Exige amostra: o card afirmava "quando Treino falha, Leitura falha 100% das
+ * vezes" com 2 dias de base — 100% de 2 não é padrão, é coincidência. Agora a
+ * função só devolve resultado com `MIN_SAMPLES_FOR_CORRELATION` dias em que a
+ * primeira área falhou, e a tela mostra o `n` junto da frase.
+ */
+export const MIN_SAMPLES_FOR_CORRELATION = 4;
+
 export function areaCorrelation(data: AppData) {
   return guard(data, () => {
     const closed = closedDays(data.days);
@@ -147,7 +157,7 @@ export function areaCorrelation(data: AppData) {
           if (fa) aFail += 1;
           if (fa && fb) bothFail += 1;
         }
-        if (aFail >= 2) results.push({ a, b, pct: percent(bothFail, aFail), samples: aFail });
+        if (aFail >= MIN_SAMPLES_FOR_CORRELATION) results.push({ a, b, pct: percent(bothFail, aFail), samples: aFail });
       }
     }
     return results.sort((x, y) => y.pct - x.pct)[0] ?? null;

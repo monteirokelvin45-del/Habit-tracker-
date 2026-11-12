@@ -161,10 +161,29 @@ export function missingMeals(meals: Meal[], hour: number): MealKind[] {
 
 /** Hidratação: copos de 250 ml marcados no dia (campo `diary.waterCups`). */
 export const WATER_CUP_ML = 250;
-export const WATER_GOAL_CUPS = 8;
 
-/** `null` quando o dia não tem registro de água — diferente de zero copo. */
-export function waterProgress(cups: number | undefined): number | null {
-  if (cups == null) return null;
-  return Math.min(1.5, Math.max(0, cups) / WATER_GOAL_CUPS);
+/**
+ * Meta de água DECLARADA pela pessoa (`settings.waterGoalCups`).
+ *
+ * Não existe meta padrão. O app não calcula necessidade hídrica — depende de
+ * peso, clima, treino e saúde, e fixar "8 copos" era uma afirmação inventada
+ * (e contradizia o Copilot, que se recusa a chutar esse número). Sem declaração,
+ * as telas mostram "Sem dado" e oferecem o campo no Perfil.
+ */
+export function waterGoalCups(settings: { waterGoalCups?: number } | undefined): number | null {
+  const declared = settings?.waterGoalCups;
+  if (typeof declared !== 'number' || !Number.isFinite(declared)) return null;
+  if (declared < 1 || declared > 40) return null;
+  return Math.round(declared);
+}
+
+/**
+ * Progresso da hidratação.
+ *
+ * `cups == null` → `null` (sem registro, diferente de zero copo).
+ * Meta não declarada → `null` também: não há como afirmar "50% da meta" sem meta.
+ */
+export function waterProgress(cups: number | undefined, goal: number | null): number | null {
+  if (cups == null || goal == null || goal <= 0) return null;
+  return Math.min(1.5, Math.max(0, cups) / goal);
 }
