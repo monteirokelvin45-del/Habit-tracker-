@@ -80,10 +80,12 @@ const REST_OPTIONS = [45, 60, 90, 120];
  * (a pessoa edita), nunca desaparece em silêncio.
  */
 function toSession(saved: WorkoutSession | undefined, today: string): WorkoutSession {
-  if (!saved || !Array.isArray(saved.exercises) || !saved.exercises.length) {
+  if (!saved || typeof saved !== 'object' || !Array.isArray(saved.exercises) || !saved.exercises.length) {
     return { date: today, label: 'Treino A — Pernas', exercises: TEMPLATE, kind: 'forca' };
   }
-  const exercises: ExerciseEntry[] = saved.exercises.map((ex) => {
+  const exercises: ExerciseEntry[] = (saved.exercises as unknown[]).filter(
+    (ex): ex is ExerciseEntry => !!ex && typeof ex === 'object',
+  ).map((ex) => {
     const rawSets = Array.isArray(ex?.sets) ? ex.sets : [];
     const sets = rawSets.length
       ? rawSets.map((s) => ({
@@ -131,13 +133,13 @@ export default function TreinoScreen() {
   // A normalização fica no inicializador (e não num efeito) para o primeiro
   // render já sair certo — efeito rodaria depois do HTML.
   const [running, setRunning] = useState(false);
-  const [elapsed, setElapsed] = useState(savedToday?.durationSec ?? 0);
+  // `Number.isFinite`: o cronômetro nunca começa em NaN vindo de backup.
+  const [elapsed, setElapsed] = useState(() => (Number.isFinite(Number(savedToday?.durationSec)) ? Number(savedToday?.durationSec) : 0));
   const [rest, setRest] = useState<number | null>(null);
   const [restLeft, setRestLeft] = useState(0);
   const [noteFor, setNoteFor] = useState<number | null>(null);
   const [saved, setSaved] = useState(!!savedToday);
   const [extrasOpen, setExtrasOpen] = useState(false);
-  const [waterOpen, setWaterOpen] = useState(false);
   const [heightOpen, setHeightOpen] = useState(false);
   const [heightDraft, setHeightDraft] = useState(String(store.settings.heightCm ?? ''));
   const [kcalDraft, setKcalDraft] = useState(savedToday?.kcal ? String(savedToday.kcal) : '');
@@ -740,7 +742,10 @@ export default function TreinoScreen() {
                 upper={false}
                 color={t.textMuted}
                 style={{ fontSize: 10 }}
-                onPress={() => store.patchDiary(today, { waterCups: Math.max(0, (waterCups ?? 0) - 1) })}
+                onPress={() => {
+                  const atual = useStore.getState().days.find((d) => d.date === today)?.diary.waterCups;
+                  store.patchDiary(today, { waterCups: Math.max(0, (atual ?? 0) - 1) });
+                }}
               >
                 −
               </Txt>
@@ -749,7 +754,12 @@ export default function TreinoScreen() {
                 upper={false}
                 color={accentOf()}
                 style={{ fontSize: 13, fontWeight: '800' }}
-                onPress={() => store.patchDiary(today, { waterCups: (waterCups ?? 0) + 1 })}
+                onPress={() => {
+                  // Mesmo contador da Dieta: lê o valor atual no toque, senão dois
+                  // toques rápidos gravam o mesmo número.
+                  const atual = useStore.getState().days.find((d) => d.date === today)?.diary.waterCups;
+                  store.patchDiary(today, { waterCups: (atual ?? 0) + 1 });
+                }}
               >
                 +
               </Txt>
@@ -1170,13 +1180,6 @@ export default function TreinoScreen() {
         </View>
       </Sheet>
 
-      <Sheet visible={waterOpen} onClose={() => setWaterOpen(false)} title="Hidratação">
-        <View style={{ padding: spacing.lg }}>
-          <Muted>
-            Um copo = {WATER_CUP_ML} ml. Meta de 8 copos (2 L). O registro é o mesmo do módulo Dieta — não existe contador paralelo.
-          </Muted>
-        </View>
-      </Sheet>
     </SafeAreaView>
   );
 }

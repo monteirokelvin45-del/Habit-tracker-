@@ -162,14 +162,21 @@ export default function DietScreen() {
               label="+ 1 copo (250 ml)"
               style={{ flex: 1, height: 44 }}
               onPress={() => {
-                store.patchDiary(today, { waterCups: (cups ?? 0) + 1 });
+                // Quantidade lida na hora do toque: dois toques rápidos seguidos
+                // usavam o mesmo `cups` do render e o segundo sobrescrevia o
+                // primeiro (o app "engolia" o copo).
+                const atual = useStore.getState().days.find((d) => d.date === today)?.diary.waterCups;
+                store.patchDiary(today, { waterCups: (atual ?? 0) + 1 });
                 haptic('select');
               }}
             />
             <SecondaryButton
               label="−"
               style={{ width: 56, height: 44 }}
-              onPress={() => store.patchDiary(today, { waterCups: Math.max(0, (cups ?? 0) - 1) })}
+              onPress={() => {
+                const atual = useStore.getState().days.find((d) => d.date === today)?.diary.waterCups;
+                store.patchDiary(today, { waterCups: Math.max(0, (atual ?? 0) - 1) });
+              }}
             />
           </Row>
           <Muted>

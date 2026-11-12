@@ -15,6 +15,7 @@ import {
   type StyleProp,
 } from 'react-native';
 import { colors, onAccent, radius, spacing, type, useTheme } from '../theme';
+import type { TextStyle } from 'react-native';
 import { haptic } from '../lib/haptics';
 
 /* ─────────────────────────────── Text ─────────────────────────────── */
@@ -49,7 +50,8 @@ export function Txt({
       onPress={onPress}
       numberOfLines={numberOfLines}
       style={[
-        type[variant] as any,
+        // `type` é `as const`: o estilo tipográfico já é um TextStyle válido, sem cast.
+        type[variant] as TextStyle,
         { color },
         variant === 'micro' && upper !== false && { textTransform: 'uppercase', letterSpacing: 0.6 },
         style,

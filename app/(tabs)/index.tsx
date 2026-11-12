@@ -18,7 +18,7 @@
  *     timeline e o gráfico, e o resumo do dia continua visível.
  */
 import React, { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { areaColor, MODES, mindsetOfDay, spacing, useTheme } from '../../src/theme';
@@ -370,13 +370,15 @@ export default function TodayScreen() {
 
   const diaryNotes = useMemo(() => {
     const d = day.diary;
+    // `String(...)`: um backup antigo pode ter número num campo de texto do
+    // diário, e `.trim()` em número derrubava o card inteiro.
     const items: { label: string; area: string; text: string }[] = [
-      { label: 'Prometido', area: 'Estudo', text: d.promised },
-      { label: 'Feito', area: 'Treino', text: d.done },
-      { label: 'Evitado', area: 'Saúde', text: d.avoided },
-      { label: 'Travado em', area: 'Trabalho', text: d.blocked },
-      { label: 'Correção', area: 'Projeto Pessoal', text: d.correction },
-      { label: 'Pequena vitória', area: 'Leitura', text: d.smallWin },
+      { label: 'Prometido', area: 'Estudo', text: String(d.promised ?? '') },
+      { label: 'Feito', area: 'Treino', text: String(d.done ?? '') },
+      { label: 'Evitado', area: 'Saúde', text: String(d.avoided ?? '') },
+      { label: 'Travado em', area: 'Trabalho', text: String(d.blocked ?? '') },
+      { label: 'Correção', area: 'Projeto Pessoal', text: String(d.correction ?? '') },
+      { label: 'Pequena vitória', area: 'Leitura', text: String(d.smallWin ?? '') },
     ];
     const filled = items.filter((i) => i.text.trim().length > 0);
     // Filtro de busca do topo: procura no texto e no rótulo.
@@ -392,6 +394,8 @@ export default function TodayScreen() {
       notes: diaryNotes.length,
     };
   }, [activeGoals, diaryNotes.length, search]);
+
+  /** Diário de hoje filtrado pela busca (o card "Registros do dia" respeita o termo). */
 
   const runSync = async () => {
     setSyncing(true);
@@ -494,20 +498,28 @@ export default function TodayScreen() {
             <GlassCard padding={12} strong>
               <Row gap={8} style={{ alignItems: 'center' }}>
                 <Icon name="cerebro" size={14} color={t.textMuted} />
-                <Txt
-                  variant="caption"
-                  upper={false}
-                  color={t.textPrimary}
-                  style={{ flex: 1, fontSize: 12 }}
-                  numberOfLines={1}
-                  onPress={() => setSheetNote('Busca por metas e registros do dia. Use a barra do Perfil para buscar no histórico completo.')}
-                >
-                  {search ? `“${search}”` : 'Buscar meta ou registro do dia'}
-                </Txt>
-                <GlassChip label="limpar" small accessibilityLabel="Limpar busca" onPress={() => setSearch('')} />
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Buscar meta ou registro do dia"
+                  placeholderTextColor={t.textMuted}
+                  autoFocus
+                  returnKeyType="search"
+                  accessibilityLabel="Buscar meta ou registro do dia"
+                  style={{
+                    flex: 1,
+                    fontSize: 12,
+                    color: t.textPrimary,
+                    paddingVertical: 2,
+                  }}
+                />
+                {search ? (
+                  <GlassChip label="limpar" small accessibilityLabel="Limpar busca" onPress={() => setSearch('')} />
+                ) : null}
               </Row>
-              {/* A busca ainda não tem campo de texto nesta tela: o toque explica
-                  onde buscar o histórico inteiro, em vez de fingir resultado. */}
+              <Txt variant="micro" upper={false} color={t.textMuted} style={{ fontSize: 8.5, marginTop: 4 }}>
+                Procura nas metas ativas e nos registros do diário de hoje. Data e histórico completo ficam em Revisões.
+              </Txt>
             </GlassCard>
           ) : null}
         </View>

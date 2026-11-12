@@ -521,6 +521,8 @@ export default function FinanceScreen() {
           ) : (
             (() => {
               const total = expenseOf(monthEntries);
+              // `.filter(Boolean)` no fim: sem ele a lista tem `null` nos
+              // lugares das categorias sem despesa, e o React avisa "unique key".
               return FINANCE_CATEGORIES.map((cat) => {
                 const value = monthEntries
                   .filter((f) => f.type === 'expense' && f.category === cat)
@@ -539,7 +541,7 @@ export default function FinanceScreen() {
                     <ThinBar ratio={total > 0 ? value / total : null} color={accent()} />
                   </View>
                 );
-              });
+              }).filter(Boolean);
             })()
           )}
         </Bento>

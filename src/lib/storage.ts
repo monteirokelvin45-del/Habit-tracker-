@@ -1,5 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { emptyDiary } from './types';
+import {
+  isDayKey,
+  normalizeAyanokoji,
+  normalizeBadges,
+  normalizeDayFull,
+  normalizeSettings,
+  normalizeStringMap,
+  normalizeUser,
+} from './normalize';
 import { sanitizeEmotionLog } from './emotions';
 import { emptyReport, sanitizeDataSlices, type SanitizeReport } from './sanitize';
 import type {
@@ -150,16 +158,7 @@ export const SCHEMA_VERSION = 1;
 
 /** Dia vindo de storage/backup/snapshot: sempre com energia, tarefas e diário. */
 export function normalizeDay(input: Partial<Day>): Day {
-  return {
-    ...input,
-    date: String(input.date),
-    energy: input.energy ?? { physical: 5, mental: 5, stress: 5 },
-    mode: input.mode ?? 'normal',
-    tasks: (Array.isArray(input.tasks) ? input.tasks : [])
-      .filter((t): t is NonNullable<typeof t> => !!t && typeof t === 'object' && typeof t.goalId === 'string')
-      .map((t) => ({ ...t, done: !!t.done, note: t.note ?? '' })),
-    diary: { ...emptyDiary(), ...(input.diary ?? {}) },
-  } as Day;
+  return normalizeDayFull(input);
 }
 
 const PRIORITIES = ['high', 'normal', 'low'] as const;
@@ -202,8 +201,8 @@ export function normalizeData(input: Partial<AppData> | null | undefined, base: 
   const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
   // Dia sem diário/energia quebrava o fechamento e o histórico (crash em computeScore).
   const days = arr<Partial<Day>>(raw.days)
-    .filter((d) => !!d && typeof d === 'object' && typeof d.date === 'string')
-    .map(normalizeDay);
+    .filter((d) => !!d && typeof d === 'object' && isDayKey(d.date))
+    .map((d) => normalizeDay(d));
   const report = emptyReport();
   const clean = sanitizeDataSlices(
     {
@@ -222,8 +221,8 @@ export function normalizeData(input: Partial<AppData> | null | undefined, base: 
   lastSanitize.dropped = report.dropped;
   lastSanitize.total = report.total;
   return {
-    onboarded: raw.onboarded ?? base.onboarded,
-    user: { ...base.user, ...(raw.user ?? {}), areas: arr<string>((raw.user as User | undefined)?.areas) },
+    onboarded: typeof raw.onboarded === 'boolean' ? raw.onboarded : base.onboarded,
+    user: normalizeUser(raw.user, base.user),
     goals: clean.goals,
     days,
     // Mesma sanitização do boot: backup editado à mão não pode derrubar tela.
@@ -233,14 +232,15 @@ export function normalizeData(input: Partial<AppData> | null | undefined, base: 
     finances: clean.finances,
     weight: clean.weight,
     settings: (() => {
-      const merged = { ...DEFAULT_SETTINGS, ...base.settings, ...(raw.settings ?? {}) };
+      const merged = normalizeSettings(raw.settings, { ...DEFAULT_SETTINGS, ...base.settings });
+      // O último 4 vence o do default; se o do backup for lixo, não herda o antigo.
       const last4 = sanitizeLast4((raw.settings as Settings | undefined)?.cardLast4);
       return last4 ? { ...merged, cardLast4: last4 } : { ...merged, cardLast4: undefined };
     })(),
-    badges: arr<BadgeState>(raw.badges),
-    ayanokoji: raw.ayanokoji ?? base.ayanokoji,
-    weeklyFocus: raw.weeklyFocus ?? {},
-    routeAdjustments: raw.routeAdjustments ?? {},
+    badges: normalizeBadges(raw.badges),
+    ayanokoji: normalizeAyanokoji(raw.ayanokoji, base.ayanokoji),
+    weeklyFocus: normalizeStringMap(raw.weeklyFocus),
+    routeAdjustments: normalizeStringMap(raw.routeAdjustments),
     // Log de emoções: entrada inválida é descartada, nunca inventada.
     emotions: sanitizeEmotionLog((raw as { emotions?: unknown }).emotions),
   };
@@ -340,23 +340,40 @@ export async function loadAll(): Promise<AppData> {
   // pelo mesmo crivo do import (senão "12ab" ou 20 dígitos entrariam no cartão).
   const safeLast4 = sanitizeLast4((settings as Settings | undefined)?.cardLast4);
 
-  return {
-    onboarded,
-    user,
-    goals: clean.goals,
-    days,
-    rules: clean.rules,
-    rewards: clean.rewards,
-    books: clean.books,
-    finances: clean.finances,
-    weight: clean.weight,
-    settings: { ...DEFAULT_SETTINGS, ...settings, cardLast4: safeLast4 },
-    badges,
-    ayanokoji: ayanokoji ?? { startDate: '', scores: [], tasksDone: {} },
-    weeklyFocus: weeklyFocus ?? {},
-    routeAdjustments: routeAdjustments ?? {},
-    emotions: sanitizeEmotionLog(emotions),
-  };
+  /**
+   * O boot passa pela MESMA normalização do import (`normalizeData`).
+   *
+   * Antes, cada um fazia a sua: `loadAll` montava o objeto à mão e deixava
+   * `user`, `settings`, `ayanokoji` e `weeklyFocus` exatamente como estavam no
+   * storage. Um `areas: "Treino"` (string) ou `middayTime: 1300` (número) saía
+   * do boot intacto e só quebrava na tela — longe da causa.
+   */
+  const data = normalizeData(
+    {
+      onboarded,
+      user,
+      goals: clean.goals,
+      days,
+      rules: clean.rules,
+      rewards: clean.rewards,
+      books: clean.books,
+      finances: clean.finances,
+      weight: clean.weight,
+      settings: { ...settings, cardLast4: safeLast4 },
+      badges,
+      ayanokoji: ayanokoji ?? EMPTY_DATA.ayanokoji,
+      weeklyFocus,
+      routeAdjustments,
+      // Leitura crua de propósito: `normalizeData` sanitiza entrada por entrada.
+      emotions: emotions as AppData['emotions'],
+    },
+    EMPTY_DATA,
+  );
+  // `normalizeData` recria o relatório ao rodar: devolve o do boot, que é o que o
+  // Perfil mostra ("X registros descartados nesta abertura").
+  lastSanitize.dropped = report.dropped;
+  lastSanitize.total = report.total;
+  return data;
 }
 
 /** Persiste uma chave específica. Chamado pelos setters do store. */

@@ -77,9 +77,31 @@ export function muscleOf(ex: ExerciseEntry): string | null {
   return ex.muscle?.trim() || exerciseMuscle(ex.name);
 }
 
+/**
+ * Exercícios de uma sessão, sempre em lista.
+ *
+ * Sessão vinda de storage/backup pode ter `exercises` como texto ou faltando — e
+ * aí `.find`/`.map` derrubam a tela de Treino. Aqui a lista sai limpa; item que
+ * não é objeto é descartado (não vira exercício fantasma).
+ */
+function exercisesOf(session: WorkoutSession | null | undefined): ExerciseEntry[] {
+  if (!session || typeof session !== 'object') return [];
+  const list = (session as { exercises?: unknown }).exercises;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((ex): ex is ExerciseEntry => !!ex && typeof ex === 'object')
+    .map((ex) => ({
+      ...ex,
+      name: typeof ex.name === 'string' ? ex.name : '',
+      sets: Array.isArray(ex.sets)
+        ? ex.sets.filter((s): s is SetEntry => !!s && typeof s === 'object')
+        : [],
+    }));
+}
+
 /** Volume total = soma de (reps × carga) das séries feitas. Peso corporal conta 0. */
 export function sessionVolume(session: WorkoutSession): number {
-  return session.exercises.reduce(
+  return exercisesOf(session).reduce(
     (total, ex) =>
       total +
       ex.sets.reduce((sum, set) => sum + (set.done ? set.reps * (set.weight ?? 0) : 0), 0),
@@ -89,14 +111,18 @@ export function sessionVolume(session: WorkoutSession): number {
 
 /** Séries concluídas / séries planejadas. */
 export function sessionProgress(session: WorkoutSession): { done: number; total: number; ratio: number } {
-  const total = session.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
-  const done = session.exercises.reduce((sum, ex) => sum + ex.sets.filter((s) => s.done).length, 0);
+  const exs = exercisesOf(session);
+  const total = exs.reduce((sum, ex) => sum + (Array.isArray(ex.sets) ? ex.sets.length : 0), 0);
+  const done = exs.reduce((sum, ex) => sum + (Array.isArray(ex.sets) ? ex.sets.filter((s) => s.done).length : 0), 0);
   return { done, total, ratio: total ? done / total : 0 };
 }
 
 /** Maior carga feita em um exercício (ignora séries não marcadas e sem peso). */
 export function topWeight(exercise: ExerciseEntry): number | null {
-  const weights = exercise.sets.filter((s) => s.done && s.weight != null).map((s) => s.weight as number);
+  const sets = Array.isArray(exercise?.sets) ? exercise.sets : [];
+  const weights = sets
+    .filter((s) => s?.done && s.weight != null && Number.isFinite(Number(s.weight)))
+    .map((s) => Number(s.weight));
   return weights.length ? Math.max(...weights) : null;
 }
 
@@ -114,9 +140,10 @@ export interface LoadDelta {
  */
 export function loadDelta(current: ExerciseEntry, history: WorkoutSession[]): LoadDelta {
   const now = topWeight(current);
+  const wanted = (current.name ?? '').trim().toLowerCase();
   const previous = [...history]
     .reverse()
-    .map((s) => s.exercises.find((e) => e.name.trim().toLowerCase() === current.name.trim().toLowerCase()))
+    .map((s) => exercisesOf(s).find((e) => e.name.trim().toLowerCase() === wanted))
     .find((e): e is ExerciseEntry => !!e);
   const prev = previous ? topWeight(previous) : null;
 
@@ -141,10 +168,10 @@ export function loadSeries(
   history: WorkoutSession[],
   exerciseName: string,
 ): { date: string; weight: number }[] {
-  const key = exerciseName.trim().toLowerCase();
+  const key = (exerciseName ?? '').trim().toLowerCase();
   return history
     .map((session) => {
-      const ex = session.exercises.find((e) => e.name.trim().toLowerCase() === key);
+      const ex = exercisesOf(session).find((e) => e.name.trim().toLowerCase() === key);
       const weight = ex ? topWeight(ex) : null;
       return weight == null ? null : { date: session.date, weight };
     })
@@ -154,7 +181,10 @@ export function loadSeries(
 
 /** Formata duração do treino (cronômetro) para mm:ss / h:mm:ss. */
 export function formatClock(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds));
+  // Cronômetro vindo de storage corrompido pode ser `undefined`/texto/NaN;
+  // `Math.max(0, NaN)` é NaN e a tela escrevia "NaN:NaN".
+  const raw = Number(totalSeconds);
+  const s = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
@@ -261,7 +291,7 @@ export function personalRecords(sessions: WorkoutSession[], limit = 3): Personal
   const previous = new Map<string, number>();
 
   for (const s of ordered) {
-    for (const ex of s.exercises) {
+    for (const ex of exercisesOf(s)) {
       const name = ex.name.trim();
       if (!name) continue;
       const w = topWeight(ex);

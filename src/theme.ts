@@ -249,7 +249,10 @@ export const THEMES: Record<ThemeId, { label: string; swatch: string; palette: P
       neon: '#1C1C1F',
       neonDeep: '#3A3A3E',
       onNeon: '#FFFFFF',
-      scale: ['#EDEEEF', '#D8DADC', '#B9BCBF', '#909498', '#5F6265', '#1C1C1F'],
+      // Escala do heatmap num tema CLARO: do quase-branco ao grafite. Os tons
+      // baixos precisam contrastar com o card branco, senão o dia sem registro
+      // some no fundo e o mapa não mostra nada.
+      scale: ['#F1F2F3', '#D3D6D9', '#AEB2B7', '#84888D', '#55585C', '#1C1C1F'],
     },
   },
 

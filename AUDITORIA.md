@@ -3,6 +3,9 @@
 Verificação item por item do que foi pedido contra o que existe no repositório.
 Legenda: ✅ feito e verificado · 🟡 feito com desvio justificado · ❌ não feito (motivo).
 
+**Versão auditada: 1.5.1 (`versionCode` 9).** Suítes desta rodada: **622** de lógica, **62** de store,
+**42** de render e **154** de tela — todas verdes; `tsc` limpo com e sem `--noUnusedLocals`.
+
 ---
 
 ## Stack obrigatória
@@ -390,8 +393,9 @@ peças ficam em `src/components/FitPulse.tsx`. Como a Home, este módulo **segue
   volume 1160 kg de 10×60+8×70, e nenhum número da vitrine (128, 12.450, 78%, 22,4).
 - Tema `fitPulse`: fundo `#0D0E12`, card `#13151A`, contraste medido — **branco sobre o lima dá
   1.6:1**, por isso `onNeon` é escuro.
-- **130 telas** (21 × 4 cenários + 11 Estudos + 7 Finanças + 9 Home + 27 de Treino), 543 lógica,
-  62 store, 42 renders. Preview: `docs/design/treino-preview.html` (`PREVIEW_TREINO=1 npm run test:screens`).
+- **154 telas** (21 × 4 cenários + 11 Estudos + 7 Finanças + 9 Home + 27 de Treino + telas descobertas
+  no disco), **622 lógica**, 62 store, 42 renders. Preview: `docs/design/treino-preview.html`
+  (`PREVIEW_TREINO=1 npm run test:screens`).
 
 ## Home — "Soft Light Glass" (Management / Coders)
 
@@ -525,14 +529,57 @@ Varredura feita em `src/lib`, `src/components` e `app/**`: cada defeito abaixo f
 
 Testes que guardam essas correções:
 
-- `npm run test:store` — **52 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
+- `npm run test:store` — **62 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
   dado antigo). Compila o store real com stub de persistência; é o teste que pega estado errado.
-- `npm run test:logic` — **422 asserções** (inclui as 45 novas do diário de emoções: teto de 3/dia,
-  sanitização de entrada, grade do mapa com dia sem registro, sequência, janela do ranking, gate do
-  efeito no dia seguinte, pares e espelho no diário).
+- `npm run test:logic` — **622 asserções** (inclui as do diário de emoções, as de boot hostil, as de
+  contraste dos 7 temas e as da varredura de dados degradados).
+- `npm run test:store` — **62 asserções de ação** (dia fechado, reabrir, pomodoro, metas, fechar o dia,
+  dado antigo). Compila o store real com stub de persistência; é o teste que pega estado errado.
 - `npm run test:render` — **42 montagens** dos gráficos com e sem dado.
-- `npm run test:screens` — **42 montagens de tela** (app com histórico e app zerado) com store trocado
-  por cenário: pega crash em runtime, tela vazia e `NaN`/`undefined` visível.
+- `npm run test:screens` — **154 montagens de tela** com store trocado por cenário, mais as telas que
+  ficavam fora da lista (`importar`, `onboarding`, splash), agora descobertas no disco: pega crash em
+  runtime, tela vazia e `NaN`/`undefined` visível.
+
+## Auditoria v1.5.1 — dado degradado, boot e acessibilidade
+
+Segunda varredura, feita com o app já em 1.5.0. Método igual: primeiro o defeito é **reproduzido**
+(test falhando ou boot quebrando de verdade), depois corrigido, depois guardado por teste.
+
+| # | Defeito encontrado | Efeito real | Correção |
+|---|---|---|---|
+| 30 | `loadAll` devolvia o backup **cru** (só os dias passavam por limpeza) | backup antigo com `settings.middayTime` numérico quebrava a Home; meta sem `active` derrubava o badge | `normalize.ts` novo + `loadAll` devolve `normalizeData(...)` (usuário, settings, metas, emoções, badges, diário) |
+| 31 | `sanitizeDay(null)` estourava | um `null` na lista de dias impedia o app de chegar em `ready` (tela em branco no boot) | `null` vira dia vazio de hoje |
+| 32 | Cronômetro do Treino sem proteção | `formatClock(NaN)` e `elapsed` com texto mostravam `NaN:NaN` na tela | `Number.isFinite` em ambos; `elapsed` nunca negativo |
+| 33 | `sessionVolume`/`topWeight`/`loadSeries` liam `session.exercises.map` direto | sessão de backup antigo sem `exercises` **derrubava** a tela de Treino | `exercisesOf()` tolerante, usado por todas as contas de treino |
+| 34 | Água somava a partir do valor da renderização | dois toques rápidos em "+1 copo" contavam como um (Dieta e Treino) | o toque lê o valor atual de `useStore.getState()` |
+| 35 | Busca da Home era texto decorativo | digitar não filtrava nada e não havia como limpar | `TextInput` real, filtra metas e diário, botão de limpar |
+| 36 | Tarefa sem `text` no diário | `.trim()` em número vindo de backup antigo derrubava o card de registros | `String(...)` na leitura dos campos do diário |
+| 37 | `Sheet` de água morto no Treino | estado `waterOpen` sem nenhum caminho que o abrisse (código morto) | removido |
+| 38 | Import duplicado no splash | `themeColors` e `colors` para a mesma coisa | usa só `colors` |
+| 39 | Categorias de Finanças com chave repetida | aviso de "unique key" do React e item instável na lista | `.filter(Boolean)` na lista |
+| 40 | Escala do heatmap no tema claro | tom baixo era quase igual ao card branco: dia sem registro sumia | escala do `softGlass` refeita; teste mede o degrau |
+| 41 | 3 telas fora de qualquer teste (`importar`, `onboarding`, splash) | quebra passaria batido | o smoke **descobre** as telas no disco em vez de usar lista manual |
+
+### O erro que mais importava: normalização apagando registro
+
+A normalização criada no item 30 reconstruía cada tarefa do zero (`goalId`, `done`, `note`, `doneAt`).
+Isso **apagava em silêncio** o motivo da falha (`excuse`), o `cost` e o `recoveryPlan` — exatamente a
+cobrança que o app faz questão de guardar — além de `failAt`, `honestyFlags`, `scheduleOverrides`,
+`closedAt`, `middayCheckin` e `pomodoros`. Um happy path de teste não pegaria isso: só um teste que
+monta um dia completo e compara campo por campo. Agora existe (9 asserções) e a tarefa preserva o resto
+com `...t` antes de aplicar o crivo.
+
+### Acessibilidade medida, não suposta
+
+Teste novo percorre os **7 temas** e mede contraste WCAG do par que a pessoa realmente lê:
+
+- texto principal sobre o fundo e sobre o card (translúcido é achatado sobre o fundo antes de medir);
+- texto secundário sobre o card;
+- texto do botão primário sobre a cor em que ele é pintado (`colors.green` + `onAccent()`), não sobre um
+  acento genérico — medir o par errado dava número bonito e falso;
+- degrau do heatmap (o tom do meio tem de ser visível sobre o card).
+
+Todos passam com ≥ 4,5:1 (texto) e ≥ 1,35:1 (degrau do heatmap).
 
 ## Memória de dados (persistência) — como está
 
@@ -601,15 +648,16 @@ agora são reagendados 1× por dia, não a cada edição).
 
 ## Verificações executadas
 
-- `npx tsc --noEmit` → limpo (e com `--noUnusedLocals`)
-- `node scripts/run-logic-tests.mjs` → **503/503** (modos, score, streaks, cobrança, gate de 7 dias,
+- `npx tsc --noEmit` → limpo (e com `--noUnusedLocals --noUnusedParameters`)
+- `node scripts/run-logic-tests.mjs` → **622/622** (modos, score, streaks, cobrança, gate de 7 dias,
   zona de perigo, recompensas, badges, parser, importador, mural de constância, gráficos, widget
   principal e widget do mural — incluindo render estrutural dos dois widgets)
 - `node scripts/audited-store.mjs` → **62/62** (ações do store: dia fechado, reabrir, pomodoro, metas,
   fechar o dia, dia vindo de backup antigo)
 - `node scripts/render-charts-smoke.mjs` → **42/42** (21 gráficos + tela, com dado e sem dado)
-- `node scripts/render-screens-smoke.mjs` → **130/130** (21 telas × 3 cenários: com histórico, primeiro uso
-  e **dados corrompidos** — `null`/`NaN`/texto de backup antigo)
+- `node scripts/render-screens-smoke.mjs` → **154/154** (telas × cenários: com histórico, primeiro uso,
+  tema alternativo e **dados corrompidos** — `null`/`NaN`/texto de backup antigo, passando pelo boot real
+  do store) + 3 telas descobertas no disco
 - `npx expo export --platform web` → bundle OK; preview respondendo 200
 - `npx expo prebuild -p android` → `Prime.java` + `Constancia.java`,
   `widgetprovider_prime.xml` + `widgetprovider_constancia.xml`, dois `<receiver>` no manifest

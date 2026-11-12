@@ -82,6 +82,31 @@ export const useSafeAreaInsets = () => ({ top: 0, bottom: 0, left: 0, right: 0 }
 );
 
 // lottie e widget nativo não existem em Node: stub vazio é o suficiente.
+stub(
+  'stub-async-storage.mjs',
+  `const store = new Map();
+const api = {
+  getItem: async (k) => (store.has(k) ? store.get(k) : null),
+  setItem: async (k, v) => { store.set(k, v); },
+  removeItem: async (k) => { store.delete(k); },
+  multiGet: async (keys) => keys.map((k) => [k, store.has(k) ? store.get(k) : null]),
+  multiSet: async (pairs) => { for (const [k, v] of pairs) store.set(k, v); },
+  multiRemove: async () => {},
+  getAllKeys: async () => [...store.keys()],
+};
+// O código importa das duas formas: default (AsyncStorage.getItem) e namespace.
+globalThis.__asStub = store; // o smoke injeta backup cru por aqui
+api.default = api;
+export default api;
+export const getItem = api.getItem;
+export const setItem = api.setItem;
+export const removeItem = api.removeItem;
+export const multiGet = api.multiGet;
+export const multiSet = api.multiSet;
+export const multiRemove = api.multiRemove;
+export const getAllKeys = api.getAllKeys;\n`,
+);
+
 stub('stub-empty.mjs', `export default () => null;\nexport const FlexWidget = () => null;\nexport const TextWidget = () => null;\n`);
 
 // Nomes usados por src/components/Icon.tsx — o ESM exige export nomeado real.
@@ -164,6 +189,9 @@ const importMap = [
   ["from 'react-native-safe-area-context'", "from '@rb/stub-safe-area.mjs'"],
   ["from 'lottie-react-native'", "from '@rb/stub-empty.mjs'"],
   ["from 'react-native-android-widget'", "from '@rb/stub-empty.mjs'"],
+  // O boot (store.load → normalizeData) é exercitado de propósito: tela montada
+  // sobre dado NÃO normalizado esconde o defeito em vez de encontrá-lo.
+  ["from '@react-native-async-storage/async-storage'", "from '@rb/stub-async-storage.mjs'"],
   ["from '../../src/lib/native'", "from '@rb/stub-native.mjs'"],
   ["from '../lib/native'", "from '@rb/stub-native.mjs'"],
 ];
@@ -593,6 +621,102 @@ for (const [label, file] of screens) {
     else log(true, `${label} (${html.length} chars)`);
   } catch (e) {
     log(false, `${label}: ${e.message}`);
+  }
+}
+
+/* ───────── Hostil: tipos errados em todo campo que um backup pode corromper ─────────
+ * `JSON.stringify(NaN)` grava `null`; edição manual troca número por texto; um
+ * backup de versão antiga não tem os campos novos. Nenhuma tela pode cair.
+ */
+{
+  const hostil = {
+    ...cheio,
+    user: { name: 42, identity: null, noMore: 7, areas: 'Treino', createdAt: 0 },
+    settings: {
+      theme: 'nao-existe',
+      targetDailyScore: '7',
+      sleepGoalHours: null,
+      focusGoalMinutes: 'muito',
+      heightCm: 'alto',
+      cardLast4: 1234,
+      middayCheckin: 'sim',
+      middayTime: 1300,
+      morningReminder: null,
+      nightReminder: 2100,
+    },
+    goals: [
+      { id: 'g1', name: 5, area: null, priority: 'urgente', active: 'sim', min: null, ideal: 3, excellent: [] },
+      { id: null, name: 'Sem id', area: 'Treino', priority: 'high', active: true, min: '10min', ideal: '30min', excellent: '1h' },
+    ],
+    days: [
+      {
+        date: key(0),
+        energy: { physical: 'sete', mental: null, stress: NaN },
+        mode: 'turbo',
+        tasks: [{ goalId: 'g1', done: 'sim', note: 3 }, { goalId: null, done: true }, null],
+        diary: {
+          promised: 3,
+          context: null,
+          sleep: { hours: 'sete', quality: null, blockers: 'nada' },
+          food: 42,
+          waterCups: 'dois',
+          study: 'bloco',
+          studyPlan: 7,
+          workout: { exercises: 'nao-e-lista', durationSec: 'muito' },
+          book: [],
+          project: null,
+        },
+        pomodoros: [{ minutes: '25' }, { minutes: null }],
+        score: { total: 'alta', regularity: null },
+      },
+      { date: key(-1) },
+      { date: null, tasks: 'x' },
+      null,
+    ],
+    weight: [{ date: key(0), kg: 'setenta' }, { date: null, kg: 80 }, null],
+    finances: [{ date: key(0), amount: '4200', type: 'transferencia', category: null }],
+    books: [{ id: 'b', title: 7, totalPages: 'muitas', currentPage: null }],
+    badges: [{ id: null, unlockedAt: 12 }],
+    rewards: [{ id: 1, name: null }],
+    emotions: [{ at: 1, date: null, emotion: 5, intensity: 'alta' }],
+    ayanokoji: { startDate: null, scores: 'x', tasksDone: null },
+    weeklyFocus: 'x',
+    routeAdjustments: null,
+  };
+
+  console.log('\n── Telas: dados hostis (tipo errado em campo que um backup corrompe) ──');
+  // Duas etapas, como no app: (1) o boot lê o backup CRU do storage e normaliza;
+  // (2) a tela desenha o que sobrou. Testar só a etapa 2 esconderia o defeito de
+  // boot, e testar só a etapa 1 esconderia o defeito de tela.
+  const storageMod = await import(pathToFileURL(path.join(outRoot, 'src/lib/storage.js')).href);
+  const storeMod = await import(pathToFileURL(path.join(outRoot, 'src/lib/store.js')).href);
+  const bag = globalThis.__asStub;
+  for (const [field, value] of Object.entries(hostil)) {
+    const key = storageMod.KEYS[field];
+    if (key) bag.set(key, JSON.stringify(value));
+  }
+  await storeMod.useStore.getState().load();
+  const posBoot = storeMod.useStore.getState();
+  log(posBoot.status === 'ready', 'boot chega a "ready" com backup hostil', String(posBoot.status));
+  log(Array.isArray(posBoot.days) && posBoot.days.every((d) => !!d && typeof d.date === 'string' && !!d.diary), 'boot entrega dias completos (sem buraco null)');
+  log(typeof posBoot.settings.middayTime === 'string', 'boot entrega settings com horário em texto', String(posBoot.settings.middayTime));
+
+  const fixturePosBoot = Object.fromEntries(
+    Object.entries(posBoot).filter(([, v]) => typeof v !== 'function'),
+  );
+
+  for (const [label, file] of screens) {
+    try {
+      const copy = await withStore(file, 'hostil', fixturePosBoot);
+      const Screen = (await import(pathToFileURL(copy).href)).default;
+      const html = renderToStaticMarkup(React.createElement(Screen));
+      if (html.length < 200) log(false, `${label}: markup vazio com dado hostil`);
+      else if (/NaN|Infinity/.test(html)) log(false, `${label}: NaN/Infinity com dado hostil`);
+      else if (/undefined/.test(html.replace(/<[^>]*>/g, ' '))) log(false, `${label}: "undefined" visível com dado hostil`);
+      else log(true, `${label} (${html.length} chars, hostil)`);
+    } catch (e) {
+      log(false, `${label}: quebrou com dado hostil — ${e.message}`);
+    }
   }
 }
 
@@ -1102,6 +1226,40 @@ if (process.env.PREVIEW_TREINO) {
     themeMod.applyTheme('emerald');
   } catch (e) {
     console.error('preview de treino falhou:', e.message);
+  }
+}
+
+/* ───────── Cobertura: toda tela do app tem que estar no smoke ─────────
+ * O irmão de `app/_layout` não é tela; o resto é. A lista de telas do smoke era
+ * manual e ninguém conferia — foi assim que `importar`, `onboarding` e o splash
+ * ficaram sem teste nenhum até esta auditoria.
+ */
+{
+  const telasNoDisco = [];
+  const walkScreens = (dir) => {
+    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, item.name);
+      if (item.isDirectory()) walkScreens(full);
+      else if (item.name.endsWith('.tsx') && item.name !== '_layout.tsx') {
+        telasNoDisco.push(full.replace(`${root}${path.sep}`, '').replace(/\.tsx?$/, '.js'));
+      }
+    }
+  };
+  walkScreens(path.join(root, 'app'));
+  const cobertas = new Set(screens.map(([, file]) => file));
+  const rotulo = (file) => (file.startsWith('app/(tabs)/') ? file.slice(11) : file.slice(4)).replace(/\.js$/, '');
+  for (const file of telasNoDisco) {
+    if (cobertas.has(file)) continue;
+    try {
+      const copy = await withStore(file, 'extra-cobertura', cheio);
+      const Screen = (await import(pathToFileURL(copy).href)).default;
+      const html = renderToStaticMarkup(React.createElement(Screen));
+      if (html.length < 200) log(false, `${rotulo(file)}: markup vazio (não estava na lista de telas)`);
+      else if (/NaN|Infinity/.test(html)) log(false, `${rotulo(file)}: NaN/Infinity (não estava na lista de telas)`);
+      else log(true, `${rotulo(file)} (${html.length} chars) — entrou na cobertura agora`);
+    } catch (e) {
+      log(false, `${rotulo(file)}: quebrou — ${e.message} (não estava na lista de telas)`);
+    }
   }
 }
 

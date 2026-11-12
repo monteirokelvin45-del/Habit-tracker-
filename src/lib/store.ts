@@ -179,6 +179,13 @@ function makeDay(date: string, goals: Goal[], mode: DayMode = 'normal'): Day {
  * (energia, tarefas, diário). Função pura — usada no boot e no import de backup.
  */
 export function sanitizeDay(input: Day): Day {
+  // Lista de dias vinda de storage pode ter buraco (`null` no meio — um
+  // `JSON.parse` de backup editado produz isso). `sanitizeDay(null)` derrubava o
+  // boot inteiro com "Cannot read properties of null": o app abria e não passava
+  // da marca de carregamento.
+  if (!input || typeof input !== 'object') {
+    return { date: todayKey(), energy: { physical: 5, mental: 5, stress: 5 }, mode: 'normal', tasks: [], diary: normalizeDiary(undefined) };
+  }
   const d = input as Partial<Day>;
   const energy = d.energy ?? { physical: 5, mental: 5, stress: 5 };
   return {

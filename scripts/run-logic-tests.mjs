@@ -1589,6 +1589,172 @@ console.log('\n── Sanitização de entrada (storage/backup) ──');
   })());
 }
 
+/* ═══════════════ Boot: normalização de backup hostil ═══════════════ */
+
+console.log('\n── Boot: backup hostil normalizado antes de chegar na tela ──');
+{
+  const storageMod = await import(path.join(outRoot, 'lib/storage.mjs'));
+  // O mesmo fixture que o smoke de telas usa: tipo errado em todo campo que um
+  // backup corrompido (ou editado à mão) pode trazer.
+  const hostil = {
+    onboarded: 'sim',
+    user: { name: 42, identity: null, noMore: 7, areas: 'Treino', createdAt: 0 },
+    settings: {
+      theme: 'nao-existe',
+      targetDailyScore: '7',
+      sleepGoalHours: null,
+      focusGoalMinutes: 'muito',
+      heightCm: 'alto',
+      cardLast4: 1234,
+      middayCheckin: 'sim',
+      middayTime: 1300,
+      morningReminder: null,
+      nightReminder: 2100,
+    },
+    goals: [
+      { id: 'g1', name: 5, area: null, priority: 'urgente', active: 'sim', min: null, ideal: 3, excellent: [] },
+      { id: null, name: 'Sem id', area: 'Treino', priority: 'high', active: true, min: '10min', ideal: '30min', excellent: '1h' },
+    ],
+    days: [
+      {
+        date: '2026-11-10',
+        energy: { physical: 'sete', mental: null, stress: Number.NaN },
+        mode: 'turbo',
+        tasks: [{ goalId: 'g1', done: 'sim', note: 3 }, { goalId: null, done: true }, null],
+        diary: {
+          promised: 3,
+          context: null,
+          sleep: { hours: 'sete', quality: null, blockers: 'nada' },
+          food: 42,
+          waterCups: 'dois',
+          study: 'bloco',
+          studyPlan: 7,
+          workout: { exercises: 'nao-e-lista', durationSec: 'muito' },
+          book: [],
+          project: null,
+        },
+        pomodoros: [{ minutes: '25' }, { minutes: null }],
+        score: { total: 'alta', regularity: null },
+      },
+      { date: '2026-11-09' },
+      { date: null, tasks: 'x' },
+      null,
+    ],
+    weight: [{ date: '2026-11-10', kg: 'setenta' }, { date: null, kg: 80 }, null],
+    finances: [{ date: '2026-11-10', amount: '4200', type: 'transferencia', category: null }],
+    books: [{ id: 'b', title: 7, totalPages: 'muitas', currentPage: null }],
+    badges: [{ id: null, unlockedAt: 12 }],
+    rewards: [{ id: 1, name: null }],
+    emotions: [{ at: 1, date: null, emotion: 5, intensity: 'alta' }],
+    ayanokoji: { startDate: null, scores: 'x', tasksDone: null },
+    weeklyFocus: 'x',
+    routeAdjustments: null,
+  };
+
+  let out = null;
+  let err = null;
+  try {
+    out = storageMod.normalizeData(hostil, storageMod.EMPTY_DATA);
+  } catch (e) {
+    err = e;
+  }
+  check('normalizeData sobrevive a backup hostil', !err, err?.message);
+
+  if (out) {
+    const json = JSON.stringify(out);
+    check('dado normalizado não tem NaN/Infinity', !/NaN|Infinity/.test(json));
+    check('não sobra "undefined" em texto de diário', !/undefined/.test(out.days[0]?.diary.promised ?? ''), String(out.days[0]?.diary.promised));
+    check('áreas de usuário viram lista vazia (não string)', Array.isArray(out.user.areas) && out.user.areas.length === 0, JSON.stringify(out.user.areas));
+    check('nome de usuário numérico não vira "42" cru na saudação', typeof out.user.name === 'string', typeof out.user.name);
+    check('dia com data null é descartado', out.days.every((d) => typeof d.date === 'string' && d.date.length === 10), JSON.stringify(out.days.map((d) => d.date)));
+    check('task null é descartada', out.days[0]?.tasks.every((t) => t && typeof t.goalId === 'string'), JSON.stringify(out.days[0]?.tasks));
+    check('task com done texto vira booleano', out.days[0]?.tasks.every((t) => typeof t.done === 'boolean'), JSON.stringify(out.days[0]?.tasks));
+    check('energia com texto vira número', typeof out.days[0]?.energy.physical === 'number', String(out.days[0]?.energy.physical));
+    check('modo inválido vira "normal"', out.days[0]?.mode === 'normal', String(out.days[0]?.mode));
+    check('diário com contexto nulo ganha contexto', !!out.days[0]?.diary.context && typeof out.days[0]?.diary.context === 'object');
+    check('sono com texto vira número', typeof out.days[0]?.diary.sleep.hours === 'number', String(out.days[0]?.diary.sleep.hours));
+    check('comida numérica não quebra o parse de refeições', typeof out.days[0]?.diary.food === 'string', typeof out.days[0]?.diary.food);
+    check('água com texto vira número ou some', out.days[0]?.diary.waterCups === undefined || typeof out.days[0]?.diary.waterCups === 'number', String(out.days[0]?.diary.waterCups));
+    check('estudo com texto não vira array falso', out.days[0]?.diary.study === undefined || Array.isArray(out.days[0]?.diary.study), String(typeof out.days[0]?.diary.study));
+    check('treino com exercícios inválidos não sobrevive cru', out.days[0]?.diary.workout === undefined || typeof out.days[0]?.diary.workout === 'object', String(typeof out.days[0]?.diary.workout));
+    check('meta sem id é descartada', out.goals.every((g) => g.id), JSON.stringify(out.goals.map((g) => g.id)));
+    check('meta com prioridade inválida vira normal', out.goals.every((g) => ['high', 'normal', 'low'].includes(g.priority)), JSON.stringify(out.goals.map((g) => g.priority)));
+    check('meta com min numérico vira texto', out.goals.every((g) => typeof g.min === 'string'));
+    check('tema inválido no backup não é aplicado', out.settings.theme === undefined || ['emerald', 'golden', 'cyberpunk', 'ocean', 'neonBlue', 'softGlass', 'fitPulse'].includes(out.settings.theme), String(out.settings.theme));
+    check('cartão com número (não texto) é descartado', out.settings.cardLast4 === undefined || /^\d{4}$/.test(out.settings.cardLast4), String(out.settings.cardLast4));
+    check('altura inválida não entra em Settings', out.settings.heightCm === undefined || Number.isFinite(out.settings.heightCm), String(out.settings.heightCm));
+    check('peso com texto é reparado ou descartado', out.weight.every((w) => Number.isFinite(w.kg) && w.date), JSON.stringify(out.weight));
+    check('ayanokoji inválido não fica como string', typeof out.ayanokoji === 'object' && Array.isArray(out.ayanokoji.scores), JSON.stringify(out.ayanokoji).slice(0, 80));
+    check('weeklyFocus inválido vira objeto', typeof out.weeklyFocus === 'object' && !Array.isArray(out.weeklyFocus), JSON.stringify(out.weeklyFocus));
+    check('routeAdjustments nulo vira objeto', typeof out.routeAdjustments === 'object' && out.routeAdjustments !== null);
+    check('objetivo de score inválido não fica como texto', typeof out.settings.targetDailyScore === 'number', String(out.settings.targetDailyScore));
+    check('check-in de meio-dia não fica como texto', typeof out.settings.middayCheckin === 'boolean', String(out.settings.middayCheckin));
+    check('horário de lembrete não fica como número', typeof out.settings.nightReminder === 'string', String(out.settings.nightReminder));
+  }
+}
+
+/* ═══════════════ Boot: nada de registro perdido na normalização ═══════════════ */
+
+console.log('\n── Boot: a normalização não pode APAGAR registro ──');
+{
+  const storageMod = await import(path.join(outRoot, 'lib/storage.mjs'));
+  // Justificativa de falha é o coração da cobrança do app: se o boot reconstruir
+  // a tarefa e esquecer o `excuse`, o usuário perde o motivo registrado.
+  const comCobranca = storageMod.normalizeData(
+    {
+      days: [
+        {
+          date: '2026-11-10',
+          tasks: [
+            {
+              goalId: 'g1',
+              done: false,
+              note: 'tentei',
+              failAt: '15:00',
+              excuse: { type: 'Prazer Imediato', legitimacy: 'Autoengano' },
+              cost: 'perdi 1h de treino',
+              recoveryPlan: 'amanhã antes do almoço',
+            },
+          ],
+          honestyFlags: [{ goalId: 'g2', reason: 'energia baixa', resolved: 'adjusted' }],
+          scheduleOverrides: { g1: '07:30' },
+          closedAt: '2026-11-10T22:00:00',
+          middayCheckin: { at: '13:00', priorityDone: true, energy: 6, note: 'ok' },
+          pomodoros: [{ goalId: 'g1', minutes: 25, at: '10:00' }],
+        },
+      ],
+    },
+    storageMod.EMPTY_DATA,
+  );
+  const t0 = comCobranca.days[0]?.tasks[0];
+  check('boot preserva o motivo da falha (excuse)', !!t0?.excuse && t0.excuse.type === 'Prazer Imediato', JSON.stringify(t0?.excuse));
+  check('boot preserva o custo da falha', t0?.cost === 'perdi 1h de treino', String(t0?.cost));
+  check('boot preserva o plano de recuperação', t0?.recoveryPlan === 'amanhã antes do almoço', String(t0?.recoveryPlan));
+  check('boot preserva o horário da falha', t0?.failAt === '15:00', String(t0?.failAt));
+  check('boot preserva as sinalizações de honestidade', comCobranca.days[0]?.honestyFlags?.[0]?.goalId === 'g2', JSON.stringify(comCobranca.days[0]?.honestyFlags));
+  check('boot preserva os horários ajustados do cronograma', comCobranca.days[0]?.scheduleOverrides?.g1 === '07:30');
+  check('boot preserva o fechamento do dia', comCobranca.days[0]?.closedAt === '2026-11-10T22:00:00');
+  check('boot preserva o check-in de meio-dia', comCobranca.days[0]?.middayCheckin?.energy === 6);
+  check('boot preserva os pomodoros', comCobranca.days[0]?.pomodoros?.[0]?.minutes === 25);
+
+  // E o dia que já estava bom continua idêntico.
+  const redondo = storageMod.normalizeData(
+    {
+      days: [{ date: '2026-11-09', energy: { physical: 7, mental: 6, stress: 4 }, mode: 'attack', tasks: [{ goalId: 'g1', done: true, note: '' }] }],
+    },
+    storageMod.EMPTY_DATA,
+  );
+  check('dia íntegro passa igual (energia e modo)', redondo.days[0]?.energy.physical === 7 && redondo.days[0]?.mode === 'attack', JSON.stringify(redondo.days[0]?.energy));
+
+  // Cronômetro de treino: `undefined`/texto não podem virar "NaN:NaN" na tela.
+  const tr = await import(path.join(outRoot, 'lib/training.mjs'));
+  check('formatClock aguenta undefined', tr.formatClock(undefined) === '00:00', tr.formatClock(undefined));
+  check('formatClock aguenta texto', tr.formatClock('muito') === '00:00', tr.formatClock('muito'));
+  check('formatClock aguenta NaN', tr.formatClock(Number.NaN) === '00:00', tr.formatClock(Number.NaN));
+  check('sessão com exercises inválido não quebra', tr.sessionVolume({ date: 'x', label: 'y', exercises: 'nao-e-lista' }) === 0);
+  check('sessão nula não quebra progresso', tr.sessionProgress(null).total === 0);
+}
+
 /* ═══════════════ Design: tema Dark Neon Blue Bento ═══════════════ */
 
 console.log('\n── Tema neonBlue (Dark Neon Blue Bento) ──');
@@ -1761,6 +1927,53 @@ console.log('\n── Tema fitPulse (FITPULSE Dark Lime) ──');
     theme.applyTheme('emerald');
     return ok && theme.colors.bgPrimary === '#051F20';
   })());
+}
+
+/* ═══════════════ AUDITORIA: contraste de todos os temas ═══════════════ */
+
+console.log('\n── Acessibilidade: contraste em TODOS os temas ──');
+{
+  const theme = await import(path.join(outRoot, 'theme.mjs'));
+  const lum = (hex) => {
+    const c = hex.replace('#', '');
+    const v = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
+    const lin = v.map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  };
+  const ratio = (a, b) => {
+    const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (l1 + 0.05) / (l2 + 0.05);
+  };
+  // Card translúcido é medido sobre o fundo que ele deixa passar (é o que o olho vê).
+  const flat = (color, bg) => {
+    if (!color.startsWith('rgba')) return color;
+    const [r, g, b, a] = color.replace(/rgba?\(|\)/g, '').split(',').map((x) => Number(x.trim()));
+    const under = bg.replace('#', '');
+    const ub = [0, 2, 4].map((i) => parseInt(under.slice(i, i + 2), 16));
+    const mix = [r, g, b].map((c, i) => Math.round(c * (a ?? 1) + ub[i] * (1 - (a ?? 1))));
+    return `#${mix.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+  };
+
+  for (const id of Object.keys(theme.THEMES)) {
+    const p = theme.THEMES[id].palette;
+    const bg = p.bgPrimary;
+    const card = flat(p.bgCard, bg);
+    const r1 = ratio(p.textPrimary, bg);
+    const r2 = ratio(p.textPrimary, card);
+    const r3 = ratio(p.textSecondary, card);
+    // O botão primário pinta o fundo com `colors.green` e escreve com `onAccent()`
+    // (= onNeon ?? black). É ESSE par que o usuário lê — medir sobre `neon` dava
+    // um número bonito e falso.
+    const r4 = ratio(p.onNeon ?? p.black, p.green);
+    check(`${id}: texto principal no fundo >= 4.5`, r1 >= 4.5, `${r1.toFixed(2)}:1`);
+    check(`${id}: texto principal no card >= 4.5`, r2 >= 4.5, `${r2.toFixed(2)}:1 (card ${card})`);
+    check(`${id}: texto secundário no card >= 4.5`, r3 >= 4.5, `${r3.toFixed(2)}:1`);
+    check(`${id}: texto do botão primário sobre ${p.green} >= 4.5`, r4 >= 4.5, `${r4.toFixed(2)}:1`);
+    // Escala do heatmap: o tom do meio precisa aparecer no card (>= 1.35:1), senão
+    // a célula "sem registro" e a "registro médio" viram a mesma mancha.
+    const mid = ratio(p.scale[3], card);
+    check(`${id}: escala do heatmap tem degrau visível (>= 1.35)`, mid >= 1.35, `${mid.toFixed(2)}:1`);
+  }
 }
 
 /* ═══════════════ AUDITORIA: app.json e app.config.ts não podem divergir ═══════════════ */

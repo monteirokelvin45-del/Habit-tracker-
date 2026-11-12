@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Animated, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Pressable } from 'react-native';
-import { colors as themeColors, spacing } from '../src/theme';
-import { colors } from '../src/theme';
+import { colors, spacing } from '../src/theme';
 import { useStore } from '../src/lib/store';
 import { Txt } from '../src/components/ui';
 
@@ -50,7 +49,7 @@ export default function Splash() {
             }}
             accessibilityRole="button"
           >
-            <Txt variant="caption" color={themeColors.green}>Já tenho um plano — importar</Txt>
+            <Txt variant="caption" color={colors.green}>Já tenho um plano — importar</Txt>
           </Pressable>
         ) : null}
       </View>
