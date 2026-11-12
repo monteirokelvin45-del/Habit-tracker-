@@ -542,7 +542,7 @@ Testes que guardam essas correções:
 
 ## Auditoria v1.6.1 — todos os dashboards, número por número
 
-Método desta rodada: **ler o que a tela afirma**, não só se ela abre. Os 163 render passavam com
+Método desta rodada: **ler o que a tela afirma**, não só se ela abre. Os 166 renders passavam com
 números errados, porque número errado não quebra o HTML. Então:
 
 1. `DUMP_DASH=1 npm run test:screens` imprime o texto **visível** de cada dashboard (cheio e vazio);
@@ -573,7 +573,7 @@ números errados, porque número errado não quebra o HTML. Então:
 - **7 blocos de asserção** novos no `test:screens` (Janela, Água, Dieta sem/com meta, semana) e **11 blocos** no
   `test:logic` cobrindo cada linha da tabela. Todos comparam **valor esperado × valor exibido**, não só
   "não quebrou".
-- **`DUMP_DASH`** fica no repositório: é a ferramenta que permite ler os 163 renders. `DUMP_DASH=Dieta`
+- **`DUMP_DASH`** fica no repositório: é a ferramenta que permite ler os 166 renders. `DUMP_DASH=Dieta`
   imprime só a Dieta, em app cheio e vazio.
 - A régua de "dia cumprido" e a fonte da meta de água têm nome e teste de **igualdade entre telas** — as
   duas classes de erro que mais apareceram aqui (mesma palavra, número diferente; mesmo número, regra
